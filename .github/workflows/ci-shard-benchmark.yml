@@ -1,0 +1,44 @@
+name: BCT CI shard benchmark
+
+on:
+  workflow_dispatch:
+    inputs:
+      shard_count:
+        description: "Number of core-test shards (4, 6, 8, 9, 12, or 15)"
+        required: true
+        type: choice
+        options: ["4", "6", "8", "9", "12", "15"]
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    runs-on: windows-latest
+    outputs:
+      matrix: ${{ steps.matrix.outputs.value }}
+    steps:
+      - id: matrix
+        shell: pwsh
+        run: |
+          $count = [int]'${{ inputs.shard_count }}'
+          $values = 0..($count - 1) | ConvertTo-Json -Compress
+          "value=$values" >> $env:GITHUB_OUTPUT
+
+  core:
+    needs: plan
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - run: python -m pip install -e .
+      - name: Run core shard ${{ matrix.shard }} of ${{ inputs.shard_count }}
+        run: python scripts/ci_test_shard.py --start-directory tests --shard-index ${{ matrix.shard }} --shard-count ${{ inputs.shard_count }} --durations 20 --duration-input scripts/ci_test_duration_seed.json
