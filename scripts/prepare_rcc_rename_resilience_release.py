@@ -5,6 +5,7 @@ Chrome, starts BCT services, or changes Work/Operation receipts.
 """
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
 from pathlib import Path
@@ -20,10 +21,7 @@ from modules.rcc.release.verify_release_candidate import inventory_digest, verif
 SOURCE_MANIFEST = ROOT / "modules" / "rcc" / "release" / "rcc_v2_rc.json"
 SOURCE_EXTENSION = ROOT / "modules" / "rcc" / "extension"
 INSTALLED_EXTENSION = Path(r"D:\ChromeExtensions\RCC\extension")
-RELEASE_ROOT = Path(r"D:\BCT\data\RCC_RENAME_RESILIENCE_20261108_R2")
-CANDIDATE = RELEASE_ROOT / "candidate_1_0_65_exact"
-ROLLBACK = RELEASE_ROOT / "rollback_installed_1_0_64"
-IMMUTABLE_MANIFEST = RELEASE_ROOT / "release_manifest_rename_resilience_immutable.json"
+DEFAULT_RELEASE_ROOT = Path(r"D:\BCT\data\RCC_RENAME_RESILIENCE_20261108_R2")
 
 
 def _sha256(path: Path) -> str:
@@ -56,11 +54,20 @@ def _copy_inventory(source: Path, target: Path, rows: list[dict[str, object]]) -
 
 
 def main() -> int:
-    if RELEASE_ROOT.exists():
-        raise RuntimeError(f"RELEASE_ROOT_ALREADY_EXISTS:{RELEASE_ROOT}")
+    parser = argparse.ArgumentParser(
+        description="Create one new immutable RCC 1.0.65 candidate without changing R2."
+    )
+    parser.add_argument("--release-root", type=Path, default=DEFAULT_RELEASE_ROOT)
+    args = parser.parse_args()
+    release_root = args.release_root.resolve()
+    candidate = release_root / "candidate_1_0_65_exact"
+    rollback = release_root / "rollback_installed_1_0_64"
+    immutable_manifest = release_root / "release_manifest_rename_resilience_immutable.json"
+    if release_root.exists():
+        raise RuntimeError(f"RELEASE_ROOT_ALREADY_EXISTS:{release_root}")
     source = json.loads(SOURCE_MANIFEST.read_text(encoding="utf-8-sig"))
     candidate_rows = source["candidateInventory"]["files"]
-    _copy_inventory(SOURCE_EXTENSION, CANDIDATE, candidate_rows)
+    _copy_inventory(SOURCE_EXTENSION, candidate, candidate_rows)
     installed_rows = _inventory(INSTALLED_EXTENSION)
     installed_manifest = json.loads((INSTALLED_EXTENSION / "manifest.json").read_text(encoding="utf-8-sig"))
     if installed_manifest.get("version") != "1.0.64":
@@ -70,14 +77,14 @@ def main() -> int:
         "files": installed_rows,
         "aggregateSha256": inventory_digest(installed_rows),
     }
-    _copy_inventory(INSTALLED_EXTENSION, ROLLBACK, installed_rows)
-    IMMUTABLE_MANIFEST.write_text(
+    _copy_inventory(INSTALLED_EXTENSION, rollback, installed_rows)
+    immutable_manifest.write_text(
         json.dumps(source, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8", newline="\n",
     )
-    result = verify(IMMUTABLE_MANIFEST, live_root=ROLLBACK, candidate_root=CANDIDATE)
-    result["immutableManifest"] = str(IMMUTABLE_MANIFEST)
-    result["immutableManifestSha256"] = _sha256(IMMUTABLE_MANIFEST)
+    result = verify(immutable_manifest, live_root=rollback, candidate_root=candidate)
+    result["immutableManifest"] = str(immutable_manifest)
+    result["immutableManifestSha256"] = _sha256(immutable_manifest)
     print(json.dumps(result, ensure_ascii=False, sort_keys=True))
     return 0
 
