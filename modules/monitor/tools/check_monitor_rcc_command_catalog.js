@@ -38,7 +38,7 @@ vm.runInContext(featureSource, context);
   assert.ok(Object.isFrozen(normalized));
   assert.match(bundleSource, /id="monitorCommandCatalogOpen"[^>]*>명령 목록/);
   assert.match(bundleSource, /id="monitorCommandCatalogDialog"/);
-  assert.ok(bundleSource.indexOf('id="monitorExtensionReload"') < bundleSource.indexOf('id="monitorCommandCatalogOpen"'));
+  assert.ok(bundleSource.indexOf('id="monitorBctControlRefresh"') < bundleSource.indexOf('id="monitorCommandCatalogOpen"'));
   assert.doesNotMatch(bundleSource, /monitor-command-catalog-section/);
   assert.match(featureSource, /async function open\(\)/);
   assert.match(featureSource, /dialog\.showModal\(\)/);

@@ -2,8 +2,8 @@
 
 Generated from the deployed runtime. Do not edit by hand.
 
-- source: `D:\BCT\worktrees\monitor-command-catalog-dialog-20261109\modules\monitor\extension\monitor.js`
-- sha256: `a0bcf80cffafc2a60dfec6d97d9d036b15c9ebaa8d1b533daec86edb3b9f8313`
+- source: `D:\BCT\worktrees\monitor-command-catalog-rightmost-20261109\modules\monitor\extension\monitor.js`
+- sha256: `0bbe65b7ec5b4c175d58e68a1c67b7fbc14cdf927d12d7acb0cccbf8f73ac22c`
 - line count: 15616
 - declared functions: 552
 
