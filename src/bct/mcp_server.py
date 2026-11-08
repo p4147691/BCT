@@ -113,22 +113,6 @@ _CAPABILITY_USAGE = {
     "claim_reconcile": "Record a read-only reconciliation of one FINISHED UNKNOWN receipt when its no-effect proof is available. Claims never gate new operations, so this is not required to unlock a resource. Never retry original effects; preserve the original receipt.",
 }
 
-# These RCC commands remain implemented only so older internal paths can be
-# inspected or retired deliberately.  They are not part of the caller-facing
-# MCP contract: new message work goes through the public tools below.
-_SEALED_BROWSER_COMMANDS = frozenset({
-    "send", "create-and-send", "result-of-create-and-send",
-    "send-to-tab", "send-to-created-tab", "send-to-self", "node-continue",
-    "read-latest-assistant", "state", "result", "presence",
-    "tab-get", "window-get", "windows-list",
-    "tab-groups-list", "tab-group-get",
-    "simple-relay-bind", "simple-relay-send", "simple-relay-return",
-    "reconcile-send", "reconcile-send-to-created-tab", "reconcile-create-and-send",
-    "target-discover", "retire-composer-draft", "retire-recovered-execution",
-    "delivery-start", "delivery-status", "delivery-response-read",
-    "delivery-return", "delivery-manager-status", "delivery-cancel",
-    "delivery-recovery-inspect", "delivery-preview",
-})
 _SPECIAL_CAPABILITIES = frozenset({"desktop_session_status", "desktop_capture"})
 
 
@@ -3141,6 +3125,24 @@ def build_mcp(
         )
         return result.as_dict()
 
+    @server.tool(
+        description=("List every RCC command exposed through bct_browser, grouped by its "
+                     "read, effect, reconciliation, or recovery purpose. This discovery call "
+                     "does not access RCC or perform a browser effect."),
+        structured_output=True,
+    )
+    async def bct_rcc_command_catalog() -> dict[str, Any]:
+        from bct.features.rcc import command_catalog
+        return {
+            "tool": "bct_browser",
+            "invocation": {
+                "required": ["work_id", "operation_id", "arguments.command"],
+                "note": ("Each command validates its own exact identifiers, target and receipt "
+                         "contract. An UNKNOWN effect is never automatically replayed."),
+            },
+            "commands": command_catalog(),
+        }
+
     def make_executor(capability: str) -> Callable[..., Coroutine[Any, Any, dict[str, Any]]]:
         async def execute(
             work_id: str,
@@ -3149,8 +3151,6 @@ def build_mcp(
             approval_ref: str | None = None,
         ) -> dict[str, Any]:
             selected = capability
-            if selected == "browser" and str(arguments.get("command") or "").strip().lower() in _SEALED_BROWSER_COMMANDS:
-                raise ValueError("RCC_INTERNAL_COMMAND_UNAVAILABLE:use create-chat-window, create-chat-tab, send-message, or bct_send_delayed_message")
             if capability == "test" and arguments.get("operation") == "verify":
                 selected = "verify"
                 arguments = {key: value for key, value in arguments.items() if key != "operation"}

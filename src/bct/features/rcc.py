@@ -63,6 +63,28 @@ _SENSITIVE_KEYS = {"token", "secret", "password", "authorization"}
 _BOOTSTRAP_RESULT_READBACK_TIMEOUT_S = 15.0
 
 
+def command_catalog() -> list[dict[str, str]]:
+    """Return the public MCP discovery view without exposing transport state."""
+    special = {
+        _RENAME_INSPECTION_COMMAND: "recovery-read",
+        _OPERATOR_QUARANTINE_COMMAND: "recovery-effect",
+        "delivery-manager-status": "delivery-read",
+        "delivery-recovery-inspect": "recovery-read",
+        "delivery-response-read": "delivery-read",
+        "delivery-preview": "delivery-read",
+    }
+    rows: list[dict[str, str]] = []
+    for command in sorted(_COMMANDS):
+        category = (
+            "read" if command in _READ_COMMANDS
+            else "effect" if command in _MUTATING_COMMANDS
+            else "reconcile" if command in _RECONCILE_COMMANDS
+            else special[command]
+        )
+        rows.append({"command": command, "category": category})
+    return rows
+
+
 def _target_snapshot_fingerprint(tabs: list[dict[str, Any]]) -> str:
     """Return a stable fingerprint for the RCC-visible Chrome target topology."""
     identity = sorted(

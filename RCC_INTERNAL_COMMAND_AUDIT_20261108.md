@@ -2,7 +2,13 @@
 
 Scanned 557 source/test files. Counts are literal occurrences, not proven execution call graphs.
 
-| RCC command | Kind | Source call sites (sample) | Public policy |
+All commands in this table are now discoverable through
+`bct_rcc_command_catalog` and callable externally through `bct_browser` with
+`arguments.command`.  The historical policy column records the earlier sealed
+surface decision only; it is retained for the change audit, not as current
+availability.
+
+| RCC command | Kind | Source call sites (sample) | Historical policy before public catalogue |
 |---|---|---|---|
 | `add-tab-to-group` | mutating | src/bct/features/rcc.py (4); modules/rcc/extension/test_browser_tab_group_adapter_v1.js (1); modules/rcc/extension/test_legacy_command_policy_v6.js (3); modules/rcc/extension/browser/tab_group_adapter.js (2) | Keep sealed; separate security review |
 | `close-conversation-tab` | mutating | src/bct/mcp_server.py (2); src/bct/features/rcc.py (5); modules/rcc/extension/browser/tab_close_contract.js (1); modules/rcc/extension/domain/atomic_chat_service.js (2) | Keep sealed; separate security review |
@@ -60,9 +66,11 @@ Scanned 557 source/test files. Counts are literal occurrences, not proven execut
   instance, session, tab, window and Conversation UUID before this one read is
   performed.  It is not a Manager/Worker/Supervisor role gate and it does not
   treat ownership history as an execution rank.
-- Existing `_SEALED_BROWSER_COMMANDS` remains unchanged.
-- Dedicated read tool reuses the existing `bct.operations.run` Work/Operation
-  confirmation path.
+- `bct_rcc_command_catalog` lists all feature commands, and `bct_browser`
+  accepts each of them through the same `bct.operations.run` confirmation
+  path. There is no separate role or ownership gate in the MCP route.
+- `bct_rcc_read_latest_assistant` remains a convenience wrapper for its exact
+  read contract; it is no longer the sole public RCC command.
 - RCC validates exact session/tab/window/conversation identity; no alternate send/reconcile path.
 - No LIVE installation or restart; no UNKNOWN effect replay.
 - This literal scan does not prove all dynamic call sites or command reachability.
@@ -85,9 +93,11 @@ merely because their browser-side handler is read-only.
 
 ## Exact public-wrapper route
 
-`bct_rcc_read_latest_assistant` is intentionally the sole new MCP entry point:
+`bct_rcc_command_catalog` is the public discovery entry point. Every listed
+command is invoked through `bct_browser`; `bct_rcc_read_latest_assistant`
+remains an optional convenience wrapper:
 
-`MCP caller identity + Work ID + Operation ID` -> `operations.run(browser)` ->
+`MCP caller identity + Work ID + Operation ID + arguments.command` -> `operations.run(browser)` ->
 `RccFeature.prepare/execute(read-latest-assistant)` -> `NamedPipeRelayClient`
 -> RCC Native Messaging router -> `readLatestAssistant`.
 

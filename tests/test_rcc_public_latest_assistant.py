@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 
 import unittest
+import json
 from types import SimpleNamespace
 
 from bct.mcp_server import build_mcp
@@ -66,11 +67,19 @@ class PublicReadLatestAssistantTests(unittest.IsolatedAsyncioTestCase):
             await self.server.call_tool("bct_rcc_read_latest_assistant", self.args)
         self.assertEqual(len(self.operations.calls), 1)
 
-    async def test_sealed_generic_browser_command_remains_sealed(self):
-        from bct.mcp_server import _SEALED_BROWSER_COMMANDS
-        self.assertIn("read-latest-assistant", _SEALED_BROWSER_COMMANDS)
-        self.assertIn("reconcile-send", _SEALED_BROWSER_COMMANDS)
-        self.assertIn("delivery-cancel", _SEALED_BROWSER_COMMANDS)
+    async def test_generic_browser_exposes_rcc_catalogue_without_bypassing_validation(self):
+        catalogue = await self.server.call_tool("bct_rcc_command_catalog", {})
+        catalogue_value = json.loads(catalogue[0][0].text)
+        self.assertIn({"command": "send", "category": "effect"}, catalogue_value["commands"])
+        self.assertIn({"command": "read-latest-assistant", "category": "read"}, catalogue_value["commands"])
+        tools = {t.name for t in await self.server.list_tools()}
+        self.assertIn("bct_rcc_command_catalog", tools)
+        self.assertIn("bct_browser", tools)
+        await self.server.call_tool("bct_browser", {
+            "work_id": "W", "operation_id": "generic-read",
+            "arguments": {"command": "state", "instance_id": "instance"},
+        })
+        self.assertEqual(self.operations.calls[-1]["arguments"]["command"], "state")
 
 
 if __name__ == "__main__":
