@@ -348,7 +348,7 @@ A는 `COMPLETE`, `NEW_TASK`, `ASK_USER`, `HOLD`를 판단한다. NEW_TASK가 메
 | `bct_send_delayed_message` | 해당 작업의 응답 완료를 백그라운드에서 기다린 뒤 SELF/MANAGER 후속 지시를 전달하도록 등록 |
 | `bct_context` | 특정 작업·회차의 이전 응답 증거, SELF/MANAGER 결정과 이어가기 기록 조회. 조회 자체는 감시하거나 전송하지 않음 |
 | `bct_capabilities` | 현재 도구·입력 계약·부품·이 설명서 조회. 도구 실행이나 권한 부여는 아님 |
-| Node Info | Monitor 우클릭 정보: 대화망·역할·담당 작업·메모. 이 단계는 메모를 자동 변경하지 않으며, 관계의 정본은 Direction·branch·Watch 영수증이다. 이후 표시가 필요하면 사용자 메모와 분리된 짧은 관리 구간만 갱신한다. |
+| Node Info | Monitor 우클릭 정보: 대화망·역할·담당 작업·메모. 관계의 정본은 Direction·branch·Watch 영수증이다. 자식/손자 지시에는 임시 관계 정보를 포함하고, Manager가 계속 참고할 짧은 상태가 필요하다고 판단하면 기존 `node-info-set`의 `node_memo`에 적을 수 있다. 메모만 바꿀 때는 현재 관찰한 `scope_name`·역할·기대 scope를 그대로 넣으므로 대화망 소속이나 역할은 바꾸지 않는다. BCT는 이 메모를 임의로 쓰지도, Manager의 명시적 기록을 막지도 않는다. |
 | Work / task_id / Operation | 기존 지속 작업 경계 / 한 체인의 연속 처리 식별값 / 개별 효과와 영수증 |
 
 공개 도구의 입구는 `src/bct/mcp_server.py`에 등록된다. 일부 보존된 공개명은 같은 내부 함수를
