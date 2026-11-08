@@ -91,6 +91,8 @@ class PublicReadLatestAssistantTests(unittest.IsolatedAsyncioTestCase):
         catalogue_value = json.loads(catalogue[0][0].text)
         self.assertIn({"command": "send", "category": "effect"}, catalogue_value["commands"])
         self.assertIn({"command": "read-latest-assistant", "category": "read"}, catalogue_value["commands"])
+        self.assertIn({"command": "new-chat-send", "category": "effect"}, catalogue_value["commands"])
+        self.assertIn({"command": "conversation-bind", "category": "effect"}, catalogue_value["commands"])
         tools = {t.name for t in await self.server.list_tools()}
         self.assertIn("bct_rcc_command_catalog", tools)
         self.assertIn("bct_rcc_recipe_catalog", tools)
@@ -108,6 +110,14 @@ class PublicReadLatestAssistantTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             by_name["read-latest-assistant"]["steps"],
             ["state", "read-latest-assistant"],
+        )
+        self.assertEqual(
+            by_name["create-chat-and-send"]["steps"],
+            ["target-discover", "new-chat-send", "result"],
+        )
+        self.assertEqual(
+            by_name["bind-existing-conversation"]["steps"],
+            ["state", "tab-get", "conversation-bind"],
         )
         self.assertIn("reconcile-send", by_name["recover-unknown-send"]["steps"])
 

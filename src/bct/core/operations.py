@@ -31,6 +31,8 @@ _RCC_MEASUREMENT_COMMANDS = frozenset({
     "state", "presence", "result", "result-of-create-and-send",
     "target-discover", "tab-get", "windows-list", "window-get",
     "tab-groups-list", "tab-group-get", "read-latest-assistant",
+    "ping", "probe", "probe-tabs", "diagnose-activity", "diagnose-composer",
+    "diagnose-conversation-ui", "api-probe", "main-capture-get", "rename-receipt",
 })
 
 

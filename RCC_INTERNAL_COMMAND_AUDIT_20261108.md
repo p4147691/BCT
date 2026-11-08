@@ -86,17 +86,18 @@ list and restores them in this change.
 
 | Wiring result | Count | Commands |
 |---|---:|---|
-| Same command name from BCT Feature to RCC router | 36 | `add-tab-to-group`, `close-conversation-tab`, `create-chat-tab`, `create-chat-window`, `create-tab-group`, `delivery-cancel`, `delivery-manager-status`, `delivery-recovery-inspect`, `delivery-response-read`, `delivery-return`, `delivery-start`, `delivery-status`, `move-tab`, `move-tab-group`, `node-label-notify`, `presence`, `read-latest-assistant`, `reload-extension`, `remove-tab-from-group`, `rename-conversation`, `result`, `retire-composer-draft`, `retire-recovered-execution`, `send`, `send-to-created-tab`, `send-to-tab`, `simple-relay-bind`, `simple-relay-return`, `simple-relay-send`, `state`, `tab-get`, `tab-group-get`, `tab-groups-list`, `update-tab-group`, `window-get`, `windows-list` |
+| Same command name from BCT Feature to RCC router | 47 | `add-tab-to-group`, `api-probe`, `close-conversation-tab`, `conversation-bind`, `create-chat-tab`, `create-chat-window`, `create-tab-group`, `delivery-cancel`, `delivery-manager-status`, `delivery-recovery-inspect`, `delivery-response-read`, `delivery-return`, `delivery-start`, `delivery-status`, `diagnose-activity`, `diagnose-composer`, `diagnose-conversation-ui`, `main-capture-get`, `move-tab`, `move-tab-group`, `new-chat-send`, `node-label-notify`, `ping`, `presence`, `probe`, `probe-tabs`, `read-latest-assistant`, `reload-extension`, `remove-tab-from-group`, `rename-conversation`, `rename-receipt`, `result`, `retire-composer-draft`, `retire-recovered-execution`, `send`, `send-to-created-tab`, `send-to-tab`, `simple-relay-bind`, `simple-relay-return`, `simple-relay-send`, `state`, `tab-get`, `tab-group-get`, `tab-groups-list`, `update-tab-group`, `window-get`, `windows-list` |
 | BCT alias or local orchestration, not same-name router command | 14 | `create-and-send` -> `new-chat-send`; `send-message` -> `send-to-tab` or `send-to-created-tab`; `target-discover` -> `state`; `result-of-create-and-send`/`reconcile-*` -> `result` or `rename-receipt`; `inspect-rename-receipt`, `quarantine-legacy-rename-claim`, `reclassify-rename-claim`, `node-continue`, `send-to-self`; `delivery-preview` is local BCT preview only |
-| Active RCC router command without a current BCT Feature command | 11 | `api-probe`, `conversation-bind`, `diagnose-activity`, `diagnose-composer`, `diagnose-conversation-ui`, `main-capture-get`, `new-chat-send`, `ping`, `probe`, `probe-tabs`, `rename-receipt` |
+| Active RCC router command without a current BCT Feature command | 0 | None: every active Native Messaging handler has a direct public `bct_browser(arguments.command=...)` name. |
 | Retired command names with no active RCC handler | 11 | `clear-relay-state`, `conversation-bootstrap-bind`, `ensure`, `main-capture-install`, `manager-promote`, `recover-created-result`, `recover-pending`, `register`, `reload-workers`, `result-ack`, `send-wakeback` |
 
-The 11 active RCC-only commands are not currently callable through
-`bct_browser`; this is a **wiring gap**, not evidence that they do not exist.
-They need explicit BCT adapters or a raw diagnostic wrapper before external
-MCP can inspect or invoke them. The retired names have no implementation to
-connect, so they must be treated as historical names until a replacement is
-chosen rather than silently re-enabled.
+The former eleven RCC-only commands now use the same direct `bct_browser`
+route as the established commands. `new-chat-send` retains the existing
+opaque target reference contract, and `conversation-bind` requires the exact
+instance/session/tab/conversation UUID plus its binding receipt; these are
+target-consistency checks, not role or ownership permissions. The retired
+names have no implementation to connect, so they remain historical names
+rather than being silently re-enabled.
 
 The extension also uses runtime messages between its background and content
 scripts. Active messages include `relay:getPendingStatus`, `relay:getState`,
@@ -107,11 +108,12 @@ in-extension transport messages, not BCT/RCC Native commands.
 
 ## Exact public-wrapper route
 
-`bct_rcc_command_catalog` currently discovers the 50 BCT Feature commands.
-Each listed command is invoked through `bct_browser`; `bct_rcc_read_latest_assistant`
-remains an optional convenience wrapper. The 11 active RCC-only commands above
-are the next wiring scope and are deliberately reported as missing rather than
-being mistaken for unavailable implementation:
+`bct_rcc_command_catalog` currently discovers 61 BCT Feature commands: all 47
+active RCC Native command names plus 14 explicit BCT composition/recovery
+commands. Every listed command is invoked through `bct_browser`; there is no
+separate `read-latest-assistant` convenience wrapper or hidden executor.
+`bct_rcc_recipe_catalog` only lists visible command sequences; it does not
+execute them on the caller's behalf:
 
 `MCP caller identity + Work ID + Operation ID + arguments.command` -> `operations.run(browser)` ->
 `RccFeature.prepare/execute` -> `NamedPipeRelayClient`

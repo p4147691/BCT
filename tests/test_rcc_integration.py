@@ -945,6 +945,36 @@ class RccIntegrationTests(unittest.TestCase):
         self.assertEqual("new-chat-send", first.evidence["rcc_command"])
         self.assertEqual("OK", first.output["result"]["reply"])
 
+    def test_native_new_chat_send_is_direct_public_command(self):
+        self.client.result = self._new_chat_result("native-new-chat")
+        target_ref = self._fresh_window_target()
+        result = self.call("native-new-chat", {
+            "command": "new-chat-send", "instance_id": "instance123",
+            "mode": "tab", "target_ref": target_ref, "text": "hello", "timeout_s": 120,
+        })
+        self.assertEqual(Outcome.APPLIED, result.outcome)
+        self.assertEqual("new-chat-send", result.evidence["command"])
+        self.assertEqual("new-chat-send", self.client.calls[-1]["command"])
+
+    def test_conversation_bind_uses_exact_identity_and_receipt(self):
+        self.client.result = {"type": "host:result", "ok": True, "binding": {
+            "logicalNode": "bb_mgr", "instanceId": "instance123", "sessionId": "session1",
+            "tabId": 10, "conversationKey": "6ad7f5b6-c834-83e8-9c00-ff70bab4204d",
+            "bindingReceiptId": "RCB-ABCDEFGHIJKL",
+        }}
+        result = self.call("conversation-bind-direct", {
+            "command": "conversation-bind", "instance_id": "instance123",
+            "to": "bb_mgr", "session_id": "session1", "tab_id": 10,
+            "conversation_key": "6ad7f5b6-c834-83e8-9c00-ff70bab4204d",
+            "binding_receipt_id": "RCB-ABCDEFGHIJKL",
+        })
+        self.assertEqual(Outcome.APPLIED, result.outcome)
+        request = self.client.calls[-1]
+        self.assertEqual("conversation-bind", request["command"])
+        self.assertEqual("instance123", request["extra"]["instanceId"])
+        self.assertEqual("session1", request["extra"]["sessionId"])
+        self.assertEqual(10, request["extra"]["tabId"])
+
     def test_create_and_send_requires_exact_existing_window(self):
         target_ref = self._fresh_window_target()
         with self.assertRaisesRegex(PreconditionError, "RCC_COMPOSE_MODE_OR_TEXT_REQUIRED"):
@@ -1912,6 +1942,29 @@ class RccIntegrationTests(unittest.TestCase):
         })
         self.assertEqual(Outcome.APPLIED, window.outcome)
         self.assertEqual(11, self.client.calls[-1]["extra"]["windowId"])
+
+    def test_rcc_native_read_commands_are_direct_public_feature_commands(self):
+        self.client.result = {"type": "host:result", "ok": True, "pong": True}
+        for command, extra in (
+            ("ping", {}),
+            ("probe-tabs", {}),
+            ("diagnose-composer", {}),
+            ("probe", {"to": "worker"}),
+            ("api-probe", {"to": "worker"}),
+            ("main-capture-get", {"to": "worker"}),
+            ("diagnose-activity", {"conversation_key": ""}),
+            ("diagnose-conversation-ui", {"conversation_key": ""}),
+            ("rename-receipt", {
+                "relay_id": "rename-read-1", "tab_id": 10,
+                "conversation_key": "6ad7f5b6-c834-83e8-9c00-ff70bab4204d",
+            }),
+        ):
+            with self.subTest(command=command):
+                outcome = self.call("native-read-" + command, {
+                    "command": command, "instance_id": "instance123", **extra,
+                })
+                self.assertEqual(Outcome.APPLIED, outcome.outcome)
+                self.assertEqual(command, self.client.calls[-1]["command"])
 
     def test_failed_read_is_not_an_unknown_browser_effect_or_live_claim(self):
         self.client.result = {"type": "host:result", "ok": False, "error": "TAB_GET_TARGET_NOT_CHATGPT"}
