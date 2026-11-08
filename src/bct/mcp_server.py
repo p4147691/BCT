@@ -11,7 +11,6 @@ from pathlib import Path
 from typing import Any, Callable, Coroutine
 
 from mcp.server.fastmcp import FastMCP, Image
-from pydantic import StrictInt
 from starlette.responses import JSONResponse
 
 from .background_operations import BACKGROUND_CAPABILITIES, launch_background_operation
@@ -3089,43 +3088,6 @@ def build_mcp(
         return value
 
     @server.tool(
-        description=("Read the latest assistant response from one exact existing RCC ChatGPT tab. "
-                     "Requires an exact Work and durable operation ID, which BCT verifies together "
-                     "with the RCC target identity before reading; "
-                     "never sends, creates, reconciles, or retries an UNKNOWN effect."),
-        structured_output=True,
-    )
-    async def bct_rcc_read_latest_assistant(
-        work_id: str, operation_id: str, instance_id: str,
-        session_id: str, tab_id: StrictInt, window_id: StrictInt,
-        conversation_key: str,
-    ) -> dict[str, Any]:
-        # The ordinary bct_browser executor deliberately seals this command.
-        # This single-purpose gateway reuses the existing Work/Operation
-        # confirmation path and RCC identity/receipt validation.
-        if not re.fullmatch(r"[a-f0-9]{32}", session_id):
-            raise ValueError("RCC_READ_LATEST_ASSISTANT_IDENTITY_REQUIRED")
-        key = conversation_key.strip().lower()
-        if not re.fullmatch(r"[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}", key):
-            raise ValueError("RCC_READ_LATEST_ASSISTANT_IDENTITY_REQUIRED")
-        if (type(tab_id) is not int or tab_id <= 0
-                or type(window_id) is not int or window_id <= 0):
-            raise ValueError("RCC_READ_LATEST_ASSISTANT_TARGET_INVALID")
-        result = await asyncio.to_thread(
-            bct.operations.run,
-            principal=principal, work_id=work_id, operation_id=operation_id,
-            capability="browser",
-            arguments={
-                "command": "read-latest-assistant",
-                "instance_id": instance_id,
-                "session_id": session_id, "tab_id": tab_id,
-                "window_id": window_id, "conversation_key": key,
-            },
-            approval_ref=None,
-        )
-        return result.as_dict()
-
-    @server.tool(
         description=("List every RCC command exposed through bct_browser, grouped by its "
                      "read, effect, reconciliation, or recovery purpose. This discovery call "
                      "does not access RCC or perform a browser effect."),
@@ -3141,6 +3103,20 @@ def build_mcp(
                          "contract. An UNKNOWN effect is never automatically replayed."),
             },
             "commands": command_catalog(),
+        }
+
+    @server.tool(
+        description=("List RCC Recipe blocks. Each block is an ordered list of public "
+                     "bct_browser command names; listing a recipe neither performs nor "
+                     "authorizes its steps."),
+        structured_output=True,
+    )
+    async def bct_rcc_recipe_catalog() -> dict[str, Any]:
+        from bct.features.rcc import recipe_catalog
+        return {
+            "tool": "bct_browser",
+            "invocation": {"required": ["work_id", "operation_id", "arguments.command"]},
+            "recipes": recipe_catalog(),
         }
 
     def make_executor(capability: str) -> Callable[..., Coroutine[Any, Any, dict[str, Any]]]:

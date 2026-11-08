@@ -85,6 +85,56 @@ def command_catalog() -> list[dict[str, str]]:
     return rows
 
 
+def recipe_catalog() -> list[dict[str, Any]]:
+    """Describe visible RCC command sequences without adding a hidden executor.
+
+    Recipes are discovery records only.  A caller invokes every listed command
+    explicitly through ``bct_browser`` and receives its own Operation receipt.
+    """
+    return [
+        {
+            "recipe": "inspect-target",
+            "purpose": "Read the current RCC endpoint and choose one exact target.",
+            "steps": ["state", "windows-list", "tab-get"],
+        },
+        {
+            "recipe": "read-latest-assistant",
+            "purpose": "Read only the latest assistant response from one exact conversation.",
+            "steps": ["state", "read-latest-assistant"],
+        },
+        {
+            "recipe": "send-existing-conversation",
+            "purpose": "Send once to an already identified conversation and read its receipt.",
+            "steps": ["state", "send-to-tab", "result"],
+        },
+        {
+            "recipe": "create-chat-and-send",
+            "purpose": "Create one tab, send its first message once, then inspect the receipt.",
+            "steps": ["create-chat-tab", "send-to-created-tab", "result"],
+        },
+        {
+            "recipe": "rename-conversation",
+            "purpose": "Confirm one target then rename it; an UNKNOWN result is reconciled, never resent.",
+            "steps": ["state", "rename-conversation", "inspect-rename-receipt", "reconcile-rename-conversation"],
+        },
+        {
+            "recipe": "arrange-tabs",
+            "purpose": "Inspect a target, then move or group exactly the selected tab.",
+            "steps": ["state", "move-tab", "create-tab-group", "add-tab-to-group"],
+        },
+        {
+            "recipe": "recover-unknown-send",
+            "purpose": "Read the original receipt and reconcile the same operation without a second send.",
+            "steps": ["result", "reconcile-send"],
+        },
+        {
+            "recipe": "reload-installed-extension",
+            "purpose": "Reload an already installed RCC payload; installation and reload remain separate effects.",
+            "steps": ["reload-extension", "state"],
+        },
+    ]
+
+
 def _target_snapshot_fingerprint(tabs: list[dict[str, Any]]) -> str:
     """Return a stable fingerprint for the RCC-visible Chrome target topology."""
     identity = sorted(

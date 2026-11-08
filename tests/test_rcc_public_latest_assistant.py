@@ -31,10 +31,19 @@ class PublicReadLatestAssistantTests(unittest.IsolatedAsyncioTestCase):
             "conversation_key": "12345678-1234-1234-1234-123456789abc",
         }
 
-    async def test_exact_read_uses_existing_work_operation_confirmation(self):
+    async def test_exact_read_is_a_direct_public_browser_command(self):
         tools = {t.name for t in await self.server.list_tools()}
-        self.assertIn("bct_rcc_read_latest_assistant", tools)
-        await self.server.call_tool("bct_rcc_read_latest_assistant", self.args)
+        self.assertIn("bct_browser", tools)
+        await self.server.call_tool("bct_browser", {
+            "work_id": self.args["work_id"], "operation_id": self.args["operation_id"],
+            "arguments": {
+                "command": "read-latest-assistant",
+                "instance_id": self.args["instance_id"],
+                "session_id": self.args["session_id"], "tab_id": self.args["tab_id"],
+                "window_id": self.args["window_id"],
+                "conversation_key": self.args["conversation_key"],
+            },
+        })
         self.assertEqual(len(self.operations.calls), 1)
         call = self.operations.calls[0]
         self.assertEqual(call["capability"], "browser")
@@ -47,16 +56,20 @@ class PublicReadLatestAssistantTests(unittest.IsolatedAsyncioTestCase):
             "conversation_key": "12345678-1234-1234-1234-123456789abc",
         })
 
-    async def test_invalid_identity_fails_before_operation(self):
+    async def test_generic_browser_passes_identity_to_the_rcc_feature(self):
         for field, value in (
             ("session_id", "invalid"), ("conversation_key", "shared-link"),
             ("tab_id", 0), ("tab_id", True), ("window_id", -1),
         ):
             with self.subTest(field=field, value=value):
-                with self.assertRaises(Exception):
-                    await self.server.call_tool(
-                        "bct_rcc_read_latest_assistant", {**self.args, field: value})
-        self.assertEqual(self.operations.calls, [])
+                arguments = {key: value for key, value in self.args.items()
+                             if key not in {"work_id", "operation_id"}}
+                arguments[field] = value
+                await self.server.call_tool("bct_browser", {
+                    "work_id": self.args["work_id"], "operation_id": self.args["operation_id"],
+                    "arguments": {"command": "read-latest-assistant", **arguments},
+                })
+        self.assertEqual(len(self.operations.calls), 5)
 
     async def test_work_confirmation_failure_has_no_fallback_or_replay(self):
         def deny(**kwargs):
@@ -64,7 +77,13 @@ class PublicReadLatestAssistantTests(unittest.IsolatedAsyncioTestCase):
             raise PermissionError("WORK_SCOPE_DENIED")
         self.operations.run = deny
         with self.assertRaises(Exception):
-            await self.server.call_tool("bct_rcc_read_latest_assistant", self.args)
+            await self.server.call_tool("bct_browser", {
+                "work_id": self.args["work_id"], "operation_id": self.args["operation_id"],
+                "arguments": {"command": "read-latest-assistant", **{
+                    key: value for key, value in self.args.items()
+                    if key not in {"work_id", "operation_id"}
+                }},
+            })
         self.assertEqual(len(self.operations.calls), 1)
 
     async def test_generic_browser_exposes_rcc_catalogue_without_bypassing_validation(self):
@@ -74,12 +93,23 @@ class PublicReadLatestAssistantTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn({"command": "read-latest-assistant", "category": "read"}, catalogue_value["commands"])
         tools = {t.name for t in await self.server.list_tools()}
         self.assertIn("bct_rcc_command_catalog", tools)
+        self.assertIn("bct_rcc_recipe_catalog", tools)
         self.assertIn("bct_browser", tools)
         await self.server.call_tool("bct_browser", {
             "work_id": "W", "operation_id": "generic-read",
             "arguments": {"command": "state", "instance_id": "instance"},
         })
         self.assertEqual(self.operations.calls[-1]["arguments"]["command"], "state")
+
+    async def test_recipe_catalog_names_direct_browser_steps(self):
+        recipes = await self.server.call_tool("bct_rcc_recipe_catalog", {})
+        value = json.loads(recipes[0][0].text)
+        by_name = {item["recipe"]: item for item in value["recipes"]}
+        self.assertEqual(
+            by_name["read-latest-assistant"]["steps"],
+            ["state", "read-latest-assistant"],
+        )
+        self.assertIn("reconcile-send", by_name["recover-unknown-send"]["steps"])
 
 
 if __name__ == "__main__":
