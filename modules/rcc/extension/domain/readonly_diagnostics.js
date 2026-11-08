@@ -8,12 +8,16 @@ async function handleNativeCommand(message) {
   await endpointSessionReady;
   if (message?.type !== 'host:command') return;
   const requestId = String(message.requestId || crypto.randomUUID());
-  const commandDecision = RccLegacyCommandPolicy.nativeCommand(message.command);
+  const wireCommand = String(message.command || '');
+  const commandDecision = RccLegacyCommandPolicy.nativeCommand(wireCommand);
   if (!commandDecision.allowed) {
     postNative({ type: 'host:result', requestId, ok: false, effectState: 'NOT_APPLIED',
-      error: RccLegacyCommandPolicy.rejectCode('NATIVE_COMMAND', message.command, commandDecision) });
+      error: RccLegacyCommandPolicy.rejectCode('NATIVE_COMMAND', wireCommand, commandDecision) });
     return;
   }
+  // The public native protocol is `rcc_*`.  Keep the old spelling only as a
+  // local compatibility detail for the established domain service calls.
+  message = { ...message, command: RccLegacyCommandPolicy.toLegacyNativeCommand(wireCommand) };
   try {
     if (message.command === 'node-label-notify') {
           const result = await notifyNodeFaviconChanged(message, requestId);

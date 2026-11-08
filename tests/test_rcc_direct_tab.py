@@ -51,7 +51,7 @@ class DirectTabPrepareTests(unittest.TestCase):
         self.feature.client=good
         result=self.feature.execute(request)
         self.assertEqual(Outcome.APPLIED,result.outcome)
-        self.assertEqual("send-to-tab",good.calls[0]["command"])
+        self.assertEqual("rcc_send_to_tab",good.calls[0]["command"])
         self.assertEqual("bounded-work",good.calls[0]["extra"]["workId"])
         bad=FakeHost(wrong=True)
         self.feature.client=bad

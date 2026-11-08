@@ -12,6 +12,8 @@ const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'u
 
 for (const command of ['simple-relay-bind', 'simple-relay-send', 'simple-relay-return', 'new-chat-send', 'rename-conversation', 'conversation-bind', 'send-to-tab', 'send', 'presence', 'state', 'result', 'probe-tabs', 'delivery-response-read', 'create-chat-tab', 'create-chat-window', 'send-to-created-tab', 'move-tab', 'create-tab-group', 'add-tab-to-group', 'remove-tab-from-group', 'move-tab-group', 'update-tab-group', 'tab-get', 'windows-list', 'window-get', 'tab-groups-list', 'tab-group-get', 'read-latest-assistant']) {
   assert.equal(policy.nativeCommand(command).allowed, true, command);
+  assert.equal(policy.nativeCommand(`rcc_${command.replaceAll('-', '_')}`).allowed, true, `rcc_${command}`);
+  assert.equal(policy.toPublicNativeCommand(command), `rcc_${command.replaceAll('-', '_')}`);
 }
 assert.deepEqual(policy.nativeCommand('send'), { allowed: true, kind: 'ORCHESTRATION' });
 assert.deepEqual(policy.nativeCommand('send-to-tab'), { allowed: true, kind: 'EXACT_TAB' });
@@ -34,8 +36,8 @@ assert.equal(policy.nativeCommand('unknown').allowed, false);
 assert.equal(policy.runtimeMessage('relay:unknown').allowed, false);
 assert(loader.includes("importScripts('legacy/command_policy.js');"));
 const nativeHandler = nativeCommands.split('async function handleNativeCommand(message) {')[1];
-assert(nativeHandler.includes('RccLegacyCommandPolicy.nativeCommand(message.command)'));
-assert(nativeHandler.indexOf('RccLegacyCommandPolicy.nativeCommand(message.command)')
+assert(nativeHandler.includes('RccLegacyCommandPolicy.nativeCommand(wireCommand)'));
+assert(nativeHandler.indexOf('RccLegacyCommandPolicy.nativeCommand(wireCommand)')
   < nativeHandler.indexOf("message.command === 'simple-relay-send'"));
 for (const command of ['create-chat-tab', 'create-chat-window', 'send-to-created-tab', 'move-tab', 'create-tab-group', 'add-tab-to-group', 'remove-tab-from-group', 'move-tab-group', 'update-tab-group', 'tab-get', 'windows-list', 'window-get', 'tab-groups-list', 'tab-group-get', 'read-latest-assistant']) {
   assert(nativeHandler.includes(`message.command === '${command}'`), `${command} must have an active handler`);

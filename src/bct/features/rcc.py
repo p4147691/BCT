@@ -336,6 +336,17 @@ class BrowserFeature:
         self._target_epochs: dict[tuple[str, str], str] = {}
         self._target_snapshots: dict[tuple[str, str], str] = {}
 
+    def _request_rcc(self, **kwargs: Any) -> dict[str, Any]:
+        """Send the canonical RCC wire command while retaining legacy core logic.
+
+        ``prepare`` stores the long-standing internal command spelling so its
+        receipt and recovery rules remain stable.  The extension boundary is
+        the one place that must speak the versioned ``rcc_*`` protocol.
+        """
+        command = str(kwargs.get("command") or "")
+        kwargs["command"] = _RCC_NATIVE_TO_PUBLIC_COMMAND.get(command, command)
+        return self.client.request(**kwargs)
+
     def _self_attachment(
         self, *, work: Work, instance_id: str, orchestration_session_id: object,
         node_id: object,
@@ -387,7 +398,7 @@ class BrowserFeature:
         probe_id = "self-idle." + hashlib.sha256(request_id.encode("utf-8")).hexdigest()[:32]
         while True:
             try:
-                observed = self.client.request(
+                observed = self._request_rcc(
                     instance_id=values["instance_id"], request_id=probe_id,
                     command="state", timeout_s=min(2.0, max(0.1, deadline - time.monotonic())),
                 )
@@ -527,7 +538,7 @@ class BrowserFeature:
         claim, so an expired/wrong transport reference cannot become UNKNOWN.
         """
         try:
-            response = self.client.request(
+            response = self._request_rcc(
                 instance_id=instance_id, request_id=request_id, command="state",
                 timeout_s=2.0,
             )
@@ -1697,7 +1708,7 @@ class BrowserFeature:
             })
 
         try:
-            result = self.client.request(
+            result = self._request_rcc(
                 instance_id=values["instance_id"],
                 request_id=request.operation_id,
                 command=command,
@@ -2003,7 +2014,7 @@ class BrowserFeature:
         # terminal timeout into a transport-level UNKNOWN at the same instant.
         response_timeout_ms = max(15000, int((float(values["timeout_s"]) - 2.0) * 1000))
         try:
-            result = self.client.request(
+            result = self._request_rcc(
                 instance_id=instance_id,
                 request_id=request.operation_id,
                 command="new-chat-send",
@@ -2223,7 +2234,7 @@ class BrowserFeature:
                     "RCC_DRAFT_RETIRE_SUPERSEDED_IDENTITY_INVALID", release_claims=True,
                 )
             try:
-                result = self.client.request(
+                result = self._request_rcc(
                     instance_id=values["instance_id"], request_id=request.operation_id,
                     command="retire-composer-draft", extra=extra,
                     timeout_s=values["timeout_s"],
@@ -2281,7 +2292,7 @@ class BrowserFeature:
                     "RCC_RECOVERED_RETIRE_IDENTITY_INVALID", release_claims=True,
                 )
             try:
-                result = self.client.request(
+                result = self._request_rcc(
                     instance_id=values["instance_id"], request_id=request.operation_id,
                     command="retire-recovered-execution", extra=extra,
                     timeout_s=values["timeout_s"],
@@ -2325,7 +2336,7 @@ class BrowserFeature:
             # Duplicate operation IDs never reach execute, so neither this
             # probe nor the reload is repeated.
             try:
-                state_reply = self.client.request(
+                state_reply = self._request_rcc(
                     instance_id=values["instance_id"],
                     request_id="rcc-reload-idle-" + hashlib.sha256(
                         request.operation_id.encode("utf-8")
@@ -2426,7 +2437,7 @@ class BrowserFeature:
                 (_RECONCILE_COMMANDS | {"result-of-create-and-send"})
                 else values["command"]
             )
-            result = self.client.request(
+            result = self._request_rcc(
                 instance_id=values["instance_id"], request_id=request.operation_id,
                 command=host_command, to=values["to"], text=values["text"],
                 extra=({} if values["command"] == "reconcile-send" else extra),
@@ -2730,7 +2741,7 @@ class BrowserFeature:
                 remaining = deadline - time.monotonic()
                 readback_attempts += 1
                 try:
-                    terminal = self.client.request(
+                    terminal = self._request_rcc(
                         instance_id=values["instance_id"], request_id=readback_id,
                         command="result", text=request.operation_id,
                         timeout_s=max(0.1, min(2.0, remaining)),
