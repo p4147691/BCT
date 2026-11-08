@@ -25,6 +25,12 @@ Chat·Work·Codex에서 같은 BCT 연결을 쓰면 같은 설명서와 도구 �
   고정 횟수만으로 왕복하지 않는다. 응답 감시는 BCT 백그라운드가 담당하므로 A가 붙잡혀 기다리지 않는다.
 - BA/CA를 받은 A: 정확한 반환 Task/generation으로 Chain Message의 prepare에 다시 들어가
   현재 상태와 방향을 재검토한다. 필요한 병합·배포·E2E는 Supervisor에게 별도 지시한다.
+- B/C가 관찰·진단·수정·검증의 추가 작업을 제안할 때는 `bct_chain_branch(action="request")`에
+  현재 Root Work, 부모 Direction/단계, Task/generation, 이유와 정확한 영수증 참조를 남긴다.
+  이는 **자식 지시나 전송을 만들지 않는 보고**다. A만 일반 `bct_set_direction(...,
+  branch_request_id=...)`으로 이를 채택하고, 저장 뒤에는 반드시 그 Direction의 Chain Recipe를
+  시작한다. `bct_chain_branch(action="tree")`와 `bct_status`의 주의 목록은 이 연결과 다음
+  안전 단계를 읽을 뿐 판단·전송하지 않는다.
 - 사용법이 불명확하면 `bct_capabilities(tool_name="사용할 실제 명령")`으로 현재 입력 계약을 읽고,
   `query="필요한 기능"`으로 부품을 찾는다. 전체 설명서는
   `bct_capabilities(include_manual=true)`이며 로컬 파일 접근 없이 일반 Chat에서도 읽을 수 있다.
@@ -105,6 +111,23 @@ B/C/X/S가 자기 범위의 구체적인 계획을 세움
  source_kind="MANAGER_RETURN", source_task_id=..., source_generation=...) 재호출
 현재 현실부터 다시 읽고 다음 방향을 판단
 ```
+
+### 추가 분기와 원래 체인 복귀
+
+```text
+원래 B Direction의 정확한 Task/generation
+  └─ B의 branch request (관찰/진단/수정/검증; 전송 없음)
+       └─ A가 채택한 BA Direction → 일반 Chain Recipe → BA 결과
+            ├─ 필요하면 같은 방식으로 BAA/BBB 요청과 채택
+            └─ A가 원래 B Direction의 `RESUME` Direction을 저장 → 일반 Chain Recipe 재시작
+```
+
+각 노드는 Root Work, 부모 Work/Direction/Recipe 단계, 종류, 시작 이유, Task·Operation·전송
+영수증·대화 UUID 참조, 현재 상태·근거·다음 안전 단계를 보존한다. `READY`, `IN_PROGRESS`,
+`WAITING_INPUT`, `WAITING_EXTERNAL`, `IDENTITY_MISMATCH`, `CHECK_FAILED`, `NOT_APPLIED`,
+`UNKNOWN`, `BLOCKED`, `COMPLETED`를 구분한다. 독립된 형제는 진행을 계속할 수 있지만, A는
+필수 자식이 해결·명시적 완료·차단 처리되기 전 Root를 완료로 표시하지 않는다. `UNKNOWN`은
+항상 같은 영수증으로만 조정하며 새 메시지나 대체 Operation을 재전송하지 않는다.
 
 하나의 도구 호출이 A와 대상 노드의 여러 AI 턴을 내부에서 대신 실행한다는 뜻이 아니다.
 입구가 조회와 질문 제공을 호출하고, **호출한 AI가 판단 결과로 다음 단계를 진행**한다.
@@ -315,6 +338,7 @@ A는 `COMPLETE`, `NEW_TASK`, `ASK_USER`, `HOLD`를 판단한다. NEW_TASK가 메
 | `bct_check_conversation_network` | 현재 관찰과 저장된 망 정보를 함께 점검. 조회가 망 변경을 뜻하지 않음 |
 | `bct_set_conversation_network` | A가 결정한 망·역할·Node Info 변경을 기존 계약으로 적용 |
 | `bct_set_direction` / `bct_get_direction` | A 내부 질문·판단·정제된 지시의 준비/저장과 조회 |
+| `bct_chain_branch` | Worker의 연결된 분기 요청/상태 보고와 Root Work 트리 조회. 요청은 전송하지 않으며 A가 Direction으로 채택해야 한다. |
 | `bct_set_execute_plan` / `bct_get_execute_plan` | 수신 대상이 생각한 세부 계획의 결합·저장과 조회. 계획 문장 자체를 실행하지 않음 |
 | `bct_send_delayed_message` | 해당 작업의 응답 완료를 백그라운드에서 기다린 뒤 SELF/MANAGER 후속 지시를 전달하도록 등록 |
 | `bct_context` | 특정 작업·회차의 이전 응답 증거, SELF/MANAGER 결정과 이어가기 기록 조회. 조회 자체는 감시하거나 전송하지 않음 |

@@ -266,6 +266,7 @@ class ChainDirectionPublicTests(unittest.IsolatedAsyncioTestCase):
             names = {tool.name for tool in await mcp.list_tools()}
             self.assertTrue({
                 "bct_set_direction", "bct_get_direction",
+                "bct_chain_branch",
                 "bct_set_execute_plan", "bct_update_execute_plan", "bct_get_execute_plan",
                 "bct_set_project_plan", "bct_get_conversation_network",
                 "bct_prepare_supervisor_chain",
