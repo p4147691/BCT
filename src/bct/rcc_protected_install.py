@@ -76,6 +76,13 @@ RENAME_RESILIENCE_ROLLBACK = RENAME_RESILIENCE_ROOT / "rollback_installed_1_0_64
 RENAME_RESILIENCE_MANIFEST = RENAME_RESILIENCE_ROOT / "release_manifest_rename_resilience_immutable.json"
 RENAME_RESILIENCE_MANIFEST_SHA256 = "0900acea83f116831b0c52556a1b66d53a2f7bcd7962c50dba3ee6d62071177f"
 RENAME_RESILIENCE_JOURNAL = Path(r"D:\BCT\runtime\backups\rcc-guarded-install-rename-resilience")
+COMMAND_NAMESPACE_ROOT = Path(r"D:\BCT\data\RCC_COMMAND_NAMESPACE_20261108_R4")
+COMMAND_NAMESPACE_STAGE = COMMAND_NAMESPACE_ROOT / "candidate_1_0_66_exact"
+COMMAND_NAMESPACE_ROLLBACK = COMMAND_NAMESPACE_ROOT / "rollback_installed_1_0_65"
+COMMAND_NAMESPACE_MANIFEST = COMMAND_NAMESPACE_ROOT / "release_manifest_command_namespace_immutable.json"
+# Filled from the immutable release artifact before this route is merged.
+COMMAND_NAMESPACE_MANIFEST_SHA256 = "a2dab10f4703bd8aca26943c359be598d263f2d37a787f998a6fcd3517579ce1"
+COMMAND_NAMESPACE_JOURNAL = Path(r"D:\BCT\runtime\backups\rcc-guarded-install-command-namespace")
 EXTENSION_ID = "ocbidbaplechjjdacmokhnfbdmgjkphf"
 OP_ID = re.compile(r"[A-Za-z0-9_.-]{1,80}\Z")
 
@@ -203,7 +210,7 @@ def _plan(operation_id: str, *, live: Path, candidate: Path, backup_source: Path
     baseline_version = installed_version or ("1.0.59" if rollback["fileCount"] == 57 else "1.0.60")
     if _identity(live) != (EXTENSION_ID, baseline_version):
         raise PreconditionError("RCC_INSTALL_LIVE_IDENTITY_MISMATCH")
-    if candidate_version not in {"1.0.60", "1.0.61", "1.0.63", "1.0.64", "1.0.65"}:
+    if candidate_version not in {"1.0.60", "1.0.61", "1.0.63", "1.0.64", "1.0.65", "1.0.66"}:
         raise PreconditionError("RCC_INSTALL_CANDIDATE_VERSION_UNSUPPORTED")
     if _identity(candidate) != (EXTENSION_ID, candidate_version):
         raise PreconditionError("RCC_INSTALL_CANDIDATE_IDENTITY_MISMATCH")
