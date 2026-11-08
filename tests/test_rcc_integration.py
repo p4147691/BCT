@@ -135,10 +135,10 @@ class RccIntegrationTests(unittest.TestCase):
         self.assertTrue(result.evidence["no_resend"])
         self.assertTrue(self.call("generic-roster-recover", recover).duplicate)
         self.assertEqual(1, len([
-            c for c in self.client.calls if c["command"] == "send"
+            c for c in self.client.calls if c["command"] == "rcc_send_message"
         ]))
         self.assertEqual(1, len([
-            c for c in self.client.calls if c["command"] == "result"
+            c for c in self.client.calls if c["command"] == "rcc_get_operation_result"
         ]))
         db = self.bct.store._connect()
         try:
@@ -181,7 +181,7 @@ class RccIntegrationTests(unittest.TestCase):
         self.assertEqual(Outcome.FAILED, rejected.outcome)
         self.assertEqual("RCC_GENERIC_SEND_RECEIPT_NOT_PROVEN", rejected.error)
         self.assertEqual(1, len([
-            c for c in self.client.calls if c["command"] == "send"
+            c for c in self.client.calls if c["command"] == "rcc_send_message"
         ]))
         db = self.bct.store._connect()
         try:
@@ -261,7 +261,7 @@ class RccIntegrationTests(unittest.TestCase):
         })
         self.assertEqual(Outcome.APPLIED, successor.outcome)
         self.assertEqual(
-            ["send", "send"],
+            ["rcc_send_message", "rcc_send_message"],
             [call["command"] for call in self.client.calls],
         )
         original = self.bct.store.get_operation_for(
@@ -339,7 +339,7 @@ class RccIntegrationTests(unittest.TestCase):
         })
         self.assertEqual(Outcome.APPLIED, result.outcome)
         self.assertEqual("original-send", self.client.calls[-1]["text"])
-        self.assertEqual("result", self.client.calls[-1]["command"])
+        self.assertEqual("rcc_get_operation_result", self.client.calls[-1]["command"])
         with self.assertRaisesRegex(PreconditionError, "RCC_RESULT_INSTANCE_MISMATCH"):
             self.call("wrong-instance", {
                 "command": "result", "instance_id": "otherinstance", "relay_id": "original-send",
@@ -386,7 +386,7 @@ class RccIntegrationTests(unittest.TestCase):
             "instance_id": "instance123", "relay_id": "unknown-bootstrap",
         })
         self.assertEqual(Outcome.APPLIED, reconciled.outcome)
-        self.assertEqual("result", self.client.calls[-1]["command"])
+        self.assertEqual("rcc_get_operation_result", self.client.calls[-1]["command"])
         self.assertEqual("unknown-bootstrap", self.client.calls[-1]["text"])
         self.assertEqual(
             "unknown-bootstrap", reconciled.evidence["reconciled_operation_id"]
@@ -475,9 +475,9 @@ class RccIntegrationTests(unittest.TestCase):
             "text": "one request",
         })
         self.assertEqual(Outcome.UNKNOWN, sent.outcome)
-        dispatches = [c for c in self.client.calls if c["command"] != "state"]
+        dispatches = [c for c in self.client.calls if c["command"] != "rcc_get_extension_state"]
         self.assertEqual(1, len(dispatches))
-        self.assertEqual("send-to-tab", dispatches[0]["command"])
+        self.assertEqual("rcc_send_message_to_tab", dispatches[0]["command"])
         self.assertEqual("send-message-once", dispatches[0]["request_id"])
         duplicate = self.call("send-message-once", {
             "command": "send-message", "instance_id": "instance123",
@@ -486,7 +486,7 @@ class RccIntegrationTests(unittest.TestCase):
             "text": "one request",
         })
         self.assertTrue(duplicate.duplicate)
-        self.assertEqual(1, len([c for c in self.client.calls if c["command"] != "state"]))
+        self.assertEqual(1, len([c for c in self.client.calls if c["command"] != "rcc_get_extension_state"]))
 
     def test_send_message_wrong_target_rejects_before_send(self):
         self.client.target_state = self._target_state(
@@ -498,7 +498,7 @@ class RccIntegrationTests(unittest.TestCase):
             "session_id": "a" * 32, "tab_id": 12, "window_id": 11,
             "conversation_key": "", "text": "no send",
         })
-        self.assertEqual([], [c for c in self.client.calls if c["command"] != "state"])
+        self.assertEqual([], [c for c in self.client.calls if c["command"] != "rcc_get_extension_state"])
 
     def test_send_message_creation_without_receipt_rejected(self):
         self.client.target_state = self._target_state(
@@ -533,9 +533,9 @@ class RccIntegrationTests(unittest.TestCase):
             "create_operation_id": "create-send-target", "text": "one",
         })
         self.assertEqual(Outcome.APPLIED, sent.outcome)
-        submits = [c for c in self.client.calls if c["command"] != "state"]
+        submits = [c for c in self.client.calls if c["command"] != "rcc_get_extension_state"]
         self.assertEqual(1, len(submits))
-        self.assertEqual("send-to-created-tab", submits[0]["command"])
+        self.assertEqual("rcc_send_message_to_created_tab", submits[0]["command"])
 
     def test_send_message_ambiguous_creation_and_uuid_rejected(self):
         with self.assertRaises(PreconditionError):
@@ -814,7 +814,7 @@ class RccIntegrationTests(unittest.TestCase):
             result.evidence["host_state"],
         )
         self.assertEqual(
-            ["send-to-created-tab", "result", "result"],
+            ["rcc_send_message_to_created_tab", "rcc_get_operation_result", "rcc_get_operation_result"],
             [call["command"] for call in self.client.calls],
         )
         self.assertEqual("send-readback", self.client.calls[1]["text"])
@@ -837,7 +837,7 @@ class RccIntegrationTests(unittest.TestCase):
         })
         self.assertEqual(Outcome.UNKNOWN, result.outcome)
         self.assertEqual(
-            ["send-to-created-tab", "result"],
+            ["rcc_send_message_to_created_tab", "rcc_get_operation_result"],
             [call["command"] for call in self.client.calls],
         )
 
@@ -875,7 +875,7 @@ class RccIntegrationTests(unittest.TestCase):
         self.assertEqual({"tab", "window"}, {target["target_kind"] for target in targets})
         self.assertTrue(all(str(target["target_ref"]).startswith("rcc-target-v1.")
                             for target in targets))
-        self.assertEqual(["state"], [call["command"] for call in self.client.calls])
+        self.assertEqual(["rcc_get_extension_state"], [call["command"] for call in self.client.calls])
 
     def test_target_discovery_rejects_raw_chrome_id_shape(self):
         self.client.target_state = {
@@ -911,7 +911,7 @@ class RccIntegrationTests(unittest.TestCase):
                 "command": "create-and-send", "instance_id": "instance123",
                 "mode": "tab", "target_ref": target_ref, "text": "never send",
             })
-        self.assertEqual(["state"], [call["command"] for call in self.client.calls])
+        self.assertEqual(["rcc_get_extension_state"], [call["command"] for call in self.client.calls])
         with self.assertRaises(KeyError):
             self.bct.store.get_operation_for(
                 operation_id="stale-target-rejected", work_id="rcc-work", principal_id="codex",
@@ -925,7 +925,7 @@ class RccIntegrationTests(unittest.TestCase):
                 "command": "create-and-send", "instance_id": "instance123",
                 "mode": "tab", "target_ref": target_ref, "text": "never send",
             })
-        self.assertEqual(["state"], [call["command"] for call in self.client.calls])
+        self.assertEqual(["rcc_get_extension_state"], [call["command"] for call in self.client.calls])
 
     def test_create_and_send_tab_returns_exact_terminal_result_in_one_call(self):
         self.client.result = self._new_chat_result("compose-tab")
@@ -938,7 +938,7 @@ class RccIntegrationTests(unittest.TestCase):
             "mode": "tab", "target_ref": target_ref, "text": "hello", "timeout_s": 120})
         self.assertEqual(Outcome.APPLIED, first.outcome)
         self.assertTrue(duplicate.duplicate)
-        self.assertEqual(["state", "new-chat-send", "state"], [c["command"] for c in self.client.calls])
+        self.assertEqual(["rcc_get_extension_state", "rcc_create_chat_and_send_message", "rcc_get_extension_state"], [c["command"] for c in self.client.calls])
         self.assertEqual("compose-tab", self.client.calls[1]["request_id"])
         self.assertEqual(11, self.client.calls[1]["extra"]["windowId"])
         self.assertEqual(118000, self.client.calls[1]["extra"]["responseTimeoutMs"])
@@ -954,7 +954,7 @@ class RccIntegrationTests(unittest.TestCase):
         })
         self.assertEqual(Outcome.APPLIED, result.outcome)
         self.assertEqual("new-chat-send", result.evidence["command"])
-        self.assertEqual("new-chat-send", self.client.calls[-1]["command"])
+        self.assertEqual("rcc_create_chat_and_send_message", self.client.calls[-1]["command"])
 
     def test_conversation_bind_uses_exact_identity_and_receipt(self):
         self.client.result = {"type": "host:result", "ok": True, "binding": {
@@ -970,7 +970,7 @@ class RccIntegrationTests(unittest.TestCase):
         })
         self.assertEqual(Outcome.APPLIED, result.outcome)
         request = self.client.calls[-1]
-        self.assertEqual("conversation-bind", request["command"])
+        self.assertEqual("rcc_bind_conversation_to_node", request["command"])
         self.assertEqual("instance123", request["extra"]["instanceId"])
         self.assertEqual("session1", request["extra"]["sessionId"])
         self.assertEqual(10, request["extra"]["tabId"])
@@ -1003,13 +1003,13 @@ class RccIntegrationTests(unittest.TestCase):
             "mode":"tab","target_ref":target_ref,"text":"hello"})
         self.assertEqual(Outcome.UNKNOWN,result.outcome)
         self.assertTrue(duplicate.duplicate)
-        self.assertEqual(1,sum(c["command"]=="new-chat-send" for c in self.client.calls))
+        self.assertEqual(1,sum(c["command"]=="rcc_create_chat_and_send_message" for c in self.client.calls))
         self.client.result = self._new_chat_result("compose-successor")
         successor = self.call("compose-successor", {"command":"create-and-send",
                                "instance_id":"instance123","mode":"tab",
                                "target_ref":target_ref,"text":"new instruction"})
         self.assertEqual(Outcome.APPLIED, successor.outcome)
-        self.assertEqual(2, sum(c["command"] == "new-chat-send" for c in self.client.calls))
+        self.assertEqual(2, sum(c["command"] == "rcc_create_chat_and_send_message" for c in self.client.calls))
 
     def _legacy_missing_instance_claim(self, operation_id="legacy-create-window"):
         self.client.result = {"type": "host:result", "ok": False}
@@ -1046,7 +1046,7 @@ class RccIntegrationTests(unittest.TestCase):
         })
         self.assertEqual(Outcome.APPLIED, fresh.outcome)
         self.assertEqual(
-            ["create-chat-window", "state", "new-chat-send"],
+            ["rcc_create_chat_window", "rcc_get_extension_state", "rcc_create_chat_and_send_message"],
             [call["command"] for call in self.client.calls],
         )
         original = self.bct.store.get_operation_for(
@@ -1103,7 +1103,7 @@ class RccIntegrationTests(unittest.TestCase):
             "command": "create-and-send", "instance_id": "instance123",
             "mode": "tab", "target_ref": target_ref, "text": "hello"})
         self.assertEqual(Outcome.UNKNOWN, result.outcome)
-        self.assertEqual(["state", "new-chat-send"], [c["command"] for c in self.client.calls])
+        self.assertEqual(["rcc_get_extension_state", "rcc_create_chat_and_send_message"], [c["command"] for c in self.client.calls])
 
     def _terminal_mismatch_original(self, operation_id="handoff-terminal-mismatch"):
         wrong = self._new_chat_result(operation_id)
@@ -1143,7 +1143,7 @@ class RccIntegrationTests(unittest.TestCase):
         })
         self.assertEqual(Outcome.APPLIED, successor.outcome)
         self.assertEqual(
-            ["state", "new-chat-send", "state", "new-chat-send"],
+            ["rcc_get_extension_state", "rcc_create_chat_and_send_message", "rcc_get_extension_state", "rcc_create_chat_and_send_message"],
             [call["command"] for call in self.client.calls],
         )
         original = self.bct.store.get_operation_for(
@@ -1179,7 +1179,7 @@ class RccIntegrationTests(unittest.TestCase):
         })
         self.assertEqual(Outcome.APPLIED, successor.outcome)
         self.assertEqual(
-            ["state", "new-chat-send", "state", "new-chat-send"],
+            ["rcc_get_extension_state", "rcc_create_chat_and_send_message", "rcc_get_extension_state", "rcc_create_chat_and_send_message"],
             [call["command"] for call in self.client.calls],
         )
 
@@ -1206,9 +1206,9 @@ class RccIntegrationTests(unittest.TestCase):
         self.assertTrue(reconciled.evidence["no_resend"])
         self.assertEqual(receipt["resultHash"], reconciled.evidence["result_hash"])
         self.assertEqual(1, sum(
-            call["command"] == "new-chat-send" for call in self.client.calls
+            call["command"] == "rcc_create_chat_and_send_message" for call in self.client.calls
         ))
-        self.assertEqual("result", self.client.calls[-1]["command"])
+        self.assertEqual("rcc_get_operation_result", self.client.calls[-1]["command"])
         self.assertEqual("compose-reconcile", self.client.calls[-1]["text"])
         original_after = self.bct.store.get_operation_for(
             operation_id="compose-reconcile", work_id="rcc-work", principal_id="codex",
@@ -1385,7 +1385,7 @@ class RccIntegrationTests(unittest.TestCase):
             "tab_id": 114, "conversation_key": "conv-abc", "title": "새 제목",
         })
         self.assertEqual(Outcome.APPLIED, recovered.outcome)
-        self.assertEqual("rename-receipt", self.client.calls[-1]["command"])
+        self.assertEqual("rcc_get_conversation_rename_evidence", self.client.calls[-1]["command"])
         again = self.call("rename-reconcile-applied", {
             "command": "reconcile-rename-conversation", "instance_id": "instance123",
             "relay_id": "original-legacy", "session_id": "session-original",
@@ -1413,7 +1413,7 @@ class RccIntegrationTests(unittest.TestCase):
             "conversation_key": "conv-abc",
         })
         self.assertEqual(Outcome.APPLIED, inspected.outcome)
-        self.assertEqual("rename-receipt", self.client.calls[-1]["command"])
+        self.assertEqual("rcc_get_conversation_rename_evidence", self.client.calls[-1]["command"])
         self.assertTrue(inspected.evidence["receipt_found"])
         db = self.bct.store._connect()
         try:
@@ -1602,7 +1602,7 @@ class RccIntegrationTests(unittest.TestCase):
         self.client.result = self._missing_rename_receipt_observation(original_id)
         quarantined = self.call("operator-quarantine", self._operator_quarantine_args(original_id))
         self.assertEqual(Outcome.APPLIED, quarantined.outcome)
-        self.assertEqual("rename-receipt", self.client.calls[-1]["command"])
+        self.assertEqual("rcc_get_conversation_rename_evidence", self.client.calls[-1]["command"])
         self.assertEqual("OPERATOR_QUARANTINE_NOT_RECONCILIATION",
                          quarantined.evidence["audit_kind"])
         original = self.bct.store.get_operation_for(
@@ -1738,7 +1738,7 @@ class RccIntegrationTests(unittest.TestCase):
         self.assertTrue(duplicate.duplicate)
         # The duplicate never re-dispatches or probes a Claim. Operation ID
         # receipts, not Claims, are the idempotency boundary.
-        self.assertEqual(["create-chat-window"],
+        self.assertEqual(["rcc_create_chat_window"],
                          [call["command"] for call in self.client.calls])
 
     def test_unavailable_before_dispatch_is_failed_confirmed(self):
@@ -1797,7 +1797,7 @@ class RccIntegrationTests(unittest.TestCase):
             "BCT_DIRECT_TEST_20261019_OK",
             read.output["result"]["result"]["reply"],
         )
-        self.assertEqual("result", self.client.calls[-1]["command"])
+        self.assertEqual("rcc_get_operation_result", self.client.calls[-1]["command"])
         self.assertEqual(direct_id, self.client.calls[-1]["text"])
         self.assertTrue(self.call("direct-tab-result-once", {
             "command": "result", "instance_id": "instance123",
@@ -1865,7 +1865,7 @@ class RccIntegrationTests(unittest.TestCase):
             "color": "blue", "collapsed": False,
         })
         self.assertEqual(Outcome.APPLIED, created.outcome)
-        self.assertEqual("create-tab-group", self.client.calls[-1]["command"])
+        self.assertEqual("rcc_create_tab_group_from_tabs", self.client.calls[-1]["command"])
         self.assertEqual([10, 12], self.client.calls[-1]["extra"]["tabIds"])
         self.assertEqual("instance123", self.client.calls[-1]["extra"]["instanceId"])
 
@@ -1894,11 +1894,11 @@ class RccIntegrationTests(unittest.TestCase):
         }
         confirmed = self.call("close-confirmed-1", identity)
         self.assertEqual(Outcome.APPLIED, confirmed.outcome)
-        self.assertEqual("close-conversation-tab", self.client.calls[-1]["command"])
+        self.assertEqual("rcc_close_conversation_tab", self.client.calls[-1]["command"])
         self.assertEqual("instance123", self.client.calls[-1]["extra"]["instanceId"])
         self.assertTrue(self.call("close-confirmed-1", identity).duplicate)
         self.assertEqual(1, len([
-            call for call in self.client.calls if call["command"] == "close-conversation-tab"
+            call for call in self.client.calls if call["command"] == "rcc_close_conversation_tab"
         ]))
 
         with self.assertRaisesRegex(PreconditionError, "RCC_CLOSE_CONVERSATION_IDENTITY_REQUIRED"):
@@ -1916,7 +1916,7 @@ class RccIntegrationTests(unittest.TestCase):
         self.assertEqual(Outcome.UNKNOWN, unknown.outcome)
         self.assertTrue(self.call("close-unknown-1", identity).duplicate)
         self.assertEqual(2, len([
-            call for call in self.client.calls if call["command"] == "close-conversation-tab"
+            call for call in self.client.calls if call["command"] == "rcc_close_conversation_tab"
         ]))
 
     def test_new_read_commands_are_observational_and_validate_identity(self):
@@ -1932,7 +1932,7 @@ class RccIntegrationTests(unittest.TestCase):
             "conversation_key": "6ad7f5b6-c834-83e8-9c00-ff70bab4204d",
         })
         self.assertEqual(Outcome.APPLIED, read.outcome)
-        self.assertEqual("read-latest-assistant", self.client.calls[-1]["command"])
+        self.assertEqual("rcc_get_latest_assistant_message", self.client.calls[-1]["command"])
         self.assertEqual("instance123", self.client.calls[-1]["extra"]["instanceId"])
         self.assertEqual("답변 전문", read.output["result"]["responseText"])
         groups = self.call("group-list-read-1", {
@@ -1940,7 +1940,7 @@ class RccIntegrationTests(unittest.TestCase):
             "session_id": session_id,
         })
         self.assertEqual(Outcome.APPLIED, groups.outcome)
-        self.assertEqual("tab-groups-list", self.client.calls[-1]["command"])
+        self.assertEqual("rcc_list_tab_groups", self.client.calls[-1]["command"])
         self.assertEqual(session_id, self.client.calls[-1]["extra"]["sessionId"])
         with self.assertRaisesRegex(PreconditionError, "RCC_TAB_GROUP_SESSION_ID_REQUIRED"):
             self.call("group-list-missing-session", {
@@ -1960,12 +1960,12 @@ class RccIntegrationTests(unittest.TestCase):
             "command": "presence", "instance_id": "instance123",
         })
         self.assertEqual(Outcome.APPLIED, presence.outcome)
-        self.assertEqual("presence", self.client.calls[-1]["command"])
+        self.assertEqual("rcc_get_target_availability", self.client.calls[-1]["command"])
         windows = self.call("windows-1", {
             "command": "windows-list", "instance_id": "instance123",
         })
         self.assertEqual(Outcome.APPLIED, windows.outcome)
-        self.assertEqual("windows-list", self.client.calls[-1]["command"])
+        self.assertEqual("rcc_list_windows", self.client.calls[-1]["command"])
         window = self.call("window-1", {
             "command": "window-get", "instance_id": "instance123", "window_id": 11,
         })
@@ -1974,16 +1974,16 @@ class RccIntegrationTests(unittest.TestCase):
 
     def test_rcc_native_read_commands_are_direct_public_feature_commands(self):
         self.client.result = {"type": "host:result", "ok": True, "pong": True}
-        for command, extra in (
-            ("ping", {}),
-            ("probe-tabs", {}),
-            ("diagnose-composer", {}),
-            ("probe", {"to": "worker"}),
-            ("api-probe", {"to": "worker"}),
-            ("main-capture-get", {"to": "worker"}),
-            ("diagnose-activity", {"conversation_key": ""}),
-            ("diagnose-conversation-ui", {"conversation_key": ""}),
-            ("rename-receipt", {
+        for command, expected_wire_command, extra in (
+            ("ping", "rcc_get_extension_connection", {}),
+            ("probe-tabs", "rcc_check_chat_tab_responses", {}),
+            ("diagnose-composer", "rcc_get_composer_state", {}),
+            ("probe", "rcc_check_target_tab_response", {"to": "worker"}),
+            ("api-probe", "rcc_get_conversation_api_response", {"to": "worker"}),
+            ("main-capture-get", "rcc_get_conversation_capture", {"to": "worker"}),
+            ("diagnose-activity", "rcc_get_conversation_activity", {"conversation_key": ""}),
+            ("diagnose-conversation-ui", "rcc_get_conversation_ui_diagnostics", {"conversation_key": ""}),
+            ("rename-receipt", "rcc_get_conversation_rename_evidence", {
                 "relay_id": "rename-read-1", "tab_id": 10,
                 "conversation_key": "6ad7f5b6-c834-83e8-9c00-ff70bab4204d",
             }),
@@ -1993,7 +1993,7 @@ class RccIntegrationTests(unittest.TestCase):
                     "command": command, "instance_id": "instance123", **extra,
                 })
                 self.assertEqual(Outcome.APPLIED, outcome.outcome)
-                self.assertEqual(command, self.client.calls[-1]["command"])
+                self.assertEqual(expected_wire_command, self.client.calls[-1]["command"])
 
     def test_failed_read_is_not_an_unknown_browser_effect_or_live_claim(self):
         self.client.result = {"type": "host:result", "ok": False, "error": "TAB_GET_TARGET_NOT_CHATGPT"}

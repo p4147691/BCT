@@ -104,7 +104,7 @@ class SendLatencyIntegrationTests(unittest.TestCase):
         self.assertIn("submit_ack", first.evidence["timing_ms"])
         duplicate = self.invoke("latency-existing-01", args)
         self.assertTrue(duplicate.duplicate)
-        sent = [x for x in self.client.calls if x["command"] != "state"]
+        sent = [x for x in self.client.calls if x["command"] != "rcc_get_extension_state"]
         self.assertEqual(1, len(sent))
 
     def test_created_tab_host_response_breakdown(self):

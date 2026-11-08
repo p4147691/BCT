@@ -56,6 +56,15 @@ class SimulatedRcc:
     def request(self, *, instance_id, request_id, command, to="", text="",
                 extra=None, timeout_s=30, before_write=None):
         assert instance_id == INSTANCE
+        command = {
+            "rcc_get_extension_state": "state",
+            "rcc_create_chat_tab": "create-chat-tab",
+            "rcc_move_tab_to_window": "move-tab",
+            "rcc_get_latest_assistant_message": "read-latest-assistant",
+            "rcc_send_message_to_tab": "send-to-tab",
+            "rcc_send_message_to_created_tab": "send-to-created-tab",
+            "rcc_get_operation_result": "result",
+        }.get(command, command)
         extra = extra or {}
         if command == "state":
             tabs = [

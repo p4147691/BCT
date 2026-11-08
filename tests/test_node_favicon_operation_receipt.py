@@ -30,7 +30,7 @@ class PipeFixture:
                     "conversationKey": UUID, "url": "https://chatgpt.com/c/" + UUID,
                 }],
             }}
-        assert args["command"] == "node-label-notify"
+        assert args["command"] == "rcc_update_conversation_favicon"
         if self.missing_ack:
             return {"ok": True, "state": "DELIVERED"}
         extra = args["extra"]
@@ -83,7 +83,7 @@ class NodeFaviconOperationReceiptTests(unittest.TestCase):
         self.assertEqual("APPLIED", op["outcome"])
         self.assertEqual("ACKED", self.bct.store.node_label_notification(self.event_id)["status"])
         self.assertEqual("NO_PENDING_EVENT", notifier.deliver(self.event_id))
-        self.assertEqual(1, sum(x["command"] == "node-label-notify" for x in client.calls))
+        self.assertEqual(1, sum(x["command"] == "rcc_update_conversation_favicon" for x in client.calls))
 
     def test_missing_exact_ack_is_unknown_and_never_retried(self):
         result, op, notifier, client = self.run_case(True)
@@ -91,7 +91,7 @@ class NodeFaviconOperationReceiptTests(unittest.TestCase):
         self.assertEqual("UNKNOWN", op["outcome"])
         self.assertEqual("UNKNOWN", self.bct.store.node_label_notification(self.event_id)["status"])
         self.assertEqual("NO_PENDING_EVENT", notifier.deliver(self.event_id))
-        self.assertEqual(1, sum(x["command"] == "node-label-notify" for x in client.calls))
+        self.assertEqual(1, sum(x["command"] == "rcc_update_conversation_favicon" for x in client.calls))
 
     def test_legacy_browser_named_notification_work_remains_usable(self):
         with self.bct.store.transaction() as db:

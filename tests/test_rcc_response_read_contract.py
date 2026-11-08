@@ -31,7 +31,7 @@ class ReadContractTests(unittest.TestCase):
         self.client.request.return_value = response
         got = self.feature._execute_delivery(self.request)
         self.assertEqual(self.feature.delivery_ledger.observe.call_count, 0)
-        self.assertEqual(self.client.request.call_args.kwargs["command"], "delivery-response-read")
+        self.assertEqual(self.client.request.call_args.kwargs["command"], "rcc_get_delivery_response")
         self.assertEqual(self.client.request.call_args.kwargs["extra"]["workId"], "fixture-work")
         json.dumps(got.output, ensure_ascii=False)
         return got

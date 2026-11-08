@@ -24,7 +24,12 @@ class StubExistingRcc:
 
     def request(self, **kwargs):
         self.calls.append(kwargs)
-        which = kwargs["command"]
+        which = {
+            "rcc_start_delivery_to_worker": "delivery-start",
+            "rcc_get_delivery_evidence": "delivery-status",
+            "rcc_return_delivery_to_manager": "delivery-return",
+            "rcc_get_delivery_manager_response": "delivery-manager-status",
+        }.get(kwargs["command"], kwargs["command"])
         delivery = kwargs["extra"]["deliveryId"]
         if which == "delivery-start":
             return {"ok": True, "deliveryId": delivery, "state": "SENT_WAITING",
@@ -91,7 +96,7 @@ class DeliveryPromptCompositionTests(unittest.TestCase):
         result = self.run_delivery({"command":"delivery-start", **self.base}, "start-1")
         self.assertEqual(Outcome.APPLIED, result.outcome)
         start = self.host.calls[0]
-        self.assertEqual("delivery-start", start["command"])
+        self.assertEqual("rcc_start_delivery_to_worker", start["command"])
         body = self.parse_body(start["text"])
         self.assertEqual("network.test", body["scope_id"])
         self.assertEqual(self.work.work_id, body["work_id"])
@@ -118,7 +123,7 @@ class DeliveryPromptCompositionTests(unittest.TestCase):
              "delivery_id":self.base["delivery_id"]}, "manager-status-1")
         self.assertIn("목표를 충족", decision.output["result"]["managerResponseText"])
         self.assertEqual(
-            ["delivery-start","delivery-status","delivery-return","delivery-manager-status"],
+            ["rcc_start_delivery_to_worker", "rcc_get_delivery_evidence", "rcc_return_delivery_to_manager", "rcc_get_delivery_manager_response"],
             [x["command"] for x in self.host.calls])
         self.assertEqual(
             {"prompt-delivery-1"}, {x["extra"]["deliveryId"] for x in self.host.calls})
@@ -205,7 +210,7 @@ class DeliveryPromptCompositionTests(unittest.TestCase):
         }, "wake-return")
         self.assertEqual("RETURNED", ret.evidence["delivery_state"])
         commands = [item["command"] for item in self.host.calls]
-        self.assertEqual(["delivery-start", "delivery-status", "delivery-return"], commands)
+        self.assertEqual(["rcc_start_delivery_to_worker", "rcc_get_delivery_evidence", "rcc_return_delivery_to_manager"], commands)
         payload = self.host.calls[-1]["extra"]
         self.assertIn("[BCT_MANAGER_RETURN_CONTEXT_V1]", payload["managerReturnHeader"])
         self.assertIn(self.base["text"], payload["managerReturnHeader"])

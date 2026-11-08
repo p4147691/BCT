@@ -22,7 +22,7 @@ class _Relay:
 
     def request(self, *, instance_id, request_id, command, text="", extra=None, timeout_s=30, **_ignored):
         extra = extra or {}
-        if command == "state":
+        if command == "rcc_get_extension_state":
             # The first observation is busy.  The bounded wait must observe
             # the same tab becoming idle before it attempts a submission.
             busy = self.generating
@@ -32,7 +32,7 @@ class _Relay:
                 "title": "Worker B", "url": "https://chatgpt.com/c/" + CONVERSATION}],
                 "endpoints": [{"tabId": 71, "windowId": 70,
                 "conversationKey": CONVERSATION, "generating": busy}]}}
-        self.assertEqual("send-to-tab", command)
+        self.assertEqual("rcc_send_message_to_tab", command)
         self.sent.append({"request_id": request_id, "text": text, "extra": extra})
         return {"ok": True, "operationId": request_id, "instanceId": instance_id,
                 "sessionId": RCC_SESSION, "tabId": 71, "windowId": 70,
