@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "kind": "RCC_REBUILD_V2_RC",
-  "candidate": "RCC_REBUILD_V2_RC43_RENAME_RESILIENCE",
+  "candidate": "RCC_COMMAND_NAMESPACE_V1_20261108",
   "sourceRoot": "modules/rcc/extension",
   "candidateInventory": {
     "fileCount": 58,
@@ -234,7 +234,7 @@
       {
         "path": "manifest.json",
         "size": 1557,
-        "sha256": "8c7862446adf6645b6690b4f62e41575248549a555403ae330ca5c67ccb9006e"
+        "sha256": "e785be57e05c24a2a9fd5ab206a396f6f7245b6bcad075a0f61cf1da32c0935a"
       },
       {
         "path": "network/directory.js",
@@ -297,7 +297,7 @@
         "sha256": "b3ad92bc20564a905bffc37f3e524e2c8e8c5ae71c02517a301cedd5cf1341cd"
       }
     ],
-    "aggregateSha256": "a8448cedaf8e963027c2f1b58cdae64e9ba3d139681e3caa3022519f88de4037"
+    "aggregateSha256": "16bedc1480a7d74585b98ee52891f01781edc0ad04868ec4f1663ec30ecac1ec"
   },
   "activeLoaderGraph": {
     "background": [
