@@ -9,8 +9,12 @@ from pathlib import Path
 from bct.core.delivery_state import DeliveryEvent
 from bct.core.models import ConfirmedFailure, Outcome, PreconditionError, UnknownEffectError, Work
 from bct.core.store import Store
-from bct.features.rcc import BrowserFeature
+from bct.features.rcc import BrowserFeature, _RCC_PUBLIC_TO_NATIVE_COMMAND
 from bct.integrations.rcc import RelayUnavailable
+
+
+def _native_command(command: object) -> str:
+    return _RCC_PUBLIC_TO_NATIVE_COMMAND.get(str(command), str(command))
 
 
 class FakeDeliveryHost:
@@ -19,8 +23,9 @@ class FakeDeliveryHost:
 
     def request(self, **kwargs):
         self.calls.append(kwargs)
+        command = _native_command(kwargs["command"])
         delivery_id = kwargs["extra"].get("deliveryId")
-        if kwargs["command"] == "retire-composer-draft":
+        if command == "retire-composer-draft":
             extra = kwargs["extra"]
             return {
                 "ok": True, "retired": True, "effectState": "APPLIED",
@@ -34,7 +39,7 @@ class FakeDeliveryHost:
                     "state": "SENT_WAITING",
                 },
             }
-        if kwargs["command"] == "retire-recovered-execution":
+        if command == "retire-recovered-execution":
             extra = kwargs["extra"]
             return {
                 "ok": True, "retired": True, "effectState": "APPLIED",
@@ -45,22 +50,22 @@ class FakeDeliveryHost:
                 "responseLength": extra["expectedResponseLength"],
                 "executionAbsent": True,
             }
-        if kwargs["command"] == "delivery-start":
+        if command == "delivery-start":
             return {"ok": True, "deliveryId": delivery_id,
                     "state": "SENT_WAITING", "workerTabId": 11,
                     "workerWindowId": 22}
-        if kwargs["command"] == "delivery-manager-status":
+        if command == "delivery-manager-status":
             text = "manager next"
             return {"ok": True, "deliveryId": delivery_id,
                     "state": "RETURNED", "managerResponseText": text,
                     "managerResponseSha256": hashlib.sha256(text.encode()).hexdigest(),
                     "managerResponseLength": len(text)}
-        if kwargs["command"] == "delivery-status":
+        if command == "delivery-status":
             return {"ok": True, "deliveryId": delivery_id,
                     "state": "REPLY_CAPTURED",
                     "responseSha256": hashlib.sha256(b"reply").hexdigest(),
                     "responseLength": 5}
-        if kwargs["command"] == "delivery-cancel":
+        if command == "delivery-cancel":
             return {"ok": True, "deliveryId": delivery_id,
                     "state": "NOT_APPLIED", "cancelled": True,
                     "error": "DELIVERY_CANCELLED_PRE_SUBMIT"}
@@ -106,11 +111,37 @@ class DeliveryFeatureTests(unittest.TestCase):
         self.assertEqual("RETURNED", result.evidence["delivery_state"])
         self.assertEqual(
             ["delivery-start", "delivery-status", "delivery-return"],
-            [call["command"] for call in self.host.calls],
+            [_native_command(call["command"]) for call in self.host.calls],
         )
         self.assertTrue(all(
             call["extra"]["deliveryId"] == "delivery-001" for call in self.host.calls
         ))
+
+    def test_delivery_result_is_read_only_and_never_replays_unknown(self) -> None:
+        self.feature.delivery_ledger.create_or_get(
+            delivery_id="delivery-001", work_id=self.work.work_id,
+            instance_id=self.base["instance_id"],
+            manager_conversation_key="6ad7f5b6-c834-83e8-9c00-ff70bab4204d",
+            worker_conversation_key="6ad4bb5d-6624-83ee-b045-e57fdad5120e",
+            request_sha256=hashlib.sha256(b"one exact delivery").hexdigest(),
+        )
+        pending = self.execute({
+            **self.base, "command": "bct_get_delivery_result",
+        }, "result-pending")
+        self.assertEqual(Outcome.APPLIED, pending.outcome)
+        self.assertEqual("PENDING", pending.evidence["result_status"])
+        self.assertEqual(0, len(self.host.calls))
+
+        self.feature.delivery_ledger.observe(
+            delivery_id="delivery-001", work_id=self.work.work_id,
+            event=DeliveryEvent.EFFECT_BOUNDARY_UNPROVEN,
+            observation={"error_code": "UNPROVEN"},
+        )
+        unknown = self.execute({
+            **self.base, "command": "bct_get_delivery_result",
+        }, "result-unknown")
+        self.assertEqual("UNKNOWN", unknown.evidence["result_status"])
+        self.assertEqual(0, len(self.host.calls))
 
     def test_busy_manager_return_is_queued_without_false_failure(self) -> None:
         self.execute({
@@ -123,7 +154,7 @@ class DeliveryFeatureTests(unittest.TestCase):
         original = self.host.request
 
         def queued(**kwargs):
-            if kwargs["command"] == "delivery-return":
+            if _native_command(kwargs["command"]) == "delivery-return":
                 return {
                     "ok": True, "pending": True, "queued": True,
                     "deliveryId": "delivery-001", "state": "REPLY_CAPTURED",
@@ -180,11 +211,11 @@ class DeliveryFeatureTests(unittest.TestCase):
             persisted["manager_response_sha256"],
         )
         self.assertEqual(len("manager next"), persisted["manager_response_length"])
-        self.assertEqual(1, sum(call["command"] == "delivery-start"
+        self.assertEqual(1, sum(_native_command(call["command"]) == "delivery-start"
                                 for call in self.host.calls))
-        self.assertEqual(1, sum(call["command"] == "delivery-return"
+        self.assertEqual(1, sum(_native_command(call["command"]) == "delivery-return"
                                 for call in self.host.calls))
-        self.assertEqual(1, sum(call["command"] == "delivery-manager-status"
+        self.assertEqual(1, sum(_native_command(call["command"]) == "delivery-manager-status"
                                 for call in self.host.calls))
 
     def test_manager_reply_hash_mismatch_never_changes_delivery(self) -> None:
@@ -200,7 +231,7 @@ class DeliveryFeatureTests(unittest.TestCase):
 
         def tampered(**kwargs):
             result = original(**kwargs)
-            if kwargs["command"] == "delivery-manager-status":
+            if _native_command(kwargs["command"]) == "delivery-manager-status":
                 result["managerResponseSha256"] = "0" * 64
             return result
 
@@ -210,7 +241,7 @@ class DeliveryFeatureTests(unittest.TestCase):
                          "bad-hash-read")
         self.assertEqual("RETURNED", self.feature.delivery_ledger.get_for_work(
             delivery_id="delivery-001", work_id=self.work.work_id)["state"])
-        self.assertEqual(1, sum(call["command"] == "delivery-start"
+        self.assertEqual(1, sum(_native_command(call["command"]) == "delivery-start"
                                 for call in self.host.calls))
 
     def test_duplicate_start_does_not_resend(self) -> None:
@@ -231,7 +262,7 @@ class DeliveryFeatureTests(unittest.TestCase):
         def queued_host(**kwargs):
             self.host.calls.append(kwargs)
             delivery_id = kwargs["extra"]["deliveryId"]
-            if kwargs["command"] == "delivery-start":
+            if _native_command(kwargs["command"]) == "delivery-start":
                 return {"ok": True, "deliveryId": delivery_id,
                         "state": "WAITING_TARGET", "queued": True,
                         "waitingReason": "TARGET_GENERATING"}
@@ -268,7 +299,7 @@ class DeliveryFeatureTests(unittest.TestCase):
         self.assertEqual("REPLY_CAPTURED", captured.evidence["delivery_state"])
         self.assertEqual(
             ["delivery-start", "delivery-status", "delivery-status"],
-            [call["command"] for call in self.host.calls],
+            [_native_command(call["command"]) for call in self.host.calls],
         )
         policy = self.host.calls[0]["extra"]
         self.assertEqual("queue_until_idle", policy["targetBusyPolicy"])
@@ -279,7 +310,7 @@ class DeliveryFeatureTests(unittest.TestCase):
         def queued_or_cancelled(**kwargs):
             self.host.calls.append(kwargs)
             delivery_id = kwargs["extra"]["deliveryId"]
-            if kwargs["command"] == "delivery-start":
+            if _native_command(kwargs["command"]) == "delivery-start":
                 return {"ok": True, "deliveryId": delivery_id,
                         "state": "WAITING_TARGET", "queued": True,
                         "waitingReason": "TARGET_GENERATING"}
@@ -309,7 +340,7 @@ class DeliveryFeatureTests(unittest.TestCase):
         )
         self.assertEqual(
             ["delivery-start", "delivery-cancel"],
-            [call["command"] for call in self.host.calls],
+            [_native_command(call["command"]) for call in self.host.calls],
         )
 
     def test_delivery_cancel_rejects_after_submit_before_host_call(self) -> None:
@@ -325,11 +356,11 @@ class DeliveryFeatureTests(unittest.TestCase):
             self.execute(
                 {**self.base, "command": "delivery-cancel"}, "late-cancel",
             )
-        self.assertEqual(["delivery-start"], [call["command"] for call in self.host.calls])
+        self.assertEqual(["delivery-start"], [_native_command(call["command"]) for call in self.host.calls])
 
     def test_exact_orphan_draft_retirement_resumes_only_bound_waiting_delivery(self) -> None:
         def queued_then_retired(**kwargs):
-            if kwargs["command"] == "delivery-start":
+            if _native_command(kwargs["command"]) == "delivery-start":
                 self.host.calls.append(kwargs)
                 return {
                     "ok": True, "deliveryId": kwargs["extra"]["deliveryId"],
@@ -377,7 +408,7 @@ class DeliveryFeatureTests(unittest.TestCase):
         self.assertEqual("SENT_WAITING", retired.evidence["resumed_delivery_state"])
         self.assertEqual(
             ["delivery-start", "retire-composer-draft"],
-            [call["command"] for call in self.host.calls],
+            [_native_command(call["command"]) for call in self.host.calls],
         )
 
     def test_draft_retirement_rejects_wrong_waiting_delivery_before_host_call(self) -> None:
@@ -617,7 +648,7 @@ class DeliveryFeatureTests(unittest.TestCase):
         original = self.host.request
 
         def reconciled(**kwargs):
-            if kwargs["command"] == "delivery-manager-status":
+            if _native_command(kwargs["command"]) == "delivery-manager-status":
                 return {
                     "ok": True, "reconciled": True,
                     "deliveryId": self.base["delivery_id"],
@@ -692,7 +723,7 @@ class DeliveryFeatureTests(unittest.TestCase):
                          original["observation"]["error_code"])
         # No additional message: only one host inspection.
         self.assertEqual(["delivery-recovery-inspect"],
-                         [c["command"] for c in self.host.calls])
+                         [_native_command(c["command"]) for c in self.host.calls])
 
     def test_recovery_rejects_mutated_hash_identity_and_phase(self):
         template = self._recovery_proof()

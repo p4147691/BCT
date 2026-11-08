@@ -63,7 +63,7 @@ async function resolveOrchestrationRelayTarget(message) {
   return { role, expected, state, registration, tab };
 }
 
-async function sendOrchestrationRelay(message, requestId) {
+async function sendRccMessage(message, requestId) {
   const relayId = String(requestId || '').trim();
   const text = String(message?.text || '');
   if (!relayId || !text || text.length > 12000) {
