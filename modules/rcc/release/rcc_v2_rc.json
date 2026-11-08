@@ -198,8 +198,8 @@
       },
       {
         "path": "domain/readonly_diagnostics.js",
-        "size": 36166,
-        "sha256": "88fb151def6941e2f2f704aa2b6a0dc2a6d18dd68f2809e020c4491ecc3c62ba"
+        "size": 36458,
+        "sha256": "ba78491abddfe90f58cbca6f17b0a119da4808840ec15bac65caee5ed7c0e0dd"
       },
       {
         "path": "domain/runtime_message_service.js",
@@ -228,8 +228,8 @@
       },
       {
         "path": "legacy/command_policy.js",
-        "size": 4673,
-        "sha256": "fc40192a5647240ef26f0d8b577c032befff8dc457767da104552555ebd047d1"
+        "size": 5446,
+        "sha256": "3fb4eeea082bd3315c12209f091824279c913031747c90b72e745e08f55b30fe"
       },
       {
         "path": "manifest.json",
@@ -297,7 +297,7 @@
         "sha256": "b3ad92bc20564a905bffc37f3e524e2c8e8c5ae71c02517a301cedd5cf1341cd"
       }
     ],
-    "aggregateSha256": "fbede0178b4f4fb6fad4dbaf9017b790fcbd0a6a882da41d6cb5b03e8f0357c2"
+    "aggregateSha256": "a8448cedaf8e963027c2f1b58cdae64e9ba3d139681e3caa3022519f88de4037"
   },
   "activeLoaderGraph": {
     "background": [

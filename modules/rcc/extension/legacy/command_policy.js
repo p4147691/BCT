@@ -32,6 +32,11 @@
   // This is lifecycle maintenance, not a product relay path. Its caller is
   // still subject to the external deploy/reload approval gate.
   const MAINTENANCE_COMMANDS = new Set(['reload-extension']);
+  const ALL_NATIVE_COMMANDS = new Set([
+    ...NEW_RELAY_COMMANDS, ...CONVERSATION_COMMANDS, ...EXACT_TAB_COMMANDS,
+    ...ATOMIC_CHAT_COMMANDS, ...ORCHESTRATION_COMMANDS, ...NODE_LABEL_COMMANDS,
+    ...READ_ONLY_COMMANDS, ...MAINTENANCE_COMMANDS,
+  ]);
   const LEGACY_MUTATION_COMMANDS = new Set([
     'clear-relay-state',
     'conversation-bootstrap-bind',
@@ -54,8 +59,20 @@
     'relay:orchestrationAuthorize', 'relay:orchestrationResult',
   ]);
 
-  function nativeCommand(command) {
+  function toLegacyNativeCommand(command) {
     const value = String(command || '');
+    if (!value.startsWith('rcc_')) return value;
+    const candidate = value.slice(4).replaceAll('_', '-');
+    return ALL_NATIVE_COMMANDS.has(candidate) ? candidate : value;
+  }
+
+  function toPublicNativeCommand(command) {
+    const value = toLegacyNativeCommand(command);
+    return ALL_NATIVE_COMMANDS.has(value) ? `rcc_${value.replaceAll('-', '_')}` : value;
+  }
+
+  function nativeCommand(command) {
+    const value = toLegacyNativeCommand(command);
     if (NEW_RELAY_COMMANDS.has(value)) return Object.freeze({ allowed: true, kind: 'NEW_RELAY' });
     if (CONVERSATION_COMMANDS.has(value)) return Object.freeze({ allowed: true, kind: 'CONVERSATION' });
     if (EXACT_TAB_COMMANDS.has(value)) return Object.freeze({ allowed: true, kind: 'EXACT_TAB' });
@@ -80,7 +97,10 @@
     return `RCC_${scope}_${decision.kind}_DISABLED:${String(value || '')}`;
   }
 
-  const api = Object.freeze({ nativeCommand, runtimeMessage, rejectCode });
+  const api = Object.freeze({
+    nativeCommand, runtimeMessage, rejectCode,
+    toLegacyNativeCommand, toPublicNativeCommand,
+  });
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   globalThis.RccLegacyCommandPolicy = api;
 })();

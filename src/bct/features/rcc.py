@@ -61,13 +61,46 @@ _COMMANDS = _READ_COMMANDS | _MUTATING_COMMANDS | _RECONCILE_COMMANDS | {
     _RENAME_INSPECTION_COMMAND, _OPERATOR_QUARANTINE_COMMAND,
     "delivery-manager-status", "delivery-recovery-inspect", "delivery-response-read", "delivery-preview",
 }
+
+# RCC owns the commands in this set: they are implemented by the Chrome
+# extension's native command dispatcher.  BCT owns the remaining entries in
+# ``_COMMANDS`` (composition, receipt, and reconciliation helpers).  The
+# external name makes that boundary visible without changing the installed
+# extension's wire spelling during the compatibility period.
+_RCC_NATIVE_COMMANDS = {
+    "add-tab-to-group", "api-probe", "close-conversation-tab", "conversation-bind",
+    "create-chat-tab", "create-chat-window", "create-tab-group", "delivery-cancel",
+    "delivery-manager-status", "delivery-recovery-inspect", "delivery-response-read",
+    "delivery-return", "delivery-start", "delivery-status", "diagnose-activity",
+    "diagnose-composer", "diagnose-conversation-ui", "main-capture-get", "move-tab",
+    "move-tab-group", "new-chat-send", "node-label-notify", "ping", "presence",
+    "probe", "probe-tabs", "read-latest-assistant", "reload-extension",
+    "remove-tab-from-group", "rename-conversation", "rename-receipt", "result",
+    "retire-composer-draft", "retire-recovered-execution", "send", "send-to-created-tab",
+    "send-to-tab", "simple-relay-bind", "simple-relay-return", "simple-relay-send",
+    "state", "tab-get", "tab-group-get", "tab-groups-list", "update-tab-group",
+    "window-get", "windows-list",
+}
+_RCC_PUBLIC_TO_NATIVE_COMMAND = {
+    "rcc_" + command.replace("-", "_"): command for command in _RCC_NATIVE_COMMANDS
+}
+_RCC_NATIVE_TO_PUBLIC_COMMAND = {
+    native: public for public, native in _RCC_PUBLIC_TO_NATIVE_COMMAND.items()
+}
+_BCT_COMMANDS = _COMMANDS - _RCC_NATIVE_COMMANDS
+_BCT_PUBLIC_TO_INTERNAL_COMMAND = {
+    "bct_" + command.replace("-", "_"): command for command in _BCT_COMMANDS
+}
+_BCT_INTERNAL_TO_PUBLIC_COMMAND = {
+    internal: public for public, internal in _BCT_PUBLIC_TO_INTERNAL_COMMAND.items()
+}
 _COMMON = {"command", "instance_id", "timeout_s"}
 _SENSITIVE_KEYS = {"token", "secret", "password", "authorization"}
 _BOOTSTRAP_RESULT_READBACK_TIMEOUT_S = 15.0
 
 
 def command_catalog() -> list[dict[str, str]]:
-    """Return the public MCP discovery view without exposing transport state."""
+    """Return public names with an explicit RCC-versus-BCT ownership boundary."""
     special = {
         _RENAME_INSPECTION_COMMAND: "recovery-read",
         _OPERATOR_QUARANTINE_COMMAND: "recovery-effect",
@@ -84,7 +117,20 @@ def command_catalog() -> list[dict[str, str]]:
             else "reconcile" if command in _RECONCILE_COMMANDS
             else special[command]
         )
-        rows.append({"command": command, "category": category})
+        if command in _RCC_NATIVE_COMMANDS:
+            rows.append({
+                "command": _RCC_NATIVE_TO_PUBLIC_COMMAND[command],
+                "category": category,
+                "origin": "rcc-native",
+                "legacy_alias": command,
+            })
+        else:
+            rows.append({
+                "command": _BCT_INTERNAL_TO_PUBLIC_COMMAND[command],
+                "category": category,
+                "origin": "bct",
+                "legacy_alias": command,
+            })
     return rows
 
 
@@ -98,47 +144,47 @@ def recipe_catalog() -> list[dict[str, Any]]:
         {
             "recipe": "inspect-target",
             "purpose": "Read the current RCC endpoint and choose one exact target.",
-            "steps": ["state", "windows-list", "tab-get"],
+            "steps": ["rcc_state", "rcc_windows_list", "rcc_tab_get"],
         },
         {
             "recipe": "read-latest-assistant",
             "purpose": "Read only the latest assistant response from one exact conversation.",
-            "steps": ["state", "read-latest-assistant"],
+            "steps": ["rcc_state", "rcc_read_latest_assistant"],
         },
         {
             "recipe": "send-existing-conversation",
             "purpose": "Send once to an already identified conversation and read its receipt.",
-            "steps": ["state", "send-to-tab", "result"],
+            "steps": ["rcc_state", "rcc_send_to_tab", "rcc_result"],
         },
         {
             "recipe": "create-chat-and-send",
             "purpose": "Create one tab, send its first message once, then inspect the receipt.",
-            "steps": ["target-discover", "new-chat-send", "result"],
+            "steps": ["bct_target_discover", "rcc_new_chat_send", "rcc_result"],
         },
         {
             "recipe": "bind-existing-conversation",
             "purpose": "Record one exact opened conversation under a caller-chosen workflow label.",
-            "steps": ["state", "tab-get", "conversation-bind"],
+            "steps": ["rcc_state", "rcc_tab_get", "rcc_conversation_bind"],
         },
         {
             "recipe": "rename-conversation",
             "purpose": "Confirm one target then rename it; an UNKNOWN result is reconciled, never resent.",
-            "steps": ["state", "rename-conversation", "inspect-rename-receipt", "reconcile-rename-conversation"],
+            "steps": ["rcc_state", "rcc_rename_conversation", "bct_inspect_rename_receipt", "bct_reconcile_rename_conversation"],
         },
         {
             "recipe": "arrange-tabs",
             "purpose": "Inspect a target, then move or group exactly the selected tab.",
-            "steps": ["state", "move-tab", "create-tab-group", "add-tab-to-group"],
+            "steps": ["rcc_state", "rcc_move_tab", "rcc_create_tab_group", "rcc_add_tab_to_group"],
         },
         {
             "recipe": "recover-unknown-send",
             "purpose": "Read the original receipt and reconcile the same operation without a second send.",
-            "steps": ["result", "reconcile-send"],
+            "steps": ["rcc_result", "bct_reconcile_send"],
         },
         {
             "recipe": "reload-installed-extension",
             "purpose": "Reload an already installed RCC payload; installation and reload remain separate effects.",
-            "steps": ["reload-extension", "state"],
+            "steps": ["rcc_reload_extension", "rcc_state"],
         },
     ]
 
@@ -290,6 +336,17 @@ class BrowserFeature:
         self._target_epochs: dict[tuple[str, str], str] = {}
         self._target_snapshots: dict[tuple[str, str], str] = {}
 
+    def _request_rcc(self, **kwargs: Any) -> dict[str, Any]:
+        """Send the canonical RCC wire command while retaining legacy core logic.
+
+        ``prepare`` stores the long-standing internal command spelling so its
+        receipt and recovery rules remain stable.  The extension boundary is
+        the one place that must speak the versioned ``rcc_*`` protocol.
+        """
+        command = str(kwargs.get("command") or "")
+        kwargs["command"] = _RCC_NATIVE_TO_PUBLIC_COMMAND.get(command, command)
+        return self.client.request(**kwargs)
+
     def _self_attachment(
         self, *, work: Work, instance_id: str, orchestration_session_id: object,
         node_id: object,
@@ -341,7 +398,7 @@ class BrowserFeature:
         probe_id = "self-idle." + hashlib.sha256(request_id.encode("utf-8")).hexdigest()[:32]
         while True:
             try:
-                observed = self.client.request(
+                observed = self._request_rcc(
                     instance_id=values["instance_id"], request_id=probe_id,
                     command="state", timeout_s=min(2.0, max(0.1, deadline - time.monotonic())),
                 )
@@ -481,7 +538,7 @@ class BrowserFeature:
         claim, so an expired/wrong transport reference cannot become UNKNOWN.
         """
         try:
-            response = self.client.request(
+            response = self._request_rcc(
                 instance_id=instance_id, request_id=request_id, command="state",
                 timeout_s=2.0,
             )
@@ -739,7 +796,14 @@ class BrowserFeature:
         )
 
     def prepare(self, *, work: Work, arguments: dict[str, Any]) -> FeatureRequest:
-        command = str(arguments.get("command") or "").strip().lower()
+        requested_command = str(arguments.get("command") or "").strip().lower()
+        # ``rcc_*`` is the public spelling for an extension-native command.
+        # The extension's unprefixed spelling remains a compatibility alias
+        # until every installed RCC version has moved to the new protocol.
+        command = _RCC_PUBLIC_TO_NATIVE_COMMAND.get(
+            requested_command,
+            _BCT_PUBLIC_TO_INTERNAL_COMMAND.get(requested_command, requested_command),
+        )
         if command == "delayed-send-cancel":
             return self._prepare_delayed_cancel(work=work,arguments=arguments)
         if command == "send-delayed-message":
@@ -1644,7 +1708,7 @@ class BrowserFeature:
             })
 
         try:
-            result = self.client.request(
+            result = self._request_rcc(
                 instance_id=values["instance_id"],
                 request_id=request.operation_id,
                 command=command,
@@ -1950,7 +2014,7 @@ class BrowserFeature:
         # terminal timeout into a transport-level UNKNOWN at the same instant.
         response_timeout_ms = max(15000, int((float(values["timeout_s"]) - 2.0) * 1000))
         try:
-            result = self.client.request(
+            result = self._request_rcc(
                 instance_id=instance_id,
                 request_id=request.operation_id,
                 command="new-chat-send",
@@ -2170,7 +2234,7 @@ class BrowserFeature:
                     "RCC_DRAFT_RETIRE_SUPERSEDED_IDENTITY_INVALID", release_claims=True,
                 )
             try:
-                result = self.client.request(
+                result = self._request_rcc(
                     instance_id=values["instance_id"], request_id=request.operation_id,
                     command="retire-composer-draft", extra=extra,
                     timeout_s=values["timeout_s"],
@@ -2228,7 +2292,7 @@ class BrowserFeature:
                     "RCC_RECOVERED_RETIRE_IDENTITY_INVALID", release_claims=True,
                 )
             try:
-                result = self.client.request(
+                result = self._request_rcc(
                     instance_id=values["instance_id"], request_id=request.operation_id,
                     command="retire-recovered-execution", extra=extra,
                     timeout_s=values["timeout_s"],
@@ -2272,7 +2336,7 @@ class BrowserFeature:
             # Duplicate operation IDs never reach execute, so neither this
             # probe nor the reload is repeated.
             try:
-                state_reply = self.client.request(
+                state_reply = self._request_rcc(
                     instance_id=values["instance_id"],
                     request_id="rcc-reload-idle-" + hashlib.sha256(
                         request.operation_id.encode("utf-8")
@@ -2373,7 +2437,7 @@ class BrowserFeature:
                 (_RECONCILE_COMMANDS | {"result-of-create-and-send"})
                 else values["command"]
             )
-            result = self.client.request(
+            result = self._request_rcc(
                 instance_id=values["instance_id"], request_id=request.operation_id,
                 command=host_command, to=values["to"], text=values["text"],
                 extra=({} if values["command"] == "reconcile-send" else extra),
@@ -2677,7 +2741,7 @@ class BrowserFeature:
                 remaining = deadline - time.monotonic()
                 readback_attempts += 1
                 try:
-                    terminal = self.client.request(
+                    terminal = self._request_rcc(
                         instance_id=values["instance_id"], request_id=readback_id,
                         command="result", text=request.operation_id,
                         timeout_s=max(0.1, min(2.0, remaining)),

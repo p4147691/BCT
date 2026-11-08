@@ -141,6 +141,13 @@ vm.runInContext(source, context, { filename: 'rcc-background-services.js' });
   assert.strictEqual(directRecoveryCalls, 0, 'disabled recovery must not invoke direct DOM recovery');
   assert.strictEqual(JSON.stringify(store.relayResultReceiptsV1), before,
     'disabled recovery must preserve historical receipts unchanged');
+  await context.__captureRecoveryTest.handleNativeCommand({
+    type: 'host:command', command: 'rcc_ping', requestId: 'canonical-wire-ping',
+  });
+  const ping = posted.find((item) => item.requestId === 'canonical-wire-ping');
+  assert(ping, 'canonical rcc_* wire command must return a receipt');
+  assert.strictEqual(ping.ok, true);
+  assert.strictEqual(ping.pong, true);
   console.log('capture recovery contract tests: PASS');
 })().catch((error) => {
   console.error(error);
