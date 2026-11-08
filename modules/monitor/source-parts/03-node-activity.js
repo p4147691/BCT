@@ -214,8 +214,6 @@ const monitorRebootRestorePendingKeys = new Set();
 
 /*@@MONITOR_FUNCTION:monitorLifecycleTooltip@@*/
 
-/*@@MONITOR_FUNCTION:requestMonitorConversationRename@@*/
-
 /*@@MONITOR_FUNCTION:attachMonitorContextTitleMenu@@*/
 
 /*@@MONITOR_FUNCTION:monitorContextTitlePart@@*/

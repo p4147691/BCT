@@ -189,41 +189,26 @@ function applyPersistentMonitorRoleClass(node, hwnd) {
 
 //@@FN_START:attachMonitorContextTitleMenu
 function attachMonitorContextTitleMenu(row,worker,state,endpoint){
-
-  const key=String(worker?.conversation_key||endpoint?.conversation_key||"").trim(); if(!key)return;
-
-  row.addEventListener("contextmenu",(event)=>{event.preventDefault();event.stopPropagation(); const ghost=monitorGhostCache.get(key)||{}; const current=monitorContextTitleDisplay(worker,state,endpoint)||String(endpoint?.title||worker?.title||"");
-
-    const next=window.prompt(`작업 제목을 입력하세요.\n\n${monitorLifecycleTooltip(key,endpoint,ghost)}\n\n빈 값: AI 제목 잠금 해제\n/browser: 실제 제목 다시 읽기\n/ai: AI 자동 제목 다시 사용`,current);
-
-    if(next===null)return; const value=String(next).trim(); if(value==="/browser"){resetMonitorContextTitleToBrowser(key);return;} if(value==="/ai"){setMonitorManualContextTitle(key,"");void refreshMonitorContextTitle(worker,state,endpoint,true);return;} if(!value){setMonitorManualContextTitle(key,"");return;}
-
-    const liveState=monitorLastAiState||state;
-
-    const liveEndpoints=(Array.isArray(liveState?.endpoints)?liveState.endpoints:[]).filter((item)=>String(item?.conversation_key||"").trim()===key&&String(item?.presence_state||"").toUpperCase()==="OPEN");
-
-    const liveEndpoint=liveEndpoints.length===1?liveEndpoints[0]:null;
-
-    const titleElement=row.querySelector(".monitor-worker-chat-title"), previousListTitle=String(titleElement?.textContent||current);
-
-    if(titleElement)titleElement.textContent=value;
-
-    setMonitorStatus(`제목 변경 확인 중 · ${value}`,true,12000);
-
-    void requestMonitorConversationRename(key,value,liveEndpoint,true).then((ok)=>{
-
-      const latest=monitorContextTitleRecord(key);
-
-      if(ok==="pending")setMonitorStatus(`제목 저장됨 · 반영 확인 중 · ${value}`,true,12000);
-
-      else if(ok)setMonitorStatus(`제목 변경 완료 · ${value}`,true,1500);
-
-      else { if(titleElement?.isConnected)titleElement.textContent=previousListTitle; setMonitorStatus(`제목 변경 실패 · ${String(latest.rename_error||"RENAME_FAILED")}`,false,6000); }
-
-    }).catch((error)=>{if(titleElement?.isConnected)titleElement.textContent=previousListTitle;setMonitorStatus(`제목 변경 실패 · ${String(error?.message||error||"RENAME_FAILED")}`,false,6000);});
-
+  const key=String(worker?.conversation_key||endpoint?.conversation_key||"").trim();
+  if(!key)return;
+  row.addEventListener("contextmenu",(event)=>{
+    event.preventDefault();
+    event.stopPropagation();
+    // Use one BCT/RCC route for every visible ChatGPT conversation.
+    openMonitorBctRenameEditor({
+      conversationKey:key,
+      instanceId:monitorEndpointInstanceId(endpoint),
+      sessionId:String(endpoint?.session_id||""),
+      tabId:Number(endpoint?.tab_id||0),
+      windowId:Number(endpoint?.window_id||0),
+      title:monitorContextTitleDisplay(worker,state,endpoint)||String(endpoint?.title||worker?.title||""),
+      scopeName:String(worker?.scope_name||""),
+      roleTags:Array.isArray(worker?.role_tags)?worker.role_tags:[],
+      assignedTask:String(worker?.assigned_task||""),
+      nodeMemo:String(worker?.node_memo||""),
+      nodeLabel:String(worker?.node_label||worker?.label||""),
+    },row);
   });
-
 }
 //@@FN_END:attachMonitorContextTitleMenu
 

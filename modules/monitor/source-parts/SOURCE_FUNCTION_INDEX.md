@@ -27,7 +27,7 @@ Generated extension/monitor.js is not an edit target.
 - monitorUserAttentionVisualDetail
 - syncMonitorNonChatCountdown
 
-## conversations (77 functions)
+## conversations (76 functions)
 
 - applyMonitorBctPendingRoleProjections
 - applyMonitorBctRoleHistory
@@ -98,7 +98,6 @@ Generated extension/monitor.js is not an edit target.
 - refreshMonitorConversationStateFast
 - rememberMonitorWorkerPlacement
 - renderWorkers
-- requestMonitorConversationRename
 - resetMonitorBctProjectionConvergence
 - resolveWorkerConnectionState
 - resolveWorkerWorkState

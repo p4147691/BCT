@@ -41,7 +41,6 @@ const ORCHESTRATOR_NOTE_AI_URL = "act:/monitor/note/organize";
 
 const ORCHESTRATOR_CONTEXT_TITLE_URL = "act:/monitor/context-title";
 
-const ORCHESTRATOR_CONVERSATION_RENAME_URL = "act:/monitor/conversation-title/rename";
 
 // ACT transport is isolated in monitor-act-transport.js.
 // Monitor consumes one narrow public boundary: actFetch.
@@ -4784,118 +4783,27 @@ function monitorLifecycleTooltip(key,endpoint,ghost){
 
 }
 
-async function requestMonitorConversationRename(key,title,endpoint,manualLock=true){
-
-  key=String(key||"").trim(); title=String(title||"").trim();
-
-  if(!key||!title){
-
-    return false;
-
-  }
-
-  try{
-
-    const rec=monitorContextTitleRecord(key);
-
-    const requestedAt=Date.now();
-
-    monitorContextTitles.set(key,{...rec,rename_pending_title:title,rename_pending_at_ms:requestedAt,rename_error:"",title_updated_ms:requestedAt,title_source:"RENAME_PENDING"});
-
-    persistMonitorContextTitles();
-
-    const stateResponse=await actFetch(ORCHESTRATOR_STATE_URL,{cache:"no-store",signal:AbortSignal.timeout(60000)});
-
-    const freshState=stateResponse.ok?await stateResponse.json():null;
-
-    const exact=(Array.isArray(freshState?.endpoints)?freshState.endpoints:[]).filter((item)=>String(item?.conversation_key||"").trim()===key&&String(item?.presence_state||"").toUpperCase()==="OPEN");
-
-    if(exact.length!==1)throw new Error(exact.length?"RENAME_ENDPOINT_AMBIGUOUS":"RENAME_ENDPOINT_UNAVAILABLE");
-
-    endpoint=exact[0];
-
-    const body={conversation_key:key,title,transport_instance_id:String(endpoint?.transport_instance_id||""),session_id:String(endpoint?.session_id||""),tab_id:Number(endpoint?.tab_id||0),profile_id:String(endpoint?.profile_id||"").toUpperCase()};
-
-    const r=await actFetch(ORCHESTRATOR_CONVERSATION_RENAME_URL,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body),signal:AbortSignal.timeout(60000)});
-
-    const responseText=await r.text(); let data={}; try{data=responseText?JSON.parse(responseText):{};}catch(_){data={error:responseText||`HTTP_${r.status}`};}
-
-    if(!r.ok||!data?.ok)throw new Error(String(data?.error||"RENAME_FAILED"));
-
-    if(!data?.verified&&data?.accepted&&data?.pending_observation){
-
-      const current=monitorContextTitleRecord(key);
-
-      monitorContextTitles.set(key,{...current,rename_pending_title:title,rename_pending_at_ms:requestedAt,rename_error:"",manual_locked:Boolean(manualLock),rename_manual_lock:Boolean(manualLock),title_source:"RENAME_PENDING",title_updated_ms:Date.now()});
-
-      persistMonitorContextTitles(); return "pending";
-
-    }
-
-    if(!data?.verified)throw new Error(String(data?.error||"RENAME_NOT_VERIFIED"));
-
-    const current=monitorContextTitleRecord(key);
-
-    const verifiedTitle=String(data.observed_title||data.title||title).trim();
-
-    monitorContextTitles.set(key,{...current,verified_title:verifiedTitle,manual_title:"",context_title:"",rename_pending_title:"",rename_pending_at_ms:0,rename_error:"",manual_locked:Boolean(manualLock),title_source:manualLock?"MANUAL_VERIFIED":"AI_VERIFIED",title_updated_ms:Date.now()});
-
-    if(monitorLastAiState&&Array.isArray(monitorLastAiState.endpoints)){
-
-      for(const item of monitorLastAiState.endpoints){
-
-        if(String(item?.conversation_key||"").trim()===key&&String(item?.presence_state||"").toUpperCase()==="OPEN") item.title=verifiedTitle;
-
-      }
-
-    }
-
-    persistMonitorContextTitles(); return true;
-
-  }catch(error){
-
-    const current=monitorContextTitleRecord(key), failedAt=Date.now(); monitorContextTitles.set(key,{...current,rename_pending_title:"",rename_pending_at_ms:0,rename_error:String(error?.message||error||"RENAME_FAILED"),title_updated_ms:failedAt,title_source:"RENAME_FAILED"}); persistMonitorContextTitles(); return false;
-
-  }
-
-}
-
 function attachMonitorContextTitleMenu(row,worker,state,endpoint){
-
-  const key=String(worker?.conversation_key||endpoint?.conversation_key||"").trim(); if(!key)return;
-
-  row.addEventListener("contextmenu",(event)=>{event.preventDefault();event.stopPropagation(); const ghost=monitorGhostCache.get(key)||{}; const current=monitorContextTitleDisplay(worker,state,endpoint)||String(endpoint?.title||worker?.title||"");
-
-    const next=window.prompt(`작업 제목을 입력하세요.\n\n${monitorLifecycleTooltip(key,endpoint,ghost)}\n\n빈 값: AI 제목 잠금 해제\n/browser: 실제 제목 다시 읽기\n/ai: AI 자동 제목 다시 사용`,current);
-
-    if(next===null)return; const value=String(next).trim(); if(value==="/browser"){resetMonitorContextTitleToBrowser(key);return;} if(value==="/ai"){setMonitorManualContextTitle(key,"");void refreshMonitorContextTitle(worker,state,endpoint,true);return;} if(!value){setMonitorManualContextTitle(key,"");return;}
-
-    const liveState=monitorLastAiState||state;
-
-    const liveEndpoints=(Array.isArray(liveState?.endpoints)?liveState.endpoints:[]).filter((item)=>String(item?.conversation_key||"").trim()===key&&String(item?.presence_state||"").toUpperCase()==="OPEN");
-
-    const liveEndpoint=liveEndpoints.length===1?liveEndpoints[0]:null;
-
-    const titleElement=row.querySelector(".monitor-worker-chat-title"), previousListTitle=String(titleElement?.textContent||current);
-
-    if(titleElement)titleElement.textContent=value;
-
-    setMonitorStatus(`제목 변경 확인 중 · ${value}`,true,12000);
-
-    void requestMonitorConversationRename(key,value,liveEndpoint,true).then((ok)=>{
-
-      const latest=monitorContextTitleRecord(key);
-
-      if(ok==="pending")setMonitorStatus(`제목 저장됨 · 반영 확인 중 · ${value}`,true,12000);
-
-      else if(ok)setMonitorStatus(`제목 변경 완료 · ${value}`,true,1500);
-
-      else { if(titleElement?.isConnected)titleElement.textContent=previousListTitle; setMonitorStatus(`제목 변경 실패 · ${String(latest.rename_error||"RENAME_FAILED")}`,false,6000); }
-
-    }).catch((error)=>{if(titleElement?.isConnected)titleElement.textContent=previousListTitle;setMonitorStatus(`제목 변경 실패 · ${String(error?.message||error||"RENAME_FAILED")}`,false,6000);});
-
+  const key=String(worker?.conversation_key||endpoint?.conversation_key||"").trim();
+  if(!key)return;
+  row.addEventListener("contextmenu",(event)=>{
+    event.preventDefault();
+    event.stopPropagation();
+    // Use one BCT/RCC route for every visible ChatGPT conversation.
+    openMonitorBctRenameEditor({
+      conversationKey:key,
+      instanceId:monitorEndpointInstanceId(endpoint),
+      sessionId:String(endpoint?.session_id||""),
+      tabId:Number(endpoint?.tab_id||0),
+      windowId:Number(endpoint?.window_id||0),
+      title:monitorContextTitleDisplay(worker,state,endpoint)||String(endpoint?.title||worker?.title||""),
+      scopeName:String(worker?.scope_name||""),
+      roleTags:Array.isArray(worker?.role_tags)?worker.role_tags:[],
+      assignedTask:String(worker?.assigned_task||""),
+      nodeMemo:String(worker?.node_memo||""),
+      nodeLabel:String(worker?.node_label||worker?.label||""),
+    },row);
   });
-
 }
 
 function monitorContextTitlePart(value) {
