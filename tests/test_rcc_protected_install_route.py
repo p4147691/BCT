@@ -182,6 +182,39 @@ class ProtectedRccRouteTests(unittest.TestCase):
             ri.RENDERED_MARKDOWN_IDENTITY_MANIFEST_SHA256,
         )
 
+    def test_rename_resilience_route_upgrades_exact_64_to_65(self):
+        route = DeployFeature._rcc_route_config("rcc-inspect-rename-resilience")
+        self.assertEqual(route["candidate_version"], "1.0.65")
+        self.assertEqual(route["installed_version"], "1.0.64")
+        self.assertEqual(route["manifest_file"], ri.RENAME_RESILIENCE_MANIFEST)
+        self.assertEqual(route["candidate"], ri.RENAME_RESILIENCE_STAGE)
+        self.assertEqual(route["backup_source"], ri.RENAME_RESILIENCE_ROLLBACK)
+        self.assertEqual(route["journal_root"], ri.RENAME_RESILIENCE_JOURNAL)
+        self.assertEqual(
+            route["pinned_manifest_sha256"],
+            ri.RENAME_RESILIENCE_MANIFEST_SHA256,
+        )
+
+    def test_protected_plan_accepts_rename_resilience_candidate_65(self):
+        identities = {
+            self.live: (self.extension_id, "1.0.64"),
+            self.source: (self.extension_id, "1.0.65"),
+            self.reference: (self.extension_id, "1.0.64"),
+        }
+        with patch.object(ri, "_identity", side_effect=lambda path: identities[path]), \
+                patch.object(ri, "_exact"):
+            plan = ri._plan(
+                "N73-TEST-RC43",
+                live=self.live,
+                candidate=self.source,
+                backup_source=self.reference,
+                manifest_file=self.policy_manifest,
+                journal=self.journal / "N73-TEST-RC43.json",
+                candidate_version="1.0.65",
+                installed_version="1.0.64",
+            )
+        self.assertEqual(plan["candidate_files"], 58)
+
     def test_protected_plan_accepts_rendered_markdown_candidate_64(self):
         identities = {
             self.live: (self.extension_id, "1.0.63"),

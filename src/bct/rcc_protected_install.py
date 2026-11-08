@@ -70,6 +70,12 @@ RENDERED_MARKDOWN_IDENTITY_ROLLBACK = RENDERED_MARKDOWN_IDENTITY_ROOT / "rollbac
 RENDERED_MARKDOWN_IDENTITY_MANIFEST = RENDERED_MARKDOWN_IDENTITY_ROOT / "release_manifest_rendered_markdown_identity_immutable.json"
 RENDERED_MARKDOWN_IDENTITY_MANIFEST_SHA256 = "218463c15870bba1f0608ef8db8f3ebbc5db494a84e72e63c4ea4c0e1ee1c7d8"
 RENDERED_MARKDOWN_IDENTITY_JOURNAL = Path(r"D:\BCT\runtime\backups\rcc-guarded-install-rendered-markdown-identity")
+RENAME_RESILIENCE_ROOT = Path(r"D:\BCT\data\RCC_RENAME_RESILIENCE_20261108_R2")
+RENAME_RESILIENCE_STAGE = RENAME_RESILIENCE_ROOT / "candidate_1_0_65_exact"
+RENAME_RESILIENCE_ROLLBACK = RENAME_RESILIENCE_ROOT / "rollback_installed_1_0_64"
+RENAME_RESILIENCE_MANIFEST = RENAME_RESILIENCE_ROOT / "release_manifest_rename_resilience_immutable.json"
+RENAME_RESILIENCE_MANIFEST_SHA256 = "198247198443d1a107ed687eacd1d03e70a3a2c16288b56da0bf9bdc007007c4"
+RENAME_RESILIENCE_JOURNAL = Path(r"D:\BCT\runtime\backups\rcc-guarded-install-rename-resilience")
 EXTENSION_ID = "ocbidbaplechjjdacmokhnfbdmgjkphf"
 OP_ID = re.compile(r"[A-Za-z0-9_.-]{1,80}\Z")
 
@@ -197,7 +203,7 @@ def _plan(operation_id: str, *, live: Path, candidate: Path, backup_source: Path
     baseline_version = installed_version or ("1.0.59" if rollback["fileCount"] == 57 else "1.0.60")
     if _identity(live) != (EXTENSION_ID, baseline_version):
         raise PreconditionError("RCC_INSTALL_LIVE_IDENTITY_MISMATCH")
-    if candidate_version not in {"1.0.60", "1.0.61", "1.0.63", "1.0.64"}:
+    if candidate_version not in {"1.0.60", "1.0.61", "1.0.63", "1.0.64", "1.0.65"}:
         raise PreconditionError("RCC_INSTALL_CANDIDATE_VERSION_UNSUPPORTED")
     if _identity(candidate) != (EXTENSION_ID, candidate_version):
         raise PreconditionError("RCC_INSTALL_CANDIDATE_IDENTITY_MISMATCH")
