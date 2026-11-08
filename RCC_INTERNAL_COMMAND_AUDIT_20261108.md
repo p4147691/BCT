@@ -69,8 +69,9 @@ availability.
 - `bct_rcc_command_catalog` lists all feature commands, and `bct_browser`
   accepts each of them through the same `bct.operations.run` confirmation
   path. There is no separate role or ownership gate in the MCP route.
-- `bct_rcc_read_latest_assistant` remains a convenience wrapper for its exact
-  read contract; it is no longer the sole public RCC command.
+- `read-latest-assistant` is a direct public `bct_browser` command, using the
+  same command name and feature contract as BCT's own callers; it has no
+  separate convenience wrapper.
 - RCC validates exact session/tab/window/conversation identity; no alternate send/reconcile path.
 - No LIVE installation or restart; no UNKNOWN effect replay.
 - This literal scan does not prove all dynamic call sites or command reachability.
