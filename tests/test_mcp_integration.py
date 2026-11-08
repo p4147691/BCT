@@ -152,12 +152,10 @@ class MCPIntegrationTests(unittest.TestCase):
                     names = {tool.name for tool in catalogue.tools}
                     relay_description = next(tool.description for tool in catalogue.tools
                                              if tool.name == "bct_browser")
-                    self.assertNotIn("send-to-tab", relay_description)
-                    self.assertNotIn("command=state", relay_description)
-                    self.assertIn("bct_status", relay_description)
-                    self.assertIn("command=send-message", relay_description)
-                    self.assertIn("rcc-send-message-v1", relay_description)
-                    self.assertNotIn("send-to-created-tab", relay_description)
+                    self.assertIn("bct_rcc_command_catalog", relay_description)
+                    self.assertIn("arguments.command", relay_description)
+                    self.assertIn("rcc-browser-command-v2", relay_description)
+                    self.assertIn("UNKNOWN", relay_description)
                     expected_capability_tools = {
                         "bct_deploy", "bct_git_commit", "bct_github_pr_create",
                         "bct_github_pr_merge", "bct_github_pr_status", "bct_github_push", "bct_github_run_watch",
@@ -192,7 +190,7 @@ class MCPIntegrationTests(unittest.TestCase):
                             "bct_execution_context", "bct_set_direction", "bct_get_direction", "bct_chain_recipe", "bct_prepare_supervisor_chain", "bct_set_execute_plan", "bct_update_execute_plan", "bct_get_execute_plan", "bct_work_create", "bct_operation_get", "bct_inbox_get", "bct_task_run", "bct_chain_message", "bct_task_message", "bct_send_delayed_message", "bct_delayed_send_cancel",
                             "bct_check_node", "bct_recheck_node", "bct_pause_node", "bct_replace_node", "bct_reset_node",
                             "bct_github_inbox_get", "bct_send_message", "bct_set_project_plan", "bct_plan_run", "bct_run_task", "bct_context", "bct_cancel_delayed_send",
-                            "bct_create_work", "bct_operation", "bct_github_inbox", "bct_inbox", "bct_move_tab", "bct_close_tab",
+                            "bct_create_work", "bct_operation", "bct_github_inbox", "bct_inbox", "bct_move_tab", "bct_close_tab", "bct_rcc_command_catalog", "bct_rcc_recipe_catalog",
                         },
                         names,
                     )
@@ -210,20 +208,18 @@ class MCPIntegrationTests(unittest.TestCase):
                     self.assertEqual(hashlib.sha256(manual["text"].encode("utf-8")).hexdigest(), manual["sha256"])
                     self.assertFalse(capabilities.isError)
                     live_relay_usage = capabilities.structuredContent["browser_usage"]
-                    self.assertNotIn("send-to-tab", live_relay_usage)
-                    self.assertNotIn("create-and-send", live_relay_usage)
-                    self.assertNotIn("delivery-start", live_relay_usage)
-                    self.assertEqual(
-                        ["create-chat-window", "create-chat-tab", "send-message"],
-                        capabilities.structuredContent["browser_public_commands"],
-                    )
+                    self.assertIn("bct_rcc_command_catalog", live_relay_usage)
+                    self.assertIn("arguments.command", live_relay_usage)
+                    self.assertIn("send-to-tab", capabilities.structuredContent["browser_public_commands"])
+                    self.assertIn("new-chat-send", capabilities.structuredContent["browser_public_commands"])
+                    self.assertIn("conversation-bind", capabilities.structuredContent["browser_public_commands"])
                     self.assertEqual(
                         expected_capability_tools | {
                             "bct_capabilities", "bct_status", "queue_message", "bct_get_conversation_network", "bct_check_conversation_network", "scan_code_blocks", "organize_code_blocks", "bct_run_plan", "bct_set_conversation_network",
                             "bct_execution_context", "bct_set_direction", "bct_get_direction", "bct_chain_recipe", "bct_prepare_supervisor_chain", "bct_set_execute_plan", "bct_update_execute_plan", "bct_get_execute_plan", "bct_work_create", "bct_operation_get", "bct_inbox_get", "bct_task_run", "bct_chain_message", "bct_task_message", "bct_send_delayed_message", "bct_delayed_send_cancel",
                             "bct_check_node", "bct_recheck_node", "bct_pause_node", "bct_replace_node", "bct_reset_node",
                             "bct_github_inbox_get", "bct_send_message", "bct_set_project_plan", "bct_plan_run", "bct_run_task", "bct_context", "bct_cancel_delayed_send",
-                            "bct_create_work", "bct_operation", "bct_github_inbox", "bct_inbox", "bct_move_tab", "bct_close_tab",
+                            "bct_create_work", "bct_operation", "bct_github_inbox", "bct_inbox", "bct_move_tab", "bct_close_tab", "bct_rcc_command_catalog", "bct_rcc_recipe_catalog",
                         },
                         set(capabilities.structuredContent["tools"]),
                     )
