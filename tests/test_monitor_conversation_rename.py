@@ -223,7 +223,7 @@ class MonitorConversationRenameTests(unittest.TestCase):
         self.assertEqual(Outcome.APPLIED.value, first["outcome"])
         self.assertTrue(duplicate["duplicate"])
         self.assertEqual(2, len(self.client.calls))
-        self.assertEqual(["state", "rcc_reload_extension"], [
+        self.assertEqual(["state", "reload-extension"], [
             call["command"] for call in self.client.calls
         ])
         self.assertEqual("instance123", self.client.calls[1]["instance_id"])
