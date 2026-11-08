@@ -15,6 +15,14 @@ class DirectTabPrepareTests(unittest.TestCase):
         self.assertTrue(req.preconditions["mutating"])
         self.assertEqual(self.work.work_id,req.arguments["extra"]["workId"])
 
+    def test_rcc_prefixed_public_name_uses_the_existing_native_transport(self):
+        request = self.feature.prepare(
+            work=self.work,
+            arguments={**self.args, "command": "rcc_send_to_tab"},
+        )
+        self.assertEqual("send-to-tab", request.arguments["command"])
+        self.assertTrue(request.preconditions["mutating"])
+
     def test_host_submission_ack_is_checked_against_exact_tab(self):
         from bct.core.models import Outcome,UnknownEffectError
         base=self.args.copy()

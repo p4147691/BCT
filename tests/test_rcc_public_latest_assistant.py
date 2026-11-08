@@ -89,19 +89,19 @@ class PublicReadLatestAssistantTests(unittest.IsolatedAsyncioTestCase):
     async def test_generic_browser_exposes_rcc_catalogue_without_bypassing_validation(self):
         catalogue = await self.server.call_tool("bct_rcc_command_catalog", {})
         catalogue_value = json.loads(catalogue[0][0].text)
-        self.assertIn({"command": "send", "category": "effect"}, catalogue_value["commands"])
-        self.assertIn({"command": "read-latest-assistant", "category": "read"}, catalogue_value["commands"])
-        self.assertIn({"command": "new-chat-send", "category": "effect"}, catalogue_value["commands"])
-        self.assertIn({"command": "conversation-bind", "category": "effect"}, catalogue_value["commands"])
+        self.assertIn({"command": "rcc_send", "category": "effect", "origin": "rcc-native", "legacy_alias": "send"}, catalogue_value["commands"])
+        self.assertIn({"command": "rcc_read_latest_assistant", "category": "read", "origin": "rcc-native", "legacy_alias": "read-latest-assistant"}, catalogue_value["commands"])
+        self.assertIn({"command": "rcc_new_chat_send", "category": "effect", "origin": "rcc-native", "legacy_alias": "new-chat-send"}, catalogue_value["commands"])
+        self.assertIn({"command": "rcc_conversation_bind", "category": "effect", "origin": "rcc-native", "legacy_alias": "conversation-bind"}, catalogue_value["commands"])
         tools = {t.name for t in await self.server.list_tools()}
         self.assertIn("bct_rcc_command_catalog", tools)
         self.assertIn("bct_rcc_recipe_catalog", tools)
         self.assertIn("bct_browser", tools)
         await self.server.call_tool("bct_browser", {
             "work_id": "W", "operation_id": "generic-read",
-            "arguments": {"command": "state", "instance_id": "instance"},
+            "arguments": {"command": "rcc_state", "instance_id": "instance"},
         })
-        self.assertEqual(self.operations.calls[-1]["arguments"]["command"], "state")
+        self.assertEqual(self.operations.calls[-1]["arguments"]["command"], "rcc_state")
 
     async def test_recipe_catalog_names_direct_browser_steps(self):
         recipes = await self.server.call_tool("bct_rcc_recipe_catalog", {})
@@ -109,15 +109,15 @@ class PublicReadLatestAssistantTests(unittest.IsolatedAsyncioTestCase):
         by_name = {item["recipe"]: item for item in value["recipes"]}
         self.assertEqual(
             by_name["read-latest-assistant"]["steps"],
-            ["state", "read-latest-assistant"],
+            ["rcc_state", "rcc_read_latest_assistant"],
         )
         self.assertEqual(
             by_name["create-chat-and-send"]["steps"],
-            ["target-discover", "new-chat-send", "result"],
+            ["target-discover", "rcc_new_chat_send", "rcc_result"],
         )
         self.assertEqual(
             by_name["bind-existing-conversation"]["steps"],
-            ["state", "tab-get", "conversation-bind"],
+            ["rcc_state", "rcc_tab_get", "rcc_conversation_bind"],
         )
         self.assertIn("reconcile-send", by_name["recover-unknown-send"]["steps"])
 
