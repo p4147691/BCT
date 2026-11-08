@@ -14,8 +14,10 @@ main CI와 LIVE preflight가 통과하기 전에는 설치본, Chrome, Native Ho
 ## 배포 전 조건
 
 1. GitHub `main`의 exact SHA와 해당 SHA의 BCT CI 성공을 확인한다.
-2. `verify_release_candidate.py --live-root D:\ChromeExtensions\RCC\extension`으로 후보와 현재
-   rollback 기준선이 모두 일치하는지 확인한다. 불일치하면 중단하고 기준선을 임의 갱신하지 않는다.
+2. 설치 전에는 `--rollback-root <보존한 설치본> --candidate-root <stage>`로 rollback 기준선과
+   후보를 각각 확인한다. 설치 후에는 `--installed-root D:\ChromeExtensions\RCC\extension`으로
+   설치된 candidate를 확인한다. `--live-root`은 과거 호환 별칭이며 rollback 기준선을 뜻한다.
+   불일치하면 중단하고 기준선을 임의 갱신하지 않는다.
 3. LIVE extension과 backup/staging의 resolved path가 각각 위 고정 root 안인지 확인한다.
 4. 현재 LIVE 전체 디렉터리를 새 operation 전용 backup 디렉터리에 복사하고, 후보의 rollback
    inventory와 파일 수·파일별 SHA-256·aggregate SHA-256을 다시 대조한다.
@@ -43,6 +45,6 @@ Native Host와 Chrome profile은 이번 payload 전환의 변경 대상이 아�
 ## 2026-10-29 N73 exact installed 1.0.59 baseline
 The former 54-file reference was **not** an exact copy of the installed 57-file RCC payload. N73 preserved the installed payload as an offline, byte-identical 57-file snapshot. No live installation or Chrome reload was performed.
 
-Preflight: verify candidate 58-file staging and 57-file rollback snapshot with verify_release_candidate.py --candidate-root and --live-root. Never use the previous 54-file rollback reference as proof of the installed 1.0.59 state.
+Preflight: verify candidate 58-file staging and 57-file rollback snapshot with verify_release_candidate.py --candidate-root and --rollback-root. Never use the previous 54-file rollback reference as proof of the installed 1.0.59 state.
 
 Supervisor only: record the accepted installed extension ID, profile and same-ID loader; back up the then-current installed payload again before applying a replacement. Promote the exact staged candidate atomically through the protected BCT deploy gate, not a manual partial overwrite. On failed acceptance, restore the exact 57-file snapshot only when its SHA and installation provenance still match the live target. Preserve all Core, RCC, Chrome, Work, Operation, Claim and UNKNOWN records. Never restart/reload for this preparation phase.

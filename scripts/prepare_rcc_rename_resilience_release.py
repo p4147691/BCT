@@ -82,7 +82,7 @@ def main() -> int:
         json.dumps(source, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8", newline="\n",
     )
-    result = verify(immutable_manifest, live_root=rollback, candidate_root=candidate)
+    result = verify(immutable_manifest, rollback_root=rollback, candidate_root=candidate)
     result["immutableManifest"] = str(immutable_manifest)
     result["immutableManifestSha256"] = _sha256(immutable_manifest)
     print(json.dumps(result, ensure_ascii=False, sort_keys=True))

@@ -22,8 +22,9 @@ class RccReleaseCandidateTests(unittest.TestCase):
     def test_committed_release_candidate_is_coherent(self):
         receipt = self.verifier.verify(self.release / "rcc_v2_rc.json")
         self.assertTrue(receipt["ok"])
-        self.assertFalse(receipt["liveBaselineVerified"])
+        self.assertFalse(receipt["rollbackBaselineVerified"])
         self.assertFalse(receipt["stagedCandidateVerified"])
+        self.assertFalse(receipt["installedCandidateVerified"])
         self.assertGreater(receipt["candidateFileCount"], 30)
         self.assertEqual(receipt["rollbackFileCount"], 58)
         self.assertEqual(receipt["candidateFileCount"], 58)
@@ -61,10 +62,13 @@ class RccReleaseCandidateTests(unittest.TestCase):
             with self.assertRaises(self.verifier.VerificationError):
                 self.verifier._verify_inventory(root, inventory, exact=True)
 
-    def test_cli_exposes_candidate_root_as_post_install_candidate_check(self):
+    def test_cli_labels_rollback_and_installed_roots_by_their_actual_role(self):
         source = (self.release / "verify_release_candidate.py").read_text(encoding="utf-8")
         self.assertIn('parser.add_argument("--candidate-root"', source)
-        self.assertIn('"stagedCandidateVerified": candidate_root is not None', source)
+        self.assertIn('parser.add_argument("--rollback-root"', source)
+        self.assertIn('parser.add_argument("--installed-root"', source)
+        self.assertIn('"rollbackBaselineVerified": rollback_root is not None', source)
+        self.assertIn('"installedCandidateVerified": installed_root is not None', source)
 
 
 if __name__ == "__main__":
