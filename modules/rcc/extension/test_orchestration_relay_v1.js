@@ -66,13 +66,13 @@ function harness() {
     bindingReceiptId: h.expected.bindingReceiptId,
     attachmentGeneration: h.expected.attachmentGeneration,
   };
-  const first = await h.context.sendOrchestrationRelay(message, 'orch.send.1');
+  const first = await h.context.sendRccMessage(message, 'orch.send.1');
   assert.equal(first.ok, true);
   assert.equal(first.submitted, true);
   assert.equal(h.sent.length, 1);
   assert.equal(h.state.pending['orch.send.1'].deliveryConfirmed, true);
 
-  const replay = await h.context.sendOrchestrationRelay(message, 'orch.send.1');
+  const replay = await h.context.sendRccMessage(message, 'orch.send.1');
   assert.equal(replay.duplicate, true);
   assert.equal(replay.pending, true);
   assert.equal(h.sent.length, 1, 'a pending operation must not submit twice');
@@ -92,11 +92,11 @@ function harness() {
   assert.equal(h.state.pending['orch.send.1'], undefined);
   assert.equal(h.state.resultReceipts['orch.send.1'].resultState, 'RESULT_PERSISTED');
 
-  const completed = await h.context.sendOrchestrationRelay(message, 'orch.send.1');
+  const completed = await h.context.sendRccMessage(message, 'orch.send.1');
   assert.equal(completed.completed, true);
   assert.equal(h.sent.length, 1, 'a completed operation must not submit twice');
 
-  const second = await h.context.sendOrchestrationRelay(message, 'orch.send.2');
+  const second = await h.context.sendRccMessage(message, 'orch.send.2');
   assert.equal(second.submitted, true);
   h.context.endpointSessionId = 'reloaded-session';
   await assert.rejects(
@@ -109,7 +109,7 @@ function harness() {
   h.context.endpointSessionId = h.expected.sessionId;
 
   await assert.rejects(
-    h.context.sendOrchestrationRelay({ ...message, expectedSessionId: 'stale' }, 'orch.send.2'),
+    h.context.sendRccMessage({ ...message, expectedSessionId: 'stale' }, 'orch.send.2'),
     /ORCHESTRATION_RELAY_SESSION_MISMATCH/,
   );
   assert(loader.includes("importScripts('domain/orchestration_relay_service.js');"));

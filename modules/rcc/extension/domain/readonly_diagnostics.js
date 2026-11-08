@@ -15,9 +15,10 @@ async function handleNativeCommand(message) {
       error: RccLegacyCommandPolicy.rejectCode('NATIVE_COMMAND', wireCommand, commandDecision) });
     return;
   }
-  // The public native protocol is `rcc_*`.  Keep the old spelling only as a
-  // local compatibility detail for the established domain service calls.
-  message = { ...message, command: RccLegacyCommandPolicy.toLegacyNativeCommand(wireCommand) };
+  // Canonical public RCC names are the wire protocol. Old spellings are input
+  // aliases only; domain services still use their stable native keys so old
+  // persisted receipts remain readable.
+  message = { ...message, command: RccLegacyCommandPolicy.toNativeCommand(wireCommand) };
   try {
     if (message.command === 'node-label-notify') {
           const result = await notifyNodeFaviconChanged(message, requestId);
@@ -157,7 +158,7 @@ async function handleNativeCommand(message) {
 
     if (message.command === 'simple-relay-bind') {
 
-          const result = await bindSimpleRelayV0(message);
+          const result = await bindLegacySimpleRelay(message);
 
           postNative({ type: 'host:result', requestId, ...result });
 
@@ -167,7 +168,7 @@ async function handleNativeCommand(message) {
 
     if (message.command === 'simple-relay-send') {
 
-          const result = await sendSimpleRelayV0(message, requestId);
+          const result = await sendLegacySimpleRelayMessage(message, requestId);
 
           postNative({ type: 'host:result', requestId, ...result,
 
@@ -179,7 +180,7 @@ async function handleNativeCommand(message) {
 
     if (message.command === 'simple-relay-return') {
 
-          const result = await returnSimpleRelayV0(message, requestId);
+          const result = await returnLegacySimpleRelayResponse(message, requestId);
 
           postNative({ type: 'host:result', requestId, ...result,
 
@@ -291,7 +292,7 @@ async function handleNativeCommand(message) {
         }
 
     if (message.command === 'read-latest-assistant') {
-          const result = await readLatestAssistant(message);
+          const result = await getLatestAssistantMessage(message);
           postNative({ type: 'host:result', requestId, ...result });
           return;
         }
@@ -319,7 +320,7 @@ async function handleNativeCommand(message) {
     if (message.command === 'send') {
           let result;
           try {
-            result = await sendOrchestrationRelay(message, requestId);
+            result = await sendRccMessage(message, requestId);
           } catch (error) {
             const state = await loadState();
             const effectState = (state.resultReceipts?.[requestId]

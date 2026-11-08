@@ -78,7 +78,7 @@ async function readTabGroups(message, groupId = null) {
 
 // This is an observation, not a delivery acknowledgement.  It deliberately
 // does not infer which prior user turn the visible answer belongs to.
-async function readLatestAssistant(message) {
+async function getLatestAssistantMessage(message) {
   await tabGroupEndpoint(message);
   const tabId = Number(message?.tabId);
   const windowId = Number(message?.windowId);

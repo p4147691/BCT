@@ -146,7 +146,7 @@ _RCC_NATIVE_TO_PUBLIC_COMMAND = {
     native: public for public, native in _RCC_PUBLIC_TO_NATIVE_COMMAND.items()
 }
 _RCC_NATIVE_TO_WIRE_COMMAND = {
-    command: "rcc_" + command.replace("-", "_") for command in _RCC_NATIVE_COMMANDS
+    native: public for native, public in _RCC_CANONICAL_PUBLIC_BY_NATIVE.items()
 }
 _BCT_COMMANDS = _COMMANDS - _RCC_NATIVE_COMMANDS
 _BCT_CANONICAL_PUBLIC_BY_INTERNAL = {
@@ -464,9 +464,8 @@ class BrowserFeature:
 
         ``prepare`` stores the long-standing internal command spelling so its
         receipt and recovery rules remain stable.  Installed extension builds
-        speak the established versioned ``rcc_<legacy>`` spelling; the public
-        canonical name is resolved before this boundary and is not a second
-        wire protocol.
+        speak the canonical public spelling.  The extension maps old wire
+        aliases to the same native key only for historical compatibility.
         """
         command = str(kwargs.get("command") or "")
         kwargs["command"] = _RCC_NATIVE_TO_WIRE_COMMAND.get(command, command)

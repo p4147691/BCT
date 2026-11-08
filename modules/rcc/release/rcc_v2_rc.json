@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "kind": "RCC_REBUILD_V2_RC",
-  "candidate": "RCC_COMMAND_NAMESPACE_V1_20261108",
+  "candidate": "RCC_CANONICAL_COMMANDS_V1_20261108",
   "sourceRoot": "modules/rcc/extension",
   "candidateInventory": {
     "fileCount": 58,
@@ -193,13 +193,13 @@
       },
       {
         "path": "domain/orchestration_relay_service.js",
-        "size": 13457,
-        "sha256": "96a0659b5e04e65fa959602dc6298f3db0542e46986f14541bddc2097ee68cf1"
+        "size": 13449,
+        "sha256": "e0a64017d5f54631935b21156be8e00e6207809532f0d9163f08b37ae510194c"
       },
       {
         "path": "domain/readonly_diagnostics.js",
-        "size": 36458,
-        "sha256": "ba78491abddfe90f58cbca6f17b0a119da4808840ec15bac65caee5ed7c0e0dd"
+        "size": 36523,
+        "sha256": "1dd8d0449c78ed83852c68c38441fe1a856e5b17e80a582ac206db6e0d5cbde5"
       },
       {
         "path": "domain/runtime_message_service.js",
@@ -213,8 +213,8 @@
       },
       {
         "path": "domain/simple_relay_service.js",
-        "size": 7827,
-        "sha256": "a83a7377938dd49e3dde61e9c8b8f58bafa0c40d609828545a8be9db8fb8a669"
+        "size": 7869,
+        "sha256": "dbb0019ab1ad75aa5dd63598db69c1942d38e9ba15f20be521948f05cf5ea8d0"
       },
       {
         "path": "domain/state_service.js",
@@ -223,18 +223,18 @@
       },
       {
         "path": "domain/tab_group_service.js",
-        "size": 5057,
-        "sha256": "89d78daffb25208e5206a7882fc43d880f9a560dd6ad8adfc2ccd1759fb9d91c"
+        "size": 5063,
+        "sha256": "726ece0bc09f322f1a6b23e912109fd7a670f3d651f8056e9ce5df6af9ad5385"
       },
       {
         "path": "legacy/command_policy.js",
-        "size": 5446,
-        "sha256": "3fb4eeea082bd3315c12209f091824279c913031747c90b72e745e08f55b30fe"
+        "size": 8656,
+        "sha256": "2541f78880de0bedda47dda2b90605fd01360dd8c7f3a6d4bee40688da243629"
       },
       {
         "path": "manifest.json",
-        "size": 1557,
-        "sha256": "e785be57e05c24a2a9fd5ab206a396f6f7245b6bcad075a0f61cf1da32c0935a"
+        "size": 1533,
+        "sha256": "08fdfaadf1b82acf34aa0964b59c3a11e56346163d0e3d476aa3786d401770c7"
       },
       {
         "path": "network/directory.js",
@@ -297,7 +297,7 @@
         "sha256": "b3ad92bc20564a905bffc37f3e524e2c8e8c5ae71c02517a301cedd5cf1341cd"
       }
     ],
-    "aggregateSha256": "16bedc1480a7d74585b98ee52891f01781edc0ad04868ec4f1663ec30ecac1ec"
+    "aggregateSha256": "11031df529e506c566616c65cd68386280859325e11afa15520b0b9df5efd263"
   },
   "activeLoaderGraph": {
     "background": [
