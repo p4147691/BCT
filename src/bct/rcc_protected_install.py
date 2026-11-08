@@ -83,6 +83,15 @@ COMMAND_NAMESPACE_MANIFEST = COMMAND_NAMESPACE_ROOT / "release_manifest_command_
 # Filled from the immutable release artifact before this route is merged.
 COMMAND_NAMESPACE_MANIFEST_SHA256 = "a2dab10f4703bd8aca26943c359be598d263f2d37a787f998a6fcd3517579ce1"
 COMMAND_NAMESPACE_JOURNAL = Path(r"D:\BCT\runtime\backups\rcc-guarded-install-command-namespace")
+# Canonical wire vocabulary: preserve the exact 1.0.66 installed payload as
+# rollback input and pin the immutable 1.0.67 candidate independently from
+# earlier command-namespace receipts.
+CANONICAL_WIRE_ROOT = Path(r"D:\BCT\data\RCC_CANONICAL_WIRE_20261108")
+CANONICAL_WIRE_STAGE = CANONICAL_WIRE_ROOT / "candidate_1_0_67_exact"
+CANONICAL_WIRE_ROLLBACK = CANONICAL_WIRE_ROOT / "rollback_installed_1_0_66"
+CANONICAL_WIRE_MANIFEST = CANONICAL_WIRE_ROOT / "release_manifest_canonical_wire_immutable.json"
+CANONICAL_WIRE_MANIFEST_SHA256 = "b49520dcef5061503e67f1b1e74742a7a914899b4621b64ae8e30b7b54326f58"
+CANONICAL_WIRE_JOURNAL = Path(r"D:\BCT\runtime\backups\rcc-guarded-install-canonical-wire")
 EXTENSION_ID = "ocbidbaplechjjdacmokhnfbdmgjkphf"
 OP_ID = re.compile(r"[A-Za-z0-9_.-]{1,80}\Z")
 
@@ -210,7 +219,7 @@ def _plan(operation_id: str, *, live: Path, candidate: Path, backup_source: Path
     baseline_version = installed_version or ("1.0.59" if rollback["fileCount"] == 57 else "1.0.60")
     if _identity(live) != (EXTENSION_ID, baseline_version):
         raise PreconditionError("RCC_INSTALL_LIVE_IDENTITY_MISMATCH")
-    if candidate_version not in {"1.0.60", "1.0.61", "1.0.63", "1.0.64", "1.0.65", "1.0.66"}:
+    if candidate_version not in {"1.0.60", "1.0.61", "1.0.63", "1.0.64", "1.0.65", "1.0.66", "1.0.67"}:
         raise PreconditionError("RCC_INSTALL_CANDIDATE_VERSION_UNSUPPORTED")
     if _identity(candidate) != (EXTENSION_ID, candidate_version):
         raise PreconditionError("RCC_INSTALL_CANDIDATE_IDENTITY_MISMATCH")

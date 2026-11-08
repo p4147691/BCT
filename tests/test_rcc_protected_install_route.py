@@ -208,6 +208,39 @@ class ProtectedRccRouteTests(unittest.TestCase):
             ri.COMMAND_NAMESPACE_MANIFEST_SHA256,
         )
 
+    def test_canonical_wire_route_upgrades_exact_66_to_67(self):
+        route = DeployFeature._rcc_route_config("rcc-inspect-canonical-wire")
+        self.assertEqual(route["candidate_version"], "1.0.67")
+        self.assertEqual(route["installed_version"], "1.0.66")
+        self.assertEqual(route["manifest_file"], ri.CANONICAL_WIRE_MANIFEST)
+        self.assertEqual(route["candidate"], ri.CANONICAL_WIRE_STAGE)
+        self.assertEqual(route["backup_source"], ri.CANONICAL_WIRE_ROLLBACK)
+        self.assertEqual(route["journal_root"], ri.CANONICAL_WIRE_JOURNAL)
+        self.assertEqual(
+            route["pinned_manifest_sha256"],
+            ri.CANONICAL_WIRE_MANIFEST_SHA256,
+        )
+
+    def test_protected_plan_accepts_canonical_wire_candidate_67(self):
+        identities = {
+            self.live: (self.extension_id, "1.0.66"),
+            self.source: (self.extension_id, "1.0.67"),
+            self.reference: (self.extension_id, "1.0.66"),
+        }
+        with patch.object(ri, "_identity", side_effect=lambda path: identities[path]), \
+                patch.object(ri, "_exact"):
+            plan = ri._plan(
+                "N73-TEST-CANONICAL-WIRE",
+                live=self.live,
+                candidate=self.source,
+                backup_source=self.reference,
+                manifest_file=self.policy_manifest,
+                journal=self.journal / "N73-TEST-CANONICAL-WIRE.json",
+                candidate_version="1.0.67",
+                installed_version="1.0.66",
+            )
+        self.assertEqual(plan["candidate_files"], 58)
+
     def test_protected_plan_accepts_command_namespace_candidate_66(self):
         identities = {
             self.live: (self.extension_id, "1.0.65"),
