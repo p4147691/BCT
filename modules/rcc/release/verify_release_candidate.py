@@ -191,9 +191,24 @@ def _verify_contracts(
 
 def verify(
     manifest_path: Path = DEFAULT_MANIFEST,
-    live_root: Path | None = None,
+    rollback_root: Path | None = None,
     candidate_root: Path | None = None,
+    installed_root: Path | None = None,
+    *,
+    live_root: Path | None = None,
 ) -> dict[str, Any]:
+    """Verify distinct release artifacts without conflating their roles.
+
+    ``rollback_root`` is the pre-install baseline.  ``candidate_root`` is the
+    staged candidate.  ``installed_root`` is the post-install payload and must
+    match the candidate inventory.  ``live_root`` remains a compatibility
+    spelling for historical callers only; it means ``rollback_root``, not the
+    currently installed candidate.
+    """
+    if live_root is not None:
+        if rollback_root is not None:
+            raise VerificationError("rollback_root and legacy live_root conflict")
+        rollback_root = live_root
     candidate = json.loads(manifest_path.read_text(encoding="utf-8-sig"))
     if candidate.get("schemaVersion") != 1 or candidate.get("kind") != "RCC_REBUILD_V2_RC":
         raise VerificationError("unsupported RCC release candidate manifest")
@@ -211,8 +226,11 @@ def verify(
         raise VerificationError("rollback fileCount mismatch")
     for item in rollback["files"]:
         _safe_relative(item["path"])
-    if live_root is not None:
-        _verify_inventory(live_root, rollback, exact=True)
+    if rollback_root is not None:
+        _verify_inventory(rollback_root, rollback, exact=True)
+    if installed_root is not None:
+        _verify_inventory(installed_root, candidate["candidateInventory"], exact=True)
+        _verify_contracts(ROOT, candidate, extension_root=installed_root)
 
     rollback_plan = ROOT / candidate["rollbackPlan"]
     if not rollback_plan.is_file() or _sha256(rollback_plan) != candidate["rollbackPlanSha256"]:
@@ -224,22 +242,30 @@ def verify(
         "candidateAggregateSha256": candidate["candidateInventory"]["aggregateSha256"],
         "rollbackFileCount": rollback["fileCount"],
         "rollbackAggregateSha256": rollback["aggregateSha256"],
-        "liveBaselineVerified": live_root is not None,
+        "rollbackBaselineVerified": rollback_root is not None,
         "stagedCandidateVerified": candidate_root is not None,
+        "installedCandidateVerified": installed_root is not None,
     }
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Verify the source-only RCC V2 release candidate")
+    parser = argparse.ArgumentParser(description="Verify RCC rollback, staged, and installed payloads")
     parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
-    parser.add_argument("--live-root", type=Path)
+    parser.add_argument("--rollback-root", type=Path,
+                        help="pre-install rollback baseline; must match rollbackInventory")
     parser.add_argument("--candidate-root", type=Path)
+    parser.add_argument("--installed-root", type=Path,
+                        help="post-install payload; must match candidateInventory")
+    parser.add_argument("--live-root", type=Path,
+                        help="deprecated compatibility spelling for --rollback-root")
     args = parser.parse_args()
     try:
         result = verify(
             args.manifest.resolve(),
-            args.live_root.resolve() if args.live_root else None,
-            args.candidate_root.resolve() if args.candidate_root else None,
+            rollback_root=args.rollback_root.resolve() if args.rollback_root else None,
+            candidate_root=args.candidate_root.resolve() if args.candidate_root else None,
+            installed_root=args.installed_root.resolve() if args.installed_root else None,
+            live_root=args.live_root.resolve() if args.live_root else None,
         )
     except (OSError, ValueError, KeyError, VerificationError) as error:
         print(json.dumps({"ok": False, "error": str(error)}, ensure_ascii=False))
