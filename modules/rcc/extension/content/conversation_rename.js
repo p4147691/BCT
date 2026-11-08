@@ -136,9 +136,15 @@ function dispatchRenameHover(node) {
 }
 
 function visibleRenameMenuItems() {
-  const roots = Array.from(document.querySelectorAll('[role="menu"], [data-radix-menu-content]'))
+  // ChatGPT has used both Radix menu content and a portalled popover wrapper
+  // for this control.  Keep the search constrained to visible menu/popover
+  // surfaces so an unrelated page button cannot become a rename candidate.
+  const roots = Array.from(document.querySelectorAll(
+    '[role="menu"], [data-radix-menu-content], [data-radix-popper-content-wrapper], '
+    + '[data-testid*="menu"], [data-testid*="popover"]'
+  ))
     .filter((node) => isVisible(node));
-  const selector = '[role="menuitem"], button, a[href]';
+  const selector = '[role^="menuitem"], button, a[href], [data-testid]';
   const items = roots.flatMap((root) => Array.from(root.querySelectorAll(selector)));
   if (!items.length) items.push(...document.querySelectorAll('[role="menuitem"]'));
   return [...new Set(items)].filter((node) => isVisible(node) && !node.disabled);
@@ -147,11 +153,11 @@ function visibleRenameMenuItems() {
 function findRenameMenuItem() {
   const matches = visibleRenameMenuItems().filter((node) => {
     const text = renameSemanticText(node);
-    return /\brename\b|\bedit\s+(?:chat|conversation|title)\b|(?:이름|제목).*(?:바꾸기|변경|수정)|(?:바꾸기|변경|수정).*(?:이름|제목)/i.test(text);
+    return /\brename\b|\b(?:edit|change)\s+(?:chat|conversation|title|display)\b|(?:이름|제목).*(?:바꾸기|변경|수정|편집)|(?:바꾸기|변경|수정|편집).*(?:이름|제목)/i.test(text);
   });
   if (matches.length === 1) return matches[0];
   const exact = matches.filter((node) =>
-    /^(rename|rename chat|이름 바꾸기|이름 변경|제목 변경)$/i.test(normalizedUiText(node.textContent))
+    /^(rename|rename chat|edit title|change display title|이름 바꾸기|이름 변경|이름 편집|제목 변경|제목 편집)$/i.test(normalizedUiText(node.textContent))
   );
   return exact.length === 1 ? exact[0] : null;
 }

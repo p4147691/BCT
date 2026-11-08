@@ -2693,10 +2693,28 @@ class BrowserFeature:
         # Persist only a bounded symbolic error code, never host paths or secrets.
         error_code = host_error if re.fullmatch(r"[A-Z0-9_:-]{1,128}", host_error) else ""
         if state in {"NOT_APPLIED", "NOT_SENT", "FAILED_CONFIRMED"} and result.get("ambiguous") is not True:
+            # The content script emits only fixed stage/status tokens here.
+            # Preserve that bounded diagnostic with the receipt so a UI drift
+            # is distinguishable from identity or policy rejection, without
+            # retaining page text or DOM contents.
+            rename_diagnostic = result.get("renameDiagnostic")
+            if not isinstance(rename_diagnostic, dict):
+                rename_diagnostic = {}
+            allowed_rename_diagnostic = {
+                "version", "identity", "menuButton", "menuClick",
+                "menuVisible", "renameAction", "editor",
+            }
+            rename_diagnostic = {
+                str(key): str(value)[:48]
+                for key, value in rename_diagnostic.items()
+                if key in allowed_rename_diagnostic
+                and re.fullmatch(r"[A-Z0-9_:-]{1,48}", str(value))
+            }
             return FeatureResult(Outcome.NOT_APPLIED, {
                 "instance_id": values["instance_id"], "command": values["command"],
                 "host_request_id": request.operation_id, "host_state": state,
                 "error": error_code or "RCC_NOT_APPLIED",
+                **({"rename_diagnostic": rename_diagnostic} if rename_diagnostic else {}),
             })
         label = state or "MISSING"
         if error_code:

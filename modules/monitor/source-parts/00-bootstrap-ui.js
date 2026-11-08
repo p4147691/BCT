@@ -41,7 +41,6 @@ const ORCHESTRATOR_NOTE_AI_URL = "act:/monitor/note/organize";
 
 const ORCHESTRATOR_CONTEXT_TITLE_URL = "act:/monitor/context-title";
 
-const ORCHESTRATOR_CONVERSATION_RENAME_URL = "act:/monitor/conversation-title/rename";
 
 // ACT transport is isolated in monitor-act-transport.js.
 // Monitor consumes one narrow public boundary: actFetch.
