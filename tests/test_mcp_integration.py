@@ -210,9 +210,9 @@ class MCPIntegrationTests(unittest.TestCase):
                     live_relay_usage = capabilities.structuredContent["browser_usage"]
                     self.assertIn("bct_rcc_command_catalog", live_relay_usage)
                     self.assertIn("arguments.command", live_relay_usage)
-                    self.assertIn("send-to-tab", capabilities.structuredContent["browser_public_commands"])
-                    self.assertIn("new-chat-send", capabilities.structuredContent["browser_public_commands"])
-                    self.assertIn("conversation-bind", capabilities.structuredContent["browser_public_commands"])
+                    self.assertIn("rcc_send_message_to_tab", capabilities.structuredContent["browser_public_commands"])
+                    self.assertIn("rcc_create_chat_and_send_message", capabilities.structuredContent["browser_public_commands"])
+                    self.assertIn("rcc_bind_conversation_to_node", capabilities.structuredContent["browser_public_commands"])
                     self.assertEqual(
                         expected_capability_tools | {
                             "bct_capabilities", "bct_status", "queue_message", "bct_get_conversation_network", "bct_check_conversation_network", "scan_code_blocks", "organize_code_blocks", "bct_run_plan", "bct_set_conversation_network",
@@ -499,6 +499,13 @@ class MCPIntegrationTests(unittest.TestCase):
         self.assertEqual("READ_ONLY_MONITOR_UI_SNAPSHOT", current_node_view["source"])
         self.assertIn("items", current_node_view["current_nodes"])
         self.assertIn("conversation_network_managers", current_node_view)
+
+        command_catalog = httpx.get(f"http://127.0.0.1:{self.port}/monitor/rcc-command-catalog", timeout=3)
+        self.assertEqual(200, command_catalog.status_code)
+        command_catalog_view = command_catalog.json()
+        self.assertEqual(1, command_catalog_view["schema"])
+        self.assertEqual("bct.features.rcc.command_catalog", command_catalog_view["source"])
+        self.assertIn("rcc_get_extension_state", {row["command"] for row in command_catalog_view["commands"]})
 
     def test_authenticated_catalogue_work_call_and_duplicate_receipt(self):
         asyncio.run(self.exercise_mcp())

@@ -176,6 +176,78 @@ _BCT_COMPAT_PUBLIC_TO_INTERNAL_COMMAND = {
 _BCT_INTERNAL_TO_PUBLIC_COMMAND = {
     internal: public for public, internal in _BCT_PUBLIC_TO_INTERNAL_COMMAND.items()
 }
+
+# Presentation metadata is intentionally adjacent to the command maps.  It is
+# read-only catalogue data shared by MCP and Monitor; it does not participate
+# in command preparation, identity checks, or execution policy.  The exact-set
+# test below keeps a renamed or newly exposed command from silently losing its
+# human-readable explanation.
+_COMMAND_CATALOG_PRESENTATION: dict[str, tuple[str, str, str, str]] = {
+    # display group, concise purpose, external effect, exact target class
+    "state": ("상태·대상", "RCC 확장에 연결된 세션·탭·창의 현재 상태를 읽습니다.", "조회만", "RCC 인스턴스"),
+    "presence": ("상태·대상", "지정한 대화가 현재 RCC 관측에 있는지 확인합니다.", "조회만", "대화 UUID"),
+    "ping": ("상태·대상", "RCC 확장이 지금 한 번 응답하는지 확인합니다.", "조회만", "RCC 인스턴스"),
+    "probe": ("상태·대상", "지정 탭이 지금 응답하는지 확인합니다.", "조회만", "탭·창"),
+    "probe-tabs": ("상태·대상", "열린 ChatGPT 탭들의 응답 상태를 일괄 확인합니다.", "조회만", "RCC 인스턴스"),
+    "api-probe": ("진단·대화 읽기", "대화 API 응답 진단 정보를 읽습니다.", "조회만", "대화 UUID·탭·창"),
+    "diagnose-activity": ("진단·대화 읽기", "한 대화의 생성·활동 상태를 읽습니다.", "조회만", "대화 UUID·탭·창"),
+    "diagnose-composer": ("진단·대화 읽기", "지정 탭의 메시지 입력창 상태를 진단합니다.", "조회만", "대화 UUID·탭·창"),
+    "diagnose-conversation-ui": ("진단·대화 읽기", "지정 대화 화면의 식별·표시 상태를 진단합니다.", "조회만", "대화 UUID·탭·창"),
+    "main-capture-get": ("진단·대화 읽기", "이미 수집된 대화 캡처를 읽습니다.", "조회만", "RCC 인스턴스"),
+    "read-latest-assistant": ("진단·대화 읽기", "정확한 UUID 대화의 마지막 AI 답변만 읽습니다.", "조회만", "대화 UUID·탭·창·세션"),
+    "windows-list": ("탭·창·그룹", "관측된 Chrome 창 목록과 식별 정보를 읽습니다.", "조회만", "RCC 인스턴스"),
+    "window-get": ("탭·창·그룹", "지정 Chrome 창의 식별 정보와 상태를 읽습니다.", "조회만", "창"),
+    "tab-get": ("탭·창·그룹", "지정 탭의 식별 정보와 상태를 읽습니다.", "조회만", "탭·창"),
+    "tab-groups-list": ("탭·창·그룹", "탭 그룹 목록과 현재 구성을 읽습니다.", "조회만", "창"),
+    "tab-group-get": ("탭·창·그룹", "지정 탭 그룹의 식별 정보와 상태를 읽습니다.", "조회만", "탭 그룹·창"),
+    "create-chat-tab": ("탭·창·그룹", "새 ChatGPT 탭을 만듭니다.", "Chrome 상태 변경", "RCC 인스턴스·창"),
+    "create-chat-window": ("탭·창·그룹", "새 ChatGPT 창을 만듭니다.", "Chrome 상태 변경", "RCC 인스턴스"),
+    "close-conversation-tab": ("탭·창·그룹", "정확히 지정한 대화 탭 하나를 닫습니다.", "Chrome 상태 변경", "대화 UUID·탭·창"),
+    "move-tab": ("탭·창·그룹", "정확히 지정한 탭을 다른 창으로 옮깁니다.", "Chrome 상태 변경", "탭·대상 창"),
+    "move-tab-group": ("탭·창·그룹", "지정 탭 그룹을 다른 창으로 옮깁니다.", "Chrome 상태 변경", "탭 그룹·대상 창"),
+    "create-tab-group": ("탭·창·그룹", "정확한 탭들로 새 탭 그룹을 만듭니다.", "Chrome 상태 변경", "탭·창"),
+    "update-tab-group": ("탭·창·그룹", "지정 탭 그룹의 이름·색상·접힘 상태를 바꿉니다.", "Chrome 상태 변경", "탭 그룹·창"),
+    "add-tab-to-group": ("탭·창·그룹", "정확히 지정한 탭을 탭 그룹에 넣습니다.", "Chrome 상태 변경", "탭·탭 그룹·창"),
+    "remove-tab-from-group": ("탭·창·그룹", "정확히 지정한 탭을 탭 그룹에서 뺍니다. 탭은 삭제하지 않습니다.", "Chrome 상태 변경", "탭·창"),
+    "send": ("메시지·새 대화", "지정된 RCC 전송 계약으로 메시지를 보냅니다.", "메시지 전송", "정확한 대상 식별자"),
+    "send-to-tab": ("메시지·새 대화", "검증된 기존 탭의 입력창으로 메시지를 한 번 보냅니다.", "메시지 전송", "대화 UUID·탭·창·세션"),
+    "send-to-created-tab": ("메시지·새 대화", "생성 영수증으로 확인한 새 탭에 첫 메시지를 보냅니다.", "메시지 전송", "생성 영수증·탭·창"),
+    "new-chat-send": ("메시지·새 대화", "새 대화를 만들고 첫 메시지를 보냅니다.", "메시지 전송", "창·생성/전송 영수증"),
+    "conversation-bind": ("대화 식별·표시", "열린 대화 UUID를 정확한 탭·창·세션에 결합 기록합니다.", "기록·영수증 처리", "대화 UUID·탭·창·세션"),
+    "rename-conversation": ("대화 식별·표시", "정확히 지정한 ChatGPT 대화의 이름을 바꿉니다.", "Chrome 상태 변경", "대화 UUID·탭·창·세션"),
+    "rename-receipt": ("결과·영수증", "대화명 변경 영수증의 결과를 읽습니다.", "조회만", "이름변경 영수증"),
+    "node-label-notify": ("대화 식별·표시", "대화에 연결된 노드 라벨 변경을 알립니다.", "Chrome 상태 변경", "대화 UUID·탭·창"),
+    "simple-relay-bind": ("호환 릴레이", "단순 릴레이 전달을 위한 정확한 대상 결합을 기록합니다.", "기록·영수증 처리", "대화 UUID·탭·창·세션"),
+    "simple-relay-send": ("호환 릴레이", "기록된 단순 릴레이 대상으로 메시지를 보냅니다.", "메시지 전송", "결합 영수증"),
+    "simple-relay-return": ("호환 릴레이", "단순 릴레이의 반환 대상을 기록합니다.", "기록·영수증 처리", "반환 영수증"),
+    "delivery-start": ("전달 프로세스", "Manager에서 Worker로 하나의 전달과 응답 감시를 시작합니다.", "기록·영수증 처리", "대화 UUID·전달 영수증"),
+    "delivery-status": ("전달 프로세스", "기존 전달 영수증의 현재 증빙과 상태를 읽습니다.", "조회만", "전달 영수증"),
+    "delivery-response-read": ("전달 프로세스", "전달 대상 Worker의 최근 응답 원문과 해시를 읽습니다.", "조회만", "전달 영수증·대화 UUID"),
+    "delivery-return": ("전달 프로세스", "기존 전달의 결과를 정확한 Manager 반환 대상으로 기록합니다.", "기록·영수증 처리", "전달 영수증·반환 대상"),
+    "delivery-manager-status": ("전달 프로세스", "Manager 반환 관점에서 전달 상태를 읽습니다.", "조회만", "전달 영수증"),
+    "delivery-cancel": ("전달 프로세스", "아직 전송 전인 전달을 취소 기록합니다.", "기록·영수증 처리", "전달 영수증"),
+    "delivery-recovery-inspect": ("전달 프로세스", "기존 전달의 복구 가능 상태만 점검합니다.", "조회만", "전달 영수증"),
+    "delivery-result": ("결과·영수증", "전달 영수증을 결합해 APPLIED·NOT_APPLIED·UNKNOWN·PENDING을 판정합니다.", "조회만", "전달 영수증"),
+    "result": ("결과·영수증", "원래 Operation 영수증과 결과를 읽습니다.", "조회만", "Operation ID"),
+    "result-of-create-and-send": ("결과·영수증", "생성·첫 전송 Operation의 결과를 읽습니다.", "조회만", "Operation ID"),
+    "delivery-preview": ("결과·영수증", "전달 전에 사용할 대상·내용 요약을 읽기 전용으로 확인합니다.", "조회만", "전달 입력"),
+    "inspect-rename-receipt": ("결과·영수증", "대화명 변경 영수증의 상태와 대상 일치를 읽습니다.", "조회만", "이름변경 영수증"),
+    "retire-composer-draft": ("복구·정리", "중단된 입력 초안 기록을 안전하게 정리합니다.", "기록·영수증 처리", "대화 UUID·영수증"),
+    "retire-recovered-execution": ("복구·정리", "이미 복구된 실행 기록을 종료 상태로 정리합니다.", "기록·영수증 처리", "Operation ID·영수증"),
+    "reload-extension": ("복구·정리", "설치된 RCC 확장을 다시 로드합니다.", "Chrome 상태 변경", "RCC 인스턴스"),
+    "create-and-send": ("BCT 전송 조합", "새 대화 생성과 첫 전송을 하나의 BCT 영수증 흐름으로 조합합니다.", "메시지 전송", "생성·전송 영수증"),
+    "send-message": ("BCT 전송 조합", "대상 검증과 영수증 기록을 포함해 메시지 전송을 조합합니다.", "메시지 전송", "대화 UUID·탭·창·세션"),
+    "send-to-self": ("BCT 전송 조합", "같은 정확한 대화로 후속 메시지를 보냅니다.", "메시지 전송", "대화 UUID·탭·창·세션"),
+    "node-continue": ("BCT 전송 조합", "기존 노드에 이어서 처리할 메시지를 기록·전달합니다.", "기록·영수증 처리", "대화 UUID·영수증"),
+    "target-discover": ("BCT 대상 탐색", "현재 RCC 상태에서 정확한 대상 후보를 읽어 제공합니다.", "조회만", "RCC 인스턴스"),
+    "reconcile-send": ("BCT 재조정·복구", "기존 전송 영수증으로 결과를 재확인합니다. UNKNOWN에서 새 전송을 만들지 않습니다.", "기록·영수증 처리", "원래 Operation·영수증"),
+    "reconcile-send-to-created-tab": ("BCT 재조정·복구", "새 탭 첫 전송의 기존 영수증만 재확인합니다.", "기록·영수증 처리", "원래 Operation·생성 영수증"),
+    "reconcile-create-and-send": ("BCT 재조정·복구", "생성·첫 전송 조합의 기존 결과를 재확인합니다.", "기록·영수증 처리", "원래 Operation·영수증"),
+    "reconcile-rename-conversation": ("BCT 재조정·복구", "대화명 변경 영수증으로 실제 결과를 재확인합니다.", "기록·영수증 처리", "원래 Operation·영수증"),
+    "quarantine-legacy-rename-claim": ("BCT 재조정·복구", "기존 이름변경 Claim을 격리 기록으로 보존합니다.", "기록·영수증 처리", "기존 Claim·영수증"),
+    "reclassify-rename-claim": ("BCT 재조정·복구", "기존 이름변경 Claim의 결과 분류를 영수증 기준으로 바로잡습니다.", "기록·영수증 처리", "기존 Claim·영수증"),
+}
+assert set(_COMMAND_CATALOG_PRESENTATION) == _COMMANDS
 _COMMON = {"command", "instance_id", "timeout_s"}
 _SENSITIVE_KEYS = {"token", "secret", "password", "authorization"}
 _BOOTSTRAP_RESULT_READBACK_TIMEOUT_S = 15.0
@@ -199,12 +271,18 @@ def command_catalog() -> list[dict[str, Any]]:
             else "reconcile" if command in _RECONCILE_COMMANDS
             else special[command]
         )
+        display_group, summary, effect, target = _COMMAND_CATALOG_PRESENTATION[command]
         if command in _RCC_NATIVE_COMMANDS:
             rows.append({
                 "command": _RCC_NATIVE_TO_PUBLIC_COMMAND[command],
                 "category": category,
                 "origin": "rcc-native",
                 "group": _command_group(command),
+                "display_group": display_group,
+                "summary": summary,
+                "effect": effect,
+                "target": target,
+                "source": "modules/rcc/extension",
                 "legacy_alias": command,
                 "compatibility_alias": "rcc_" + command.replace("-", "_"),
             })
@@ -214,6 +292,11 @@ def command_catalog() -> list[dict[str, Any]]:
                 "category": category,
                 "origin": "bct",
                 "group": _command_group(command),
+                "display_group": display_group,
+                "summary": summary,
+                "effect": effect,
+                "target": target,
+                "source": "src/bct/features/rcc.py",
                 "legacy_alias": command,
                 "compatibility_alias": "bct_" + command.replace("-", "_"),
             })

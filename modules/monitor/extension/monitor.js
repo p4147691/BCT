@@ -203,6 +203,14 @@ monitorRoot.innerHTML = `
 
   </section>
 
+  <section class="monitor-section monitor-command-catalog-section" aria-label="RCC와 BCT 명령 목록">
+    <div class="monitor-bct-nodes-head monitor-command-catalog-head"><strong>명령 목록</strong><span id="monitorCommandCatalogSummary">카탈로그 확인 중…</span><button id="monitorCommandCatalogRefresh" type="button" title="현재 BCT 공개 명령 카탈로그를 다시 읽습니다.">새로고침</button></div>
+    <label class="monitor-command-catalog-search-label" for="monitorCommandCatalogSearch">명령 검색</label>
+    <input id="monitorCommandCatalogSearch" class="monitor-command-catalog-search" type="search" placeholder="명령명 또는 기능 설명 검색" autocomplete="off">
+    <div id="monitorCommandCatalogList" class="monitor-command-catalog-list" aria-live="polite"></div>
+    <section id="monitorCommandCatalogDetail" class="monitor-command-catalog-detail" aria-live="polite"><strong>명령을 선택하세요</strong><span>목록은 읽기 전용이며 명령을 실행하지 않습니다.</span></section>
+  </section>
+
 
 
 
@@ -6321,6 +6329,11 @@ async function applyMonitorBctRoleHistory(direction) {
 monitorBctRoleUndo?.addEventListener("click", () => void applyMonitorBctRoleHistory("undo"));
 monitorBctRoleRedo?.addEventListener("click", () => void applyMonitorBctRoleHistory("redo"));
 const monitorBctShell = globalThis.MonitorBctShell?.create?.();
+const monitorRccCommandCatalog = globalThis.MonitorRccCommandCatalog?.create?.({
+  document,
+  shell: monitorBctShell,
+});
+void monitorRccCommandCatalog?.refresh?.();
 const monitorWindowHwndContract = globalThis.MonitorWindowHwndContract?.create?.();
 const monitorMinimizedNodeBadgeContract = globalThis.MonitorMinimizedNodeBadgeContract;
 // Null means BCT not yet observed; [] means BCT observed an empty node list.
