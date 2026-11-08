@@ -10,7 +10,7 @@ const runtimeMessages = fs.readFileSync(path.join(root, 'domain/runtime_message_
 const content = fs.readFileSync(path.join(root, 'content/content_router.js'), 'utf8');
 const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
 
-for (const command of ['simple-relay-bind', 'simple-relay-send', 'simple-relay-return', 'new-chat-send', 'rename-conversation', 'conversation-bind', 'send-to-tab', 'send', 'state', 'result', 'probe-tabs', 'create-chat-tab', 'create-chat-window', 'send-to-created-tab', 'move-tab', 'create-tab-group', 'add-tab-to-group', 'remove-tab-from-group', 'move-tab-group', 'update-tab-group', 'tab-get', 'windows-list', 'window-get', 'tab-groups-list', 'tab-group-get', 'read-latest-assistant']) {
+for (const command of ['simple-relay-bind', 'simple-relay-send', 'simple-relay-return', 'new-chat-send', 'rename-conversation', 'conversation-bind', 'send-to-tab', 'send', 'presence', 'state', 'result', 'probe-tabs', 'delivery-response-read', 'create-chat-tab', 'create-chat-window', 'send-to-created-tab', 'move-tab', 'create-tab-group', 'add-tab-to-group', 'remove-tab-from-group', 'move-tab-group', 'update-tab-group', 'tab-get', 'windows-list', 'window-get', 'tab-groups-list', 'tab-group-get', 'read-latest-assistant']) {
   assert.equal(policy.nativeCommand(command).allowed, true, command);
 }
 assert.deepEqual(policy.nativeCommand('send'), { allowed: true, kind: 'ORCHESTRATION' });

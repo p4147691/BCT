@@ -75,34 +75,48 @@ availability.
 - No LIVE installation or restart; no UNKNOWN effect replay.
 - This literal scan does not prove all dynamic call sites or command reachability.
 
-## Extension router-only commands and messages
+## RCC-native router inventory and BCT wiring
 
-The table above is the BCT Feature command inventory.  The RCC extension also
-accepts the following command families directly from its Native Messaging
-router.  They are not caller-facing BCT MCP commands and do not become public
-merely because their browser-side handler is read-only.
+This is the separate inventory the BCT feature table alone cannot show. The
+Native Messaging router has **47 implemented command handlers**. All 47 are
+now listed as active in `RccLegacyCommandPolicy`; the audit found two handlers
+(`presence`, `delivery-response-read`) that had been omitted from the active
+list and restores them in this change.
 
-| Router family | Commands/messages | Function | Publication decision |
-|---|---|---|---|
-| Diagnostics | `ping`, `probe`, `probe-tabs`, `api-probe`, `diagnose-activity`, `diagnose-composer`, `diagnose-conversation-ui`, `main-capture-get`, `rename-receipt` | Endpoint/content health and bounded diagnostic observations | Internal: diagnostics reveal browser topology and in some cases page-derived state; expose only after a separate scoped contract review. |
-| Browser topology | `tab-get`, `windows-list`, `window-get`, `tab-groups-list`, `tab-group-get` | Exact Chrome tab/window/group observations | Internal: IDs are session-scoped and must not be guessed or used as a target discovery bypass. |
-| Conversation/delivery | `conversation-bind`, `new-chat-send`, `delivery-*`, `simple-relay-*` | Bind/relay/durable delivery lifecycle | Internal: must remain coupled to Work, receipt, claim, generation and return fences. |
-| Legacy mutation commands | `clear-relay-state`, `conversation-bootstrap-bind`, `ensure`, `main-capture-install`, `manager-promote`, `recover-created-result`, `recover-pending`, `register`, `reload-workers`, `result-ack`, `send-wakeback` | Historical state-changing paths | Disabled by `RccLegacyCommandPolicy`; never publish. |
-| Runtime messages | `relay:getPendingStatus`, `relay:getState`, `relay:activity` | Extension content/background observations | Internal transport protocol, not MCP surface. |
-| Legacy runtime messages | `relay:actDirectTask`, `relay:actLocalExecution`, `relay:actWorkerOperation`, `relay:actNaturalCommand`, `relay:actBootstrapResync`, `relay:forceRefresh`, `relay:authorizeInjection`, `relay:consumeBindingLease`, `relay:register`, `relay:arm`, `relay:manualSend`, `relay:bootstrap`, `relay:hello`, `relay:returnDelivered`, `relay:deliveryReady`, `relay:autoDirective`, `relay:workerResult` | Historical control/injection and relay actions | Disabled by `RccLegacyCommandPolicy`; never publish. |
+| Wiring result | Count | Commands |
+|---|---:|---|
+| Same command name from BCT Feature to RCC router | 36 | `add-tab-to-group`, `close-conversation-tab`, `create-chat-tab`, `create-chat-window`, `create-tab-group`, `delivery-cancel`, `delivery-manager-status`, `delivery-recovery-inspect`, `delivery-response-read`, `delivery-return`, `delivery-start`, `delivery-status`, `move-tab`, `move-tab-group`, `node-label-notify`, `presence`, `read-latest-assistant`, `reload-extension`, `remove-tab-from-group`, `rename-conversation`, `result`, `retire-composer-draft`, `retire-recovered-execution`, `send`, `send-to-created-tab`, `send-to-tab`, `simple-relay-bind`, `simple-relay-return`, `simple-relay-send`, `state`, `tab-get`, `tab-group-get`, `tab-groups-list`, `update-tab-group`, `window-get`, `windows-list` |
+| BCT alias or local orchestration, not same-name router command | 14 | `create-and-send` -> `new-chat-send`; `send-message` -> `send-to-tab` or `send-to-created-tab`; `target-discover` -> `state`; `result-of-create-and-send`/`reconcile-*` -> `result` or `rename-receipt`; `inspect-rename-receipt`, `quarantine-legacy-rename-claim`, `reclassify-rename-claim`, `node-continue`, `send-to-self`; `delivery-preview` is local BCT preview only |
+| Active RCC router command without a current BCT Feature command | 11 | `api-probe`, `conversation-bind`, `diagnose-activity`, `diagnose-composer`, `diagnose-conversation-ui`, `main-capture-get`, `new-chat-send`, `ping`, `probe`, `probe-tabs`, `rename-receipt` |
+| Retired command names with no active RCC handler | 11 | `clear-relay-state`, `conversation-bootstrap-bind`, `ensure`, `main-capture-install`, `manager-promote`, `recover-created-result`, `recover-pending`, `register`, `reload-workers`, `result-ack`, `send-wakeback` |
+
+The 11 active RCC-only commands are not currently callable through
+`bct_browser`; this is a **wiring gap**, not evidence that they do not exist.
+They need explicit BCT adapters or a raw diagnostic wrapper before external
+MCP can inspect or invoke them. The retired names have no implementation to
+connect, so they must be treated as historical names until a replacement is
+chosen rather than silently re-enabled.
+
+The extension also uses runtime messages between its background and content
+scripts. Active messages include `relay:getPendingStatus`, `relay:getState`,
+`relay:activity`, `relay:orchestrationAuthorize`, `relay:orchestrationResult`,
+and the content routes such as `relay:simpleExecute`, `relay:newChatExecute`,
+`relay:readLatestAssistant`, and `relay:renameConversation`. These are
+in-extension transport messages, not BCT/RCC Native commands.
 
 ## Exact public-wrapper route
 
-`bct_rcc_command_catalog` is the public discovery entry point. Every listed
-command is invoked through `bct_browser`; `bct_rcc_read_latest_assistant`
-remains an optional convenience wrapper:
+`bct_rcc_command_catalog` currently discovers the 50 BCT Feature commands.
+Each listed command is invoked through `bct_browser`; `bct_rcc_read_latest_assistant`
+remains an optional convenience wrapper. The 11 active RCC-only commands above
+are the next wiring scope and are deliberately reported as missing rather than
+being mistaken for unavailable implementation:
 
 `MCP caller identity + Work ID + Operation ID + arguments.command` -> `operations.run(browser)` ->
-`RccFeature.prepare/execute(read-latest-assistant)` -> `NamedPipeRelayClient`
+`RccFeature.prepare/execute` -> `NamedPipeRelayClient`
 -> RCC Native Messaging router -> `readLatestAssistant`.
 
 It requires one exact `instance_id`, `session_id`, `tab_id`, `window_id` and
-Conversation UUID.  The generic `bct_browser` route remains sealed for this
-command.  A read transport failure is `NOT_APPLIED`/unavailable rather than an
+Conversation UUID. A read transport failure is `NOT_APPLIED`/unavailable rather than an
 external-effect `UNKNOWN`, and the wrapper has no resend, reconciliation, tab
 discovery, creation or message-send fallback.
