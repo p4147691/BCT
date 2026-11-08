@@ -31,7 +31,7 @@ class FakeRelayClient:
                 "state": {"instanceId": values["instance_id"],
                           "sessionId": "session-current", "endpoints": []},
             }
-        if values["command"] == "reload-extension":
+        if values["command"] in {"reload-extension", "rcc_reload_extension"}:
             return {
                 "type": "host:result", "ok": True,
                 "instanceId": values["instance_id"], "reloading": True,
@@ -223,7 +223,7 @@ class MonitorConversationRenameTests(unittest.TestCase):
         self.assertEqual(Outcome.APPLIED.value, first["outcome"])
         self.assertTrue(duplicate["duplicate"])
         self.assertEqual(2, len(self.client.calls))
-        self.assertEqual(["state", "reload-extension"], [
+        self.assertEqual(["state", "rcc_reload_extension"], [
             call["command"] for call in self.client.calls
         ])
         self.assertEqual("instance123", self.client.calls[1]["instance_id"])

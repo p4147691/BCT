@@ -573,7 +573,7 @@ class RccIntegrationTests(unittest.TestCase):
         })
         self.assertEqual(Outcome.APPLIED, first.outcome)
         self.assertTrue(duplicate.duplicate)
-        self.assertEqual(["state", "reload-extension"], [
+        self.assertEqual(["state", "rcc_reload_extension"], [
             call["command"] for call in self.client.calls
         ])
         self.assertEqual("reload-1", self.client.calls[1]["extra"]["operationId"])
@@ -645,7 +645,7 @@ class RccIntegrationTests(unittest.TestCase):
             "command": "reload-extension", "instance_id": "instance123",
         })
         self.assertEqual(Outcome.APPLIED, applied.outcome)
-        self.assertEqual(["state", "reload-extension"],
+        self.assertEqual(["state", "rcc_reload_extension"],
                          [call["command"] for call in self.client.calls])
 
     def test_extension_reload_fences_active_worker_delivery_generation(self):
