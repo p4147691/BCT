@@ -93,6 +93,8 @@ class PublicReadLatestAssistantTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn({"command": "rcc_read_latest_assistant", "category": "read", "origin": "rcc-native", "legacy_alias": "read-latest-assistant"}, catalogue_value["commands"])
         self.assertIn({"command": "rcc_new_chat_send", "category": "effect", "origin": "rcc-native", "legacy_alias": "new-chat-send"}, catalogue_value["commands"])
         self.assertIn({"command": "rcc_conversation_bind", "category": "effect", "origin": "rcc-native", "legacy_alias": "conversation-bind"}, catalogue_value["commands"])
+        self.assertIn({"command": "bct_target_discover", "category": "read", "origin": "bct", "legacy_alias": "target-discover"}, catalogue_value["commands"])
+        self.assertIn({"command": "bct_reconcile_send", "category": "reconcile", "origin": "bct", "legacy_alias": "reconcile-send"}, catalogue_value["commands"])
         tools = {t.name for t in await self.server.list_tools()}
         self.assertIn("bct_rcc_command_catalog", tools)
         self.assertIn("bct_rcc_recipe_catalog", tools)
@@ -113,13 +115,13 @@ class PublicReadLatestAssistantTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(
             by_name["create-chat-and-send"]["steps"],
-            ["target-discover", "rcc_new_chat_send", "rcc_result"],
+            ["bct_target_discover", "rcc_new_chat_send", "rcc_result"],
         )
         self.assertEqual(
             by_name["bind-existing-conversation"]["steps"],
             ["rcc_state", "rcc_tab_get", "rcc_conversation_bind"],
         )
-        self.assertIn("reconcile-send", by_name["recover-unknown-send"]["steps"])
+        self.assertIn("bct_reconcile_send", by_name["recover-unknown-send"]["steps"])
 
 
 if __name__ == "__main__":

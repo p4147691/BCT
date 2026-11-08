@@ -87,6 +87,13 @@ _RCC_PUBLIC_TO_NATIVE_COMMAND = {
 _RCC_NATIVE_TO_PUBLIC_COMMAND = {
     native: public for public, native in _RCC_PUBLIC_TO_NATIVE_COMMAND.items()
 }
+_BCT_COMMANDS = _COMMANDS - _RCC_NATIVE_COMMANDS
+_BCT_PUBLIC_TO_INTERNAL_COMMAND = {
+    "bct_" + command.replace("-", "_"): command for command in _BCT_COMMANDS
+}
+_BCT_INTERNAL_TO_PUBLIC_COMMAND = {
+    internal: public for public, internal in _BCT_PUBLIC_TO_INTERNAL_COMMAND.items()
+}
 _COMMON = {"command", "instance_id", "timeout_s"}
 _SENSITIVE_KEYS = {"token", "secret", "password", "authorization"}
 _BOOTSTRAP_RESULT_READBACK_TIMEOUT_S = 15.0
@@ -118,7 +125,12 @@ def command_catalog() -> list[dict[str, str]]:
                 "legacy_alias": command,
             })
         else:
-            rows.append({"command": command, "category": category, "origin": "bct"})
+            rows.append({
+                "command": _BCT_INTERNAL_TO_PUBLIC_COMMAND[command],
+                "category": category,
+                "origin": "bct",
+                "legacy_alias": command,
+            })
     return rows
 
 
@@ -147,7 +159,7 @@ def recipe_catalog() -> list[dict[str, Any]]:
         {
             "recipe": "create-chat-and-send",
             "purpose": "Create one tab, send its first message once, then inspect the receipt.",
-            "steps": ["target-discover", "rcc_new_chat_send", "rcc_result"],
+            "steps": ["bct_target_discover", "rcc_new_chat_send", "rcc_result"],
         },
         {
             "recipe": "bind-existing-conversation",
@@ -157,7 +169,7 @@ def recipe_catalog() -> list[dict[str, Any]]:
         {
             "recipe": "rename-conversation",
             "purpose": "Confirm one target then rename it; an UNKNOWN result is reconciled, never resent.",
-            "steps": ["rcc_state", "rcc_rename_conversation", "inspect-rename-receipt", "reconcile-rename-conversation"],
+            "steps": ["rcc_state", "rcc_rename_conversation", "bct_inspect_rename_receipt", "bct_reconcile_rename_conversation"],
         },
         {
             "recipe": "arrange-tabs",
@@ -167,7 +179,7 @@ def recipe_catalog() -> list[dict[str, Any]]:
         {
             "recipe": "recover-unknown-send",
             "purpose": "Read the original receipt and reconcile the same operation without a second send.",
-            "steps": ["rcc_result", "reconcile-send"],
+            "steps": ["rcc_result", "bct_reconcile_send"],
         },
         {
             "recipe": "reload-installed-extension",
@@ -777,7 +789,10 @@ class BrowserFeature:
         # ``rcc_*`` is the public spelling for an extension-native command.
         # The extension's unprefixed spelling remains a compatibility alias
         # until every installed RCC version has moved to the new protocol.
-        command = _RCC_PUBLIC_TO_NATIVE_COMMAND.get(requested_command, requested_command)
+        command = _RCC_PUBLIC_TO_NATIVE_COMMAND.get(
+            requested_command,
+            _BCT_PUBLIC_TO_INTERNAL_COMMAND.get(requested_command, requested_command),
+        )
         if command == "delayed-send-cancel":
             return self._prepare_delayed_cancel(work=work,arguments=arguments)
         if command == "send-delayed-message":

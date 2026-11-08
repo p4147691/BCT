@@ -23,6 +23,14 @@ class DirectTabPrepareTests(unittest.TestCase):
         self.assertEqual("send-to-tab", request.arguments["command"])
         self.assertTrue(request.preconditions["mutating"])
 
+    def test_bct_prefixed_composition_name_uses_the_existing_internal_command(self):
+        request = self.feature.prepare(
+            work=self.work,
+            arguments={"command": "bct_target_discover", "instance_id": self.args["instance_id"]},
+        )
+        self.assertEqual("target-discover", request.arguments["command"])
+        self.assertFalse(request.preconditions["mutating"])
+
     def test_host_submission_ack_is_checked_against_exact_tab(self):
         from bct.core.models import Outcome,UnknownEffectError
         base=self.args.copy()
