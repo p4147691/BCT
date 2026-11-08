@@ -61,3 +61,33 @@ Scanned 557 source/test files. Counts are literal occurrences, not proven execut
 - RCC validates exact session/tab/window/conversation identity; no alternate send/reconcile path.
 - No LIVE installation or restart; no UNKNOWN effect replay.
 - This literal scan does not prove all dynamic call sites or command reachability.
+
+## Extension router-only commands and messages
+
+The table above is the BCT Feature command inventory.  The RCC extension also
+accepts the following command families directly from its Native Messaging
+router.  They are not caller-facing BCT MCP commands and do not become public
+merely because their browser-side handler is read-only.
+
+| Router family | Commands/messages | Function | Publication decision |
+|---|---|---|---|
+| Diagnostics | `ping`, `probe`, `probe-tabs`, `api-probe`, `diagnose-activity`, `diagnose-composer`, `diagnose-conversation-ui`, `main-capture-get`, `rename-receipt` | Endpoint/content health and bounded diagnostic observations | Internal: diagnostics reveal browser topology and in some cases page-derived state; expose only after a separate scoped contract review. |
+| Browser topology | `tab-get`, `windows-list`, `window-get`, `tab-groups-list`, `tab-group-get` | Exact Chrome tab/window/group observations | Internal: IDs are session-scoped and must not be guessed or used as a target discovery bypass. |
+| Conversation/delivery | `conversation-bind`, `new-chat-send`, `delivery-*`, `simple-relay-*` | Bind/relay/durable delivery lifecycle | Internal: must remain coupled to Work, receipt, claim, generation and return fences. |
+| Legacy mutation commands | `clear-relay-state`, `conversation-bootstrap-bind`, `ensure`, `main-capture-install`, `manager-promote`, `recover-created-result`, `recover-pending`, `register`, `reload-workers`, `result-ack`, `send-wakeback` | Historical state-changing paths | Disabled by `RccLegacyCommandPolicy`; never publish. |
+| Runtime messages | `relay:getPendingStatus`, `relay:getState`, `relay:activity` | Extension content/background observations | Internal transport protocol, not MCP surface. |
+| Legacy runtime messages | `relay:actDirectTask`, `relay:actLocalExecution`, `relay:actWorkerOperation`, `relay:actNaturalCommand`, `relay:actBootstrapResync`, `relay:forceRefresh`, `relay:authorizeInjection`, `relay:consumeBindingLease`, `relay:register`, `relay:arm`, `relay:manualSend`, `relay:bootstrap`, `relay:hello`, `relay:returnDelivered`, `relay:deliveryReady`, `relay:autoDirective`, `relay:workerResult` | Historical control/injection and relay actions | Disabled by `RccLegacyCommandPolicy`; never publish. |
+
+## Exact public-wrapper route
+
+`bct_rcc_read_latest_assistant` is intentionally the sole new MCP entry point:
+
+`MCP bearer principal + Work ID + Operation ID` -> `operations.run(browser)` ->
+`RccFeature.prepare/execute(read-latest-assistant)` -> `NamedPipeRelayClient`
+-> RCC Native Messaging router -> `readLatestAssistant`.
+
+It requires one exact `instance_id`, `session_id`, `tab_id`, `window_id` and
+Conversation UUID.  The generic `bct_browser` route remains sealed for this
+command.  A read transport failure is `NOT_APPLIED`/unavailable rather than an
+external-effect `UNKNOWN`, and the wrapper has no resend, reconciliation, tab
+discovery, creation or message-send fallback.
