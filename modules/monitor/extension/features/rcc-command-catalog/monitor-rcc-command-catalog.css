@@ -1,11 +1,16 @@
-.monitor-command-catalog-section { flex: 0 1 440px; min-height: 260px; }
-.monitor-command-catalog-head { margin-bottom: 5px; }
-.monitor-command-catalog-head #monitorCommandCatalogSummary { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: rgba(224,235,249,.62); font: 600 11px/1.2 "Segoe UI","Malgun Gothic",sans-serif; }
-.monitor-command-catalog-head button { min-height: 22px; padding: 2px 6px; font-size: 10px; }
+.monitor-command-catalog-dialog { width: min(860px,calc(100vw - 42px)); max-width: none; max-height: min(760px,calc(100vh - 42px)); margin: auto; padding: 0; overflow: hidden; border: 1px solid rgba(126,176,228,.58); border-radius: 10px; background: #101925; color: #edf5ff; box-shadow: 0 24px 80px rgba(0,0,0,.62); }
+.monitor-command-catalog-dialog::backdrop { background: rgba(2,6,12,.64); backdrop-filter: blur(2px); }
+.monitor-command-catalog-dialog-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 13px; border-bottom: 1px solid rgba(135,171,207,.24); background: rgba(28,46,67,.82); }
+.monitor-command-catalog-dialog-header > div { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.monitor-command-catalog-dialog-header strong { color: #d8eaff; font: 800 14px/1.2 "Segoe UI","Malgun Gothic",sans-serif; white-space: nowrap; }
+.monitor-command-catalog-dialog-header #monitorCommandCatalogSummary { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: rgba(224,235,249,.68); font: 600 11px/1.2 "Segoe UI","Malgun Gothic",sans-serif; }
+.monitor-command-catalog-dialog-header button { min-height: 25px; padding: 3px 7px; font-size: 11px; }
+.monitor-command-catalog-dialog-header #monitorCommandCatalogClose { min-width: 28px; padding: 0; font-size: 18px; line-height: 1; }
+.monitor-command-catalog-dialog-body { display: grid; grid-template-rows: auto auto minmax(160px,1fr) auto; gap: 6px; min-height: 0; max-height: calc(min(760px,100vh - 42px) - 56px); padding: 12px; }
 .monitor-command-catalog-search-label { display: block; margin: 0 0 3px; color: rgba(226,236,248,.65); font-size: 10px; font-weight: 700; }
 .monitor-command-catalog-search { width: 100%; box-sizing: border-box; min-height: 28px; border: 1px solid rgba(159,187,220,.28); border-radius: 6px; background: rgba(6,11,18,.62); color: #edf5ff; padding: 4px 7px; font: 12px/1.2 "Segoe UI","Malgun Gothic",sans-serif; }
 .monitor-command-catalog-search:focus { outline: 2px solid rgba(95,174,255,.56); outline-offset: 1px; }
-.monitor-command-catalog-list { min-height: 0; max-height: 235px; overflow: auto; margin-top: 7px; padding-right: 2px; }
+.monitor-command-catalog-list { min-height: 0; overflow: auto; margin-top: 3px; padding-right: 3px; }
 .monitor-command-catalog-group { margin: 0 0 8px; }
 .monitor-command-catalog-group h3 { margin: 0 0 3px; color: rgba(210,228,248,.72); font: 800 11px/1.2 "Segoe UI","Malgun Gothic",sans-serif; }
 .monitor-command-catalog-entries { display: grid; gap: 3px; }

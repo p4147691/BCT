@@ -28,6 +28,9 @@
   function create(options = {}) {
     const doc = options.document || root.document;
     const shell = options.shell;
+    const dialog = options.dialog || doc?.getElementById("monitorCommandCatalogDialog");
+    const openButton = options.openButton || doc?.getElementById("monitorCommandCatalogOpen");
+    const closeButton = options.closeButton || doc?.getElementById("monitorCommandCatalogClose");
     const list = options.list || doc?.getElementById("monitorCommandCatalogList");
     const detail = options.detail || doc?.getElementById("monitorCommandCatalogDetail");
     const search = options.search || doc?.getElementById("monitorCommandCatalogSearch");
@@ -118,9 +121,18 @@
       }
     }
 
+    async function open() {
+      if (!dialog) return;
+      if (!dialog.open) dialog.showModal();
+      if (!rows.length) await refresh();
+      search?.focus();
+    }
+
     search?.addEventListener("input", render);
     refreshButton?.addEventListener("click", () => void refresh());
-    return Object.freeze({ refresh, render, rows: () => rows });
+    openButton?.addEventListener("click", () => void open());
+    closeButton?.addEventListener("click", () => dialog?.close());
+    return Object.freeze({ open, refresh, render, rows: () => rows });
   }
 
   root.MonitorRccCommandCatalog = Object.freeze({ create, normalizeRows });
