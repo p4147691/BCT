@@ -123,8 +123,8 @@
       },
       {
         "path": "content/simple_relay_executor.js",
-        "size": 42542,
-        "sha256": "4da2726c6e7a746a68135da33830dccbe30b6a8d66d9ece310bfc3eca36b697f"
+        "size": 42693,
+        "sha256": "bd7bb28cfb844c0a2220218b6a70fc88f778addfc5411b6b99649e5dd15fbae8"
       },
       {
         "path": "core/conversation.js",
@@ -297,7 +297,7 @@
         "sha256": "b3ad92bc20564a905bffc37f3e524e2c8e8c5ae71c02517a301cedd5cf1341cd"
       }
     ],
-    "aggregateSha256": "9bccdb4f9b1f189035e304831f8a6a2639840c3c2fae9a2a3d308fdda57a454e"
+    "aggregateSha256": "c5c13e6aed00d789115b9d7737889bd7c6fb08ffbc75d2cd74edb4ae3f3b5743"
   },
   "activeLoaderGraph": {
     "background": [

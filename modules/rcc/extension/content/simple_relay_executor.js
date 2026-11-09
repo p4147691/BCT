@@ -74,19 +74,23 @@ function focusEditorAtEnd(editor) {
     && editor.contains(selection.getRangeAt(0).endContainer);
 }
 
-async function ensureEditorFocusAtEnd(editor, retries = 2) {
-  // Chrome may apply focus asynchronously when React has just rebound the
-  // composer root.  A failed synchronous observation is still fail-closed,
-  // but give that non-mutating transition a couple of event-loop turns before
-  // classifying the submission as NOT_APPLIED.  This never types or clicks.
+async function ensureCurrentEditorFocusAtEnd(expectedText = null, retries = 2) {
+  // ChatGPT can replace the ProseMirror root between setting the draft and
+  // activating submit. Reacquire the current editor on every bounded retry;
+  // retrying focus on the disconnected object can never succeed.
+  const expected = expectedText === null
+    ? null : RelayCore.normalizeMessageText(expectedText);
   const attempts = Math.max(1, Math.min(3, Number(retries) + 1));
   for (let attempt = 0; attempt < attempts; attempt += 1) {
-    if (focusEditorAtEnd(editor)) return true;
+    const current = getEditor();
+    if (current
+        && (expected === null || editorDraftText(current) === expected)
+        && focusEditorAtEnd(current)) return current;
     if (attempt + 1 < attempts) {
       await new Promise(resolve => setTimeout(resolve, 0));
     }
   }
-  return false;
+  return null;
 }
 
 function wakeEditorWithTrailingSpace(editor, expectedText = null) {
@@ -214,8 +218,8 @@ async function submitEditor(editor, options = {}) {
     return liveEditor && editorDraftText(liveEditor) === expected ? liveEditor : null;
   };
   if (isGenerating()) throw new Error('RELAY_TARGET_GENERATING');
-  let liveEditor = getEditor();
-  if (!liveEditor || !(await ensureEditorFocusAtEnd(liveEditor))) {
+  let liveEditor = await ensureCurrentEditorFocusAtEnd(expected);
+  if (!liveEditor) {
     throw new Error('RELAY_EDITOR_FOCUS_OR_CARET_INVALID');
   }
   if (currentVerifiedEditor() && !findReadySendButton(liveEditor, options)
@@ -249,8 +253,8 @@ async function submitEditor(editor, options = {}) {
       ? (await options.beforeActivation(bindingAttestation)) || bindingAttestation
       : bindingAttestation;
     if (isGenerating()) throw new Error('RELAY_TARGET_GENERATING');
-    liveEditor = currentVerifiedEditor();
-    if (!liveEditor || !(await ensureEditorFocusAtEnd(liveEditor))) {
+    liveEditor = await ensureCurrentEditorFocusAtEnd(expected);
+    if (!liveEditor) {
       throw new Error('RELAY_EDITOR_FOCUS_OR_CARET_INVALID');
     }
     if (findReadySendButton(liveEditor, options) !== button) throw new Error('RELAY_SEND_BUTTON_CHANGED');
@@ -278,7 +282,8 @@ async function submitEditor(editor, options = {}) {
     ? (await options.beforeActivation(bindingAttestation)) || bindingAttestation
     : bindingAttestation;
   if (isGenerating()) throw new Error('RELAY_TARGET_GENERATING');
-  if (!(await ensureEditorFocusAtEnd(liveEditor))) {
+  liveEditor = await ensureCurrentEditorFocusAtEnd(expected);
+  if (!liveEditor) {
     throw new Error('RELAY_EDITOR_FOCUS_OR_CARET_INVALID');
   }
   markActivation('enter-fallback');

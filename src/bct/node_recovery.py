@@ -1,4 +1,4 @@
-"""Durable node-recovery building blocks for one Chain Message flow.
+"""Durable node-recovery building blocks for one Chain delivery flow.
 
 The ledger records observations and fences continuation delivery.  It never
 decides that an AI node should be replaced, invents a successor, or replays an

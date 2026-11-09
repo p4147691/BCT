@@ -36,9 +36,9 @@ const context = vm.createContext({
     editor.focus();
     return true;
   },
-  ensureEditorFocusAtEnd: async editor => {
-    editor.focus();
-    return true;
+  ensureCurrentEditorFocusAtEnd: async () => {
+    current.focus();
+    return current;
   },
   wakeEditorWithTrailingSpace: () => true,
 });
@@ -81,8 +81,7 @@ const caretContext = vm.createContext({
 });
 vm.runInContext(
   slice(source, 'function focusEditorAtEnd(', 'function wakeEditorWithTrailingSpace(')
-    + ';globalThis.focusEditorAtEndForTest = focusEditorAtEnd;'
-    + 'globalThis.ensureEditorFocusAtEndForTest = ensureEditorFocusAtEnd;',
+    + ';globalThis.focusEditorAtEndForTest = focusEditorAtEnd;',
   caretContext
 );
 const textarea = {
@@ -103,11 +102,14 @@ let focusCalls = 0;
 const delayedFocusContext = vm.createContext({
   document: delayedFocusDocument,
   window: {getSelection() { throw new Error('textarea must not use DOM selection'); }},
+  RelayCore: {normalizeMessageText: value => String(value).replace(/\r\n?/g, '\n').trim()},
+  editorDraftText: editor => editor.value,
+  getEditor: () => delayedTextarea,
   setTimeout(callback) { callback(); return 0; },
 });
 vm.runInContext(
   slice(source, 'function focusEditorAtEnd(', 'function wakeEditorWithTrailingSpace(')
-    + ';globalThis.ensureEditorFocusAtEndForTest = ensureEditorFocusAtEnd;',
+    + ';globalThis.ensureCurrentEditorFocusAtEndForTest = ensureCurrentEditorFocusAtEnd;',
   delayedFocusContext
 );
 const delayedTextarea = {
@@ -119,7 +121,36 @@ const delayedTextarea = {
   contains() { return false; },
   setSelectionRange(start, end) { this.selectionStart = start; this.selectionEnd = end; },
 };
-const delayedFocusCheck = delayedFocusContext.ensureEditorFocusAtEndForTest(delayedTextarea);
+const delayedFocusCheck = delayedFocusContext.ensureCurrentEditorFocusAtEndForTest(expected);
+
+// A React commit can replace the composer root itself. Retrying the stale
+// object is insufficient; reacquire the current exact-draft editor each time.
+const reboundDocument = {activeElement: null};
+const staleTextarea = {
+  tagName: 'TEXTAREA', value: expected, isConnected: false,
+  focus() {}, contains() { return false; }, setSelectionRange() {},
+};
+const liveTextarea = {
+  tagName: 'TEXTAREA', value: expected, selectionStart: 0, selectionEnd: 0,
+  focus() { reboundDocument.activeElement = this; },
+  contains() { return false; },
+  setSelectionRange(start, end) { this.selectionStart = start; this.selectionEnd = end; },
+};
+let editorReads = 0;
+const reboundContext = vm.createContext({
+  document: reboundDocument,
+  window: {getSelection() { throw new Error('textarea must not use DOM selection'); }},
+  RelayCore: {normalizeMessageText: value => String(value).replace(/\r\n?/g, '\n').trim()},
+  editorDraftText: editor => editor.value,
+  getEditor() { editorReads += 1; return editorReads === 1 ? staleTextarea : liveTextarea; },
+  setTimeout(callback) { callback(); return 0; },
+});
+vm.runInContext(
+  slice(source, 'function focusEditorAtEnd(', 'function wakeEditorWithTrailingSpace(')
+    + ';globalThis.ensureCurrentEditorFocusAtEndForTest = ensureCurrentEditorFocusAtEnd;',
+  reboundContext
+);
+const reboundFocusCheck = reboundContext.ensureCurrentEditorFocusAtEndForTest(expected);
 
 // The composer wake pulse must never become part of the submitted payload.
 // A previous implementation appended one space and immediately compared the
@@ -210,11 +241,14 @@ assert.equal(
 );
 
 (async () => {
-  assert.equal(await delayedFocusCheck, true,
+  assert.equal(await delayedFocusCheck, delayedTextarea,
     'a delayed active-editor transition retries without typing or clicking');
   assert.equal(focusCalls, 2);
   assert.equal(delayedTextarea.selectionStart, expected.length);
   assert.equal(delayedTextarea.selectionEnd, expected.length);
+  assert.equal(await reboundFocusCheck, liveTextarea,
+    'a replaced composer is reacquired only when its exact draft is preserved');
+  assert.equal(editorReads, 2);
 
   await assert.rejects(
     cleanupContext.sendPromptForTest('queued payload', {
