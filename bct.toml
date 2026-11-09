@@ -179,7 +179,6 @@ files = [
   "src/bct/chain_derived_tasks.py",
   "src/bct/chain_worker_preparation.py",
   "src/bct/chain_worker_provision.py",
-  "src/bct/chain_supervisor_route.py",
   "src/bct/chain_execution_plan.py",
   "src/bct/background_operations.py",
   "src/bct/operation_worker.py",
