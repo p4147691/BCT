@@ -138,6 +138,14 @@ class Store:
                     FOREIGN KEY(project_id, conversation_key)
                         REFERENCES conversation_network_memberships(project_id, conversation_key)
                 );
+                CREATE TABLE IF NOT EXISTS conversation_network_manager_transfers (
+                    transfer_id TEXT PRIMARY KEY,
+                    project_id TEXT NOT NULL,
+                    predecessor_conversation_key TEXT NOT NULL,
+                    successor_conversation_key TEXT NOT NULL,
+                    transferred_at REAL NOT NULL,
+                    FOREIGN KEY(project_id) REFERENCES conversation_network_projects(project_id)
+                );
                 CREATE TABLE IF NOT EXISTS conversation_network_monitor_snapshots (
                     snapshot_id TEXT PRIMARY KEY, observed_at TEXT NOT NULL,
                     completeness TEXT NOT NULL, payload_digest TEXT NOT NULL,

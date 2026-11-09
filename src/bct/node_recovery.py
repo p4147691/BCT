@@ -326,6 +326,41 @@ class NodeRecoveryLedger:
         if row is not None:
             raise ValueError("NODE_RECOVERY_SEND_FENCED:" + str(row["case_id"]))
 
+    def resume_healthy_manager(self, *, work, conversation_key: str,
+                               evidence: dict[str, Any]) -> list[str]:
+        """Lift only this Work's exact Manager fence after positive health proof.
+
+        Existing PAUSED watches and all UNKNOWN receipts remain untouched. A
+        same-conversation recovery only makes future Manager-return routing
+        eligible for A again; it does not replay any delayed effect.
+        """
+        key = _valid_conversation(conversation_key)
+        if evidence.get("result") != "OK":
+            raise ValueError("NODE_RECOVERY_MANAGER_NOT_HEALTHY")
+        when = time.time()
+        resumed: list[str] = []
+        with self.store.transaction() as db:
+            rows = db.execute(
+                "SELECT case_id,context_json FROM node_recovery_cases "
+                "WHERE work_id=? AND conversation_key=? AND state='PAUSED' "
+                "ORDER BY updated_at,case_id",
+                (work.work_id, key),
+            ).fetchall()
+            for row in rows:
+                context = json.loads(row["context_json"] or "{}")
+                context["manager_resume"] = {
+                    "at": when,
+                    "evidence_sha256": str(evidence.get("evidence_sha256") or ""),
+                    "effect": "FENCE_ONLY_NO_MESSAGE_NO_REPLAY",
+                }
+                db.execute(
+                    "UPDATE node_recovery_cases SET state='RESUMED',context_json=?,"
+                    "updated_at=? WHERE case_id=? AND state='PAUSED'",
+                    (_canonical(context), when, row["case_id"]),
+                )
+                resumed.append(str(row["case_id"]))
+        return resumed
+
     def assert_task_send_allowed(self, *, work_id: str, task_id: str) -> None:
         task = _valid_id(task_id, "NODE_RECOVERY_TASK_ID_INVALID")
         with self.store._readonly() as db:
