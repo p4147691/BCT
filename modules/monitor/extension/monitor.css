@@ -3649,7 +3649,7 @@ body.desktop-window-monitor-active { background-image:none!important; background
 .monitor-thumbnail-tab-token.is-abnormal { color:#ff5f67!important;cursor:pointer;pointer-events:auto; }
 .monitor-thumbnail-tab-token.is-role-manager { outline:1px solid #ffd75a!important;outline-offset:1px;border-radius:0!important; }
 .monitor-thumbnail-tab-token.is-role-supervisor { outline:1px solid #55a9ff!important;outline-offset:1px;border-radius:0!important; }
-.monitor-thumbnail-tab-token.is-role-orchestrator { color:#e2b4ff!important;outline:1px solid #b56be0!important;outline-offset:1px;border-radius:0!important; }
+.monitor-thumbnail-tab-token.is-role-orchestrator { color:inherit!important;outline:0!important; }
 .monitor-thumbnail-tab-token.is-selected { color:#fff!important;font-size:13px!important;font-weight:900;transform:scale(1.16);text-shadow:none!important; }
 .monitor-thumbnail-tab-prefix,.monitor-thumbnail-tab-separator { color:inherit;font-size:inherit;font-weight:inherit;text-shadow:none; }
 .monitor-desktop-thumb-label {
@@ -3671,7 +3671,7 @@ body.desktop-window-monitor-active { background-image:none!important; background
 .monitor-desktop-minimized-node.is-abnormal { color:#ff5f67!important;cursor:pointer;pointer-events:auto; }
 .monitor-desktop-minimized-node.is-role-manager { outline:1px solid #ffd75a!important;outline-offset:1px;border-radius:0!important; }
 .monitor-desktop-minimized-node.is-role-supervisor { outline:1px solid #55a9ff!important;outline-offset:1px;border-radius:0!important; }
-.monitor-desktop-minimized-node.is-role-orchestrator { color:#e2b4ff!important;outline:1px solid #b56be0!important;outline-offset:1px;border-radius:0!important; }
+.monitor-desktop-minimized-node.is-role-orchestrator { color:inherit!important;outline:0!important; }
 .monitor-desktop-minimized-node-selected { color:#fff!important;font-size:13px!important;font-weight:900;line-height:14px;transform:scale(1.16);transform-origin:center;text-shadow:none!important; }
 .monitor-desktop-minimized-nodes .monitor-desktop-minimized-more { flex:0 0 auto;letter-spacing:.04em; }
 .monitor-desktop-minimized-prefix,.monitor-desktop-minimized-separator { color:rgba(255,255,255,.94);font:800 10px/14px "Segoe UI","Malgun Gothic",sans-serif; }

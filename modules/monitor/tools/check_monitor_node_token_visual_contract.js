@@ -58,13 +58,17 @@ for (const selector of ["monitor-thumbnail-tab-token", "monitor-desktop-minimize
   assert.ok((selectedRule?.[1] || "").includes("transform:scale(1.16)"));
   assert.ok(css.indexOf(selected) > css.indexOf("." + selector + ".is-abnormal"),
     "selected white must override all activity rules");
-  for (const role of ["manager", "supervisor", "orchestrator"]) {
+  for (const role of ["manager", "supervisor"]) {
     const roleRule = css.match(new RegExp("\\." + selector + "\\.is-role-" + role + "\\s*\\{([^}]*)\\}"));
-    assert.match(roleRule?.[1] || "", new RegExp(role === "manager" ? "#ffd75a" : role === "supervisor" ? "#55a9ff" : "#b56be0"));
+    assert.match(roleRule?.[1] || "", new RegExp(role === "manager" ? "#ffd75a" : "#55a9ff"));
     assert.match(roleRule?.[1] || "", /outline:1px solid/);
     assert.match(roleRule?.[1] || "", /border-radius:0!important/);
   }
 }
+assert.match(css, /\.monitor-thumbnail-tab-token\.is-role-orchestrator\s*\{[^}]*color:inherit!important;[^}]*outline:0!important/,
+  "DOT thumbnail tokens use the ordinary neutral number color, not the orchestrator card purple");
+assert.match(css, /\.monitor-desktop-minimized-node\.is-role-orchestrator\s*\{[^}]*color:inherit!important;[^}]*outline:0!important/,
+  "DOT minimized tokens use the ordinary neutral number color, not the orchestrator card purple");
 assert.match(projection, /MonitorNodeTokenVisualContract/);
 assert.match(projection, /nodeForTab/);
 assert.match(minimized, /MonitorNodeTokenVisualContract/);
