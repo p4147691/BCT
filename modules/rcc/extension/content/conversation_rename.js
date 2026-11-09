@@ -138,7 +138,25 @@ function dotProfileTitleControl() {
     .filter((node) => !Array.from(node.children || []).some((child) =>
       normalizedUiText(child.textContent) === title
     ));
-  return leaves.length === 1 ? leaves[0] : null;
+  if (leaves.length === 1) return leaves[0];
+  // The Dot profile pane is not consistently wrapped in <main>.  Bound the
+  // fallback by the adjacent Active/활성 state instead of a CSS class or
+  // screen coordinate, then click the exact current-name leaf so the site's
+  // own React handler opens the customizer.
+  const allLeaves = Array.from(document.querySelectorAll('*'))
+    .filter((node) => isVisible(node) && !node.closest?.('nav, [data-testid*="sidebar"]'))
+    .filter((node) => normalizedUiText(node.textContent) === title)
+    .filter((node) => !Array.from(node.children || []).some((child) =>
+      normalizedUiText(child.textContent) === title
+    ));
+  const profileLeaves = allLeaves.filter((leaf) => {
+    let scope = leaf.parentElement;
+    for (let depth = 0; scope && depth < 7; depth += 1, scope = scope.parentElement) {
+      if (/(?:^|\s)(?:active|활성)(?:\s|$)/i.test(renameSemanticText(scope))) return true;
+    }
+    return false;
+  });
+  return profileLeaves.length === 1 ? profileLeaves[0] : null;
 }
 
 function activateRenameUiElement(element) {
@@ -379,16 +397,40 @@ function findRenameEditor(anchor) {
 }
 
 function visibleDotCustomizationDialog() {
-  const dialogs = Array.from(document.querySelectorAll('[role="dialog"]')).filter(isVisible);
-  if (!dialogs.length) return null;
   const title = currentDotDisplayTitle();
-  const exactTitleDialogs = dialogs.filter((dialog) =>
-    Array.from(dialog.querySelectorAll?.('*') || []).some((node) =>
+  if (!title) return null;
+  const hasExactTitle = (scope) =>
+    Array.from(scope.querySelectorAll?.('*') || []).some((node) =>
       isVisible(node) && normalizedUiText(node.textContent) === title
-    )
-  );
-  if (exactTitleDialogs.length === 1) return exactTitleDialogs[0];
-  return dialogs.length === 1 ? dialogs[0] : null;
+    );
+  const hasSave = (scope) => Array.from(scope.querySelectorAll?.('button') || [])
+    .some((button) => isVisible(button) && /^(?:save|저장)$/i.test(renameSemanticText(button)));
+  const explicit = Array.from(document.querySelectorAll(
+    '[role="dialog"], [aria-modal="true"], [data-radix-dialog-content]'
+  )).filter((scope) => isVisible(scope) && hasExactTitle(scope) && hasSave(scope));
+  if (explicit.length === 1) return explicit[0];
+
+  // Current ChatGPT Dot customizer builds have shipped without role=dialog.
+  // Recover the smallest visible ancestor that contains both the exact current
+  // Dot name and the site's Save control.  This remains semantic and bounded:
+  // body/documentElement are never accepted and no page text is returned.
+  const leaves = Array.from(document.querySelectorAll('*'))
+    .filter((node) => isVisible(node) && normalizedUiText(node.textContent) === title)
+    .filter((node) => !Array.from(node.children || []).some((child) =>
+      normalizedUiText(child.textContent) === title
+    ));
+  const scopes = [];
+  for (const leaf of leaves) {
+    let scope = leaf.parentElement;
+    for (let depth = 0; scope && depth < 12; depth += 1, scope = scope.parentElement) {
+      if (scope === document.body || scope === document.documentElement) break;
+      if (isVisible(scope) && hasSave(scope)) {
+        scopes.push(scope);
+        break;
+      }
+    }
+  }
+  return scopes.length === 1 ? scopes[0] : null;
 }
 
 function dotCustomizationNameControl(dialog) {
@@ -576,7 +618,7 @@ function currentDotTitleMatches(key, title) {
 
 async function openDotRenameEditor(key) {
   const diagnostic = {
-    version: 3, identity: 'MATCH', menuButton: 'NOT_FOUND', menuClick: 'NOT_ATTEMPTED',
+    version: 4, identity: 'MATCH', menuButton: 'NOT_FOUND', menuClick: 'NOT_ATTEMPTED',
     menuVisible: 'NOT_OBSERVED', renameAction: 'NOT_FOUND', editor: 'NOT_CHECKED',
     customizeDialog: 'NOT_OBSERVED', customizeName: 'NOT_ATTEMPTED',
   };

@@ -181,18 +181,33 @@ assert.equal(vm.runInContext('dotProfileTitleControl() === profileTitleLeaf', co
 
 const customizeNameLeaf = visibleNode({}, '내 dot');
 customizeNameLeaf.children = [];
+const customizeSave = visibleNode({}, '저장');
+customizeSave.disabled = true;
 const customizeDialog = visibleNode();
 customizeDialog.querySelectorAll = (selector) => {
   if (selector === '*') return [customizeNameLeaf];
+  if (selector === 'button') return [customizeSave];
   if (selector.includes('button')) return [];
   return [];
 };
-document.querySelectorAll = (selector) => selector === '[role="dialog"]' ? [customizeDialog] : [];
+document.querySelectorAll = (selector) => selector.includes('[role="dialog"]') ? [customizeDialog] : [];
 context.customizeDialog = customizeDialog;
 context.customizeNameLeaf = customizeNameLeaf;
 assert.equal(vm.runInContext('visibleDotCustomizationDialog() === customizeDialog', context), true,
   'the visible Dot customizer must be bounded by its exact current title');
 assert.equal(vm.runInContext('dotCustomizationNameControl(customizeDialog) === customizeNameLeaf', context), true,
   'the exact current name inside the Dot customizer must open the real name editor');
+
+const unlabelledNameLeaf = visibleNode({}, '내 dot');
+unlabelledNameLeaf.children = [];
+const unlabelledSave = visibleNode({}, '저장');
+unlabelledSave.disabled = true;
+const unlabelledCustomizer = visibleNode();
+unlabelledCustomizer.querySelectorAll = (selector) => selector === 'button' ? [unlabelledSave] : [];
+unlabelledNameLeaf.parentElement = unlabelledCustomizer;
+document.querySelectorAll = (selector) => selector === '*' ? [unlabelledNameLeaf] : [];
+context.unlabelledCustomizer = unlabelledCustomizer;
+assert.equal(vm.runInContext('visibleDotCustomizationDialog() === unlabelledCustomizer', context), true,
+  'a role-less Dot customizer must be recovered from the exact name and its bounded Save control');
 
 console.log('conversation rename UI v2: PASS');
