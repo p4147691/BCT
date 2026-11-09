@@ -394,7 +394,7 @@ legacy NEXT TASK 본문
 
 - `bct_task_run`은 준비된 세션에서 Worker 한 명에게 작업 하나를
   dispatch하는 실행 단위다. 현재는 자체 결과 영수증을 기다린다.
-- `bct_send_delayed_message`와 `bct_chain_message`는 감시를 먼저
+- `bct_send_delayed_message`와 `bct_chain_recipe`는 감시를 먼저
   준비한 뒤 정확한 메시지를 보내는 경로다.
 - `bct_task_message`는 한 Manager와 한 Worker 사이에서 사용할 수 있는
   선택형 지시문 봉투다. 기본 `max_rounds=0`은 진전 기반 반복이며, 고정 한도는

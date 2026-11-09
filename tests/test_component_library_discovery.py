@@ -92,7 +92,7 @@ class LibraryMCPTests(unittest.IsolatedAsyncioTestCase):
             server = self.server(mode)
             default = await self.call(server)
             self.assertEqual(get_manual_guidance(), default["manual_guidance"])
-            chain = await self.call(server, tool_name="bct_chain_message")
+            chain = await self.call(server, tool_name="bct_chain_recipe")
             self.assertEqual(load_library()["manual"], chain["manual"])
             self.assertIn("manual_guidance", chain["tool"]["description"])
             self.assertIn("include_manual=true", server.instructions)
@@ -110,7 +110,8 @@ class LibraryMCPTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_existing_default_contract_and_small_discovery_hint(self):
         data = await self.call(self.server())
-        self.assertIn("bct_chain_message", data["tools"])
+        self.assertIn("bct_chain_recipe", data["tools"])
+        self.assertNotIn("bct_chain_message", data["tools"])
         self.assertEqual(["read", "desktop_capture"], data["capabilities"])
         self.assertIn("browser_usage", data)
         self.assertTrue(data["read_only"])
@@ -178,10 +179,10 @@ class LibraryMCPTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_runtime_schema_still_available_when_library_missing(self):
         with patch("bct.component_library.load_library", return_value={"status": "UNAVAILABLE"}):
-            data = await self.call(self.server(), tool_name="bct_chain_message", include_manual=True)
+            data = await self.call(self.server(), tool_name="bct_chain_recipe", include_manual=True)
         self.assertEqual("UNAVAILABLE", data["library_status"])
         self.assertEqual("UNAVAILABLE", data["manual"]["status"])
-        self.assertEqual("bct_chain_message", data["tool"]["name"])
+        self.assertEqual("bct_chain_recipe", data["tool"]["name"])
 
 
 if __name__ == "__main__":

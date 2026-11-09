@@ -135,7 +135,7 @@ def discover(*, tools: list[dict], capabilities: tuple[str, ...], usage: dict[st
                            "usage": usage.get(capability, ""), "requires_work_authorization": True})
         result["capability_routes"] = routes[offset:offset + limit]
         result["capability_total"] = len(routes)
-    if include_manual or tool_name == "bct_chain_message":
+    if include_manual or tool_name == "bct_chain_recipe":
         result["manual"] = bundle.get("manual", {"status": "UNAVAILABLE"})
         result["manual_scope"] = "Packaged source description; check bct_status and receipts for LIVE acceptance."
     totals = [result.get(key, 0) for key in ("component_total", "tool_total", "capability_total")]

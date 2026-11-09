@@ -4,7 +4,7 @@
 > 작업 흐름과 A 전체 계획/B 실행계획의 구분은
 > [Chain Message Recipe V2](CHAIN_MESSAGE_RECIPE_V2.md)를 정본으로 삼는다.
 >
-> 전체 입구 `bct_chain_message`는 현재 정보 → Set Direction 질문/판단 → 망 준비 →
+> 전체 입구 `bct_chain_recipe`는 현재 정보 → Set Direction 질문/판단 → 망 준비 →
 > A가 정한 여러 대상의 각각의 전송을 조합한다. 아래 1:1은 전체 레시피의 제한이
 > 아니라 **대상 하나마다 재사용하는 전송·감시 계약**이다.
 
@@ -140,7 +140,7 @@ C 역할 기록 → A→B`다. C는 이후 B의 결과가 메인 병합·배포�
 설정 경로의 대화망 생성·소속 설정 단계를 이어 붙인다. 이 설정은 대상 선택을
 도울 뿐, 권한을 만들거나 메시지를 보내지 않는다.
 
-`체인 시작`은 `bct_chain_message` 내부에서 대상마다 재사용하는 부분 레시피다.
+`체인 시작`은 `bct_chain_recipe` 내부에서 대상마다 재사용하는 부분 레시피다.
 기존 정확 대상 호출의
 정식 인수는 `target_tab_id`, `target_window_id`, `target_conversation_key`와
 `origin_conversation_key`다. 기존 `worker_` / `manager_` 인수는 이전 호출을
@@ -149,7 +149,7 @@ C 역할 기록 → A→B`다. C는 이후 B의 결과가 메인 병합·배포�
 
 ### Chain Message 전송 전 권한·응답 출력 계약 (선택형)
 
-`bct_chain_message(action="preflight", ...)`는 실제 `start`에 사용할 **같은 Work,
+`bct_chain_recipe(action="preflight", ...)`는 실제 `send`에 사용할 **같은 Work,
 Task/Operation ID, 정확한 대상·발신자 식별자와 지시문**을 입력받아 기존
 Work의 `browser` 작업 권한 및 출력 계약을 점검한다. 이 호출은
 **읽기 전용**이다. Chain Direction 연결 상태를 예약하거나 감시를 선등록하거나
@@ -204,11 +204,11 @@ A가 보존된 응답을 검토해 새 메시지를 작성한다. 외부 효과�
 → 반환 뒤 A가 전체 입구부터 재판단
 ```
 
-`bct_chain_message`는 위 전체 흐름의 입구이며, 내부에서 대상별 **체인 시작**
+`bct_chain_recipe`는 위 전체 흐름의 입구이며, 내부에서 대상별 **체인 시작**
 부분을 재사용한다. 망 변경은 A가 Direction에 명시한 기존 setter 인수만 적용하고,
 변경 영수증과 각 전송 영수증은 따로 보존한다.
 
-통합 경로 역시 `bct_chain_message`가 자동으로 정하지 않는다. A가 현재 공통
+통합 경로 역시 `bct_chain_recipe`가 자동으로 정하지 않는다. A가 현재 공통
 운영 정책과 실제 영향 범위를 읽고 방향에 기록하며, X는 실행계획과 반환 보고에
 선택 경로·선택 이유·각 단계의 증거를 남긴다. 작업 도중 외부 효과나 rollback
 불확실성이 새로 발견되면 `LOCAL_FIRST`를 계속 밀어붙이지 않고 공유 효과 전에

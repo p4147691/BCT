@@ -286,111 +286,7 @@ class ChainDirectionPublicTests(unittest.IsolatedAsyncioTestCase):
                 "bct_chain_branch",
                 "bct_set_execute_plan", "bct_update_execute_plan", "bct_get_execute_plan",
                 "bct_set_project_plan", "bct_get_conversation_network",
-                "bct_prepare_supervisor_chain",
             } <= names)
-
-    async def test_exact_ba_can_be_bound_then_sent_to_one_current_supervisor(self):
-        """B reports BA; only A can bind a fresh C route and start A→C."""
-        with tempfile.TemporaryDirectory() as root:
-            store = Store(Path(root) / "state.sqlite")
-            work = store.create_work(Work(
-                "work-supervisor", "fixture", (), frozenset({"browser"}), "bct-mcp-local", 1,
-            ))
-            delayed = DurableWatchLedger(store)
-            delayed.prearm_task(
-                task_id="task-b", work_id=work.work_id, principal_id="bct-mcp-local",
-                assignment_epoch=1, instance_id="worker-instance",
-                conversation_key="worker-uuid", manager_conversation_key="manager-uuid",
-                manager_instance_id="manager-instance",
-                baseline={
-                    "responseTurnCount": 1, "generating": True,
-                    "responseTurnKey": "old", "responseSha256": "a" * 64,
-                    "latestUserTurnKey": "source-user", "latestUserSha256": "b" * 64,
-                }, registration_receipt="prearm-b",
-            )
-            watch = Watch("task-b", 1, "worker-uuid", "task:task-b:1", "prearm-b")
-            returned = SendDelayedMessageRunner(
-                delayed,
-                read_response=lambda _: {
-                    "conversation_key": "worker-uuid", "response_turn_id": watch.response_turn_id,
-                    "response_turn_key": "rcc-b", "response_sha256": "c" * 64,
-                    "response_text": "Ready for release review.\nNEXT TASK — MANAGER\nAsk C to select CI, merge, LIVE and E2E order.",
-                    "response_complete": True, "input_ready": True,
-                },
-                send_message=lambda *_: "return-send",
-            ).poll_once(watch, manager_conversation_key="manager-uuid")
-            self.assertEqual("RETURNED_TO_MANAGER", returned.status)
-            supervisor = "d" * 8 + "-" + "d" * 4 + "-" + "d" * 4 + "-" + "d" * 4 + "-" + "d" * 12
-            snapshot = {"monitor": {
-                "current_nodes": {"observation": {"state": "FRESH"}, "items": [{
-                    "status": "CONFIRMED", "conversation_uuid": supervisor,
-                    "tab_id": 20, "window_id": 30, "generating": False,
-                    "node_number": "N4",
-                }]},
-                "rcc": {"instances": [{
-                    "state": "OPEN", "instance_id": "a" * 32, "session_id": "b" * 32,
-                    "tabs": [{
-                        "presence": "OPEN", "conversation_key": supervisor,
-                        "tab_id": 20, "window_id": 30, "title": "Supervisor C",
-                        "conversation_scope": {"role_tags": ["supervisor"]},
-                    }],
-                }]},
-            }}
-            ops = Operations()
-            mcp = build_mcp(
-                SimpleNamespace(operations=ops, store=store),
-                compact_catalogue=True, status_provider=lambda: snapshot,
-            )
-            direction = await save_direction_via_recipe(mcp, {
-                "work_id": work.work_id, "direction_id": "direction-c",
-                "source_kind": "MANAGER_RETURN", "source_task_id": "task-b",
-                "source_generation": 1, "decision": "NEW_TASK",
-                "direction_text": "You are C. Choose the safe CI, merge, LIVE deployment, and E2E order; execute only the approved next boundary.",
-            })
-            self.assertEqual("OK", direction["status"])
-            _, prepared = await mcp.call_tool("bct_prepare_supervisor_chain", {
-                "work_id": work.work_id, "direction_id": "direction-c",
-            })
-            self.assertEqual("READY", prepared["status"])
-            self.assertEqual(supervisor, prepared["supervisor_route"]["conversation_key"])
-            # A human may move C's tab while A is deciding.  Start re-reads
-            # the same C identity and refreshes only that attachment.
-            snapshot["monitor"]["current_nodes"]["items"][0]["tab_id"] = 21
-            snapshot["monitor"]["rcc"]["instances"][0]["tabs"][0]["tab_id"] = 21
-            node_guard = patch("bct.node_recovery.NodeRecoveryLedger.assert_send_allowed", return_value=None)
-            node_guard.start()
-            self.addCleanup(node_guard.stop)
-            _, started = await mcp.call_tool("bct_chain_message", {
-                "work_id": work.work_id, "task_id": "task-c", "operation_id": "chain-c",
-                "origin_conversation_key": "manager-uuid", "origin_instance_id": "manager-instance",
-                "chain_direction_id": "direction-c",
-            })
-            self.assertEqual("WATCHING", started["status"])
-            self.assertEqual(supervisor, started["supervisor_route"]["conversation_key"])
-            self.assertEqual(["chain-c-arm", "chain-c-send"], [call["operation_id"] for call in ops.calls])
-            self.assertEqual("a" * 32, ops.calls[1]["arguments"]["instance_id"])
-            self.assertEqual(21, ops.calls[1]["arguments"]["tab_id"])
-            self.assertEqual(supervisor, ops.calls[1]["arguments"]["conversation_key"])
-
-    async def test_supervisor_route_does_not_guess_a_missing_or_multiple_c(self):
-        with tempfile.TemporaryDirectory() as root:
-            store = Store(Path(root) / "state.sqlite")
-            work = store.create_work(Work("work-no-c", "fixture", (), frozenset({"browser"}), "bct-mcp-local", 1))
-            ChainDirectionLedger(store).save(
-                direction_id="direction-no-c", work_id=work.work_id,
-                source_kind="USER", decision="NEW_TASK", direction_text="This cannot route itself.",
-            )
-            mcp = build_mcp(
-                SimpleNamespace(operations=Operations(), store=store), compact_catalogue=True,
-                status_provider=lambda: {"monitor": {"current_nodes": {
-                    "observation": {"state": "FRESH"}, "items": []
-                }, "rcc": {"instances": []}}},
-            )
-            _, blocked = await mcp.call_tool("bct_prepare_supervisor_chain", {
-                "work_id": work.work_id, "direction_id": "direction-no-c",
-            })
-            self.assertEqual("BLOCKED", blocked["status"])
-            self.assertEqual("SUPERVISOR_ROUTE_MISSING", blocked["reason"])
 
     async def test_exact_manager_return_can_become_an_a_direction(self):
         with tempfile.TemporaryDirectory() as root:
@@ -449,8 +345,23 @@ class ChainDirectionPublicTests(unittest.IsolatedAsyncioTestCase):
             self.addCleanup(node_guard.stop)
             delayed = DurableWatchLedger(store)
             ops = Operations()
+            manager = "c" * 8 + "-" + "c" * 4 + "-" + "c" * 4 + "-" + "c" * 4 + "-" + "c" * 12
+            worker = "b" * 8 + "-" + "b" * 4 + "-" + "b" * 4 + "-" + "b" * 4 + "-" + "b" * 12
+            supervisor = "d" * 8 + "-" + "d" * 4 + "-" + "d" * 4 + "-" + "d" * 4 + "-" + "d" * 12
+            snapshot = {"monitor": {"current_nodes": {"observation": {"state": "FRESH"}, "items": [
+                {"status": "CONFIRMED", "conversation_uuid": manager, "tab_id": 10, "window_id": 13,
+                 "generating": False, "node_number": "N1", "roles": ["manager"], "network": "fixture", "network_id": "fixture"},
+                {"status": "CONFIRMED", "conversation_uuid": worker, "tab_id": 12, "window_id": 13,
+                 "generating": False, "node_number": "N2", "roles": ["worker"], "network": "fixture", "network_id": "fixture"},
+                {"status": "CONFIRMED", "conversation_uuid": supervisor, "tab_id": 14, "window_id": 13,
+                 "generating": False, "node_number": "N3", "roles": ["supervisor"], "network": "", "network_id": ""},
+            ]}, "rcc": {"instances": [{"state": "OPEN", "instance_id": "a" * 32, "session_id": "a" * 32, "tabs": [
+                {"presence": "OPEN", "conversation_key": manager, "tab_id": 10, "window_id": 13, "conversation_scope": {"role_tags": ["manager"], "scope_name": "fixture"}},
+                {"presence": "OPEN", "conversation_key": worker, "tab_id": 12, "window_id": 13, "conversation_scope": {"role_tags": ["worker"], "scope_name": "fixture"}},
+                {"presence": "OPEN", "conversation_key": supervisor, "tab_id": 14, "window_id": 13, "conversation_scope": {"role_tags": ["supervisor"], "scope_name": ""}},
+            ]}]}}}
             mcp = build_mcp(SimpleNamespace(operations=ops, store=store), compact_catalogue=True,
-                            status_provider=lambda: {"monitor": {}})
+                            status_provider=lambda: snapshot)
 
             def return_to_manager(
                 task_id: str, response_sha: str, text: str, *, chain_direction_id: str = "",
@@ -504,35 +415,28 @@ class ChainDirectionPublicTests(unittest.IsolatedAsyncioTestCase):
                 "source_kind": "MANAGER_RETURN", "source_task_id": "task-one",
                 "source_generation": 1, "decision": "NEW_TASK",
                 "direction_text": "Do the second bounded task, then return to A.",
+                "assessment": {
+                    "manager_conversation_key": manager, "worker_conversation_key": worker,
+                    "supervisor_conversation_key": supervisor, "network_name": "fixture",
+                    "network_updates": [], "targets": [{
+                        "conversation_key": worker, "role": "worker",
+                        "instruction": "Do the second bounded task, then return to A.",
+                    }],
+                },
             })
             self.assertEqual("NEW_TASK", direction["chain_direction"]["decision"])
             self.assertEqual("direction-one", direction["chain_direction"]["chain_branch"]["parent_direction_id"])
             self.assertEqual("RESUME", direction["chain_direction"]["chain_branch"]["kind"])
 
-            # A2 → B2: a new Chain Message starts immediately.  The fake executor
-            # records the prearm/send pair in place of a real browser delivery.
-            _, rejected = await mcp.call_tool("bct_chain_message", {
-                "work_id": work.work_id, "task_id": "task-two", "operation_id": "chain-two",
-                "instance_id": "worker-instance", "session_id": "a" * 32,
-                "worker_tab_id": 12, "worker_window_id": 13,
-                "worker_conversation_key": "b" * 8 + "-" + "b" * 4 + "-" + "b" * 4 + "-" + "b" * 4 + "-" + "b" * 12,
-                "manager_conversation_key": "c" * 8 + "-" + "c" * 4 + "-" + "c" * 4 + "-" + "c" * 4 + "-" + "c" * 12,
-                "instruction": "A different instruction must never share this direction.",
-                "chain_direction_id": "direction-two",
+            # A2 → B2 is an ordinary declared Recipe target.  The fake executor
+            # records the internal prearm/send pair in place of browser delivery.
+            _, started = await mcp.call_tool("bct_chain_recipe", {
+                "action": "send", "work_id": work.work_id, "direction_id": "direction-two",
+                "task_id": "task-two", "operation_id": "chain-two",
             })
-            self.assertEqual("CHAIN_DIRECTION_TEXT_MISMATCH", rejected["reason"])
-            self.assertEqual([], ops.calls)
-            _, started = await mcp.call_tool("bct_chain_message", {
-                "work_id": work.work_id, "task_id": "task-two", "operation_id": "chain-two",
-                "instance_id": "worker-instance", "session_id": "a" * 32,
-                "worker_tab_id": 12, "worker_window_id": 13,
-                "worker_conversation_key": "b" * 8 + "-" + "b" * 4 + "-" + "b" * 4 + "-" + "b" * 4 + "-" + "b" * 12,
-                "manager_conversation_key": "c" * 8 + "-" + "c" * 4 + "-" + "c" * 4 + "-" + "c" * 4 + "-" + "c" * 12,
-                "chain_direction_id": "direction-two",
-            })
-            self.assertEqual("WATCHING", started["status"])
-            self.assertEqual("CHAIN_STARTED", started["chain_direction"]["chain_state"])
-            self.assertEqual(["chain-two-arm", "chain-two-send"], [call["operation_id"] for call in ops.calls])
+            self.assertEqual("STARTED", started["status"], started)
+            self.assertEqual("CHAIN_STARTED", started["targets"][0]["chain_direction"]["chain_state"])
+            self.assertEqual(["chain-two-1-arm", "chain-two-1-send"], [call["operation_id"] for call in ops.calls])
             sent_text = ops.calls[1]["arguments"]["text"]
             self.assertTrue(sent_text.startswith(
                 "Do the second bounded task, then return to A.\n\n"
@@ -547,8 +451,8 @@ class ChainDirectionPublicTests(unittest.IsolatedAsyncioTestCase):
                 "change reversibly, verify E2E, and return exact artifacts to A."
             )
             _, b_plan = await mcp.call_tool("bct_set_execute_plan", {
-                "work_id": work.work_id, "direction_id": "direction-two",
-                "task_id": "task-two", "generation": 1,
+                "work_id": work.work_id, "direction_id": started["targets"][0]["direction_id"],
+                "task_id": "task-two-1", "generation": 1,
                 "plan_id": "b-plan-two", "plan_text": b_plan_text,
             })
             self.assertEqual("OK", b_plan["status"])
@@ -563,15 +467,15 @@ class ChainDirectionPublicTests(unittest.IsolatedAsyncioTestCase):
 
             # B2 → A3: the final BA return; A3 closes instead of creating B3.
             return_to_manager(
-                "task-two", "d" * 64, "Second B report.", chain_direction_id="direction-two",
+                "task-two-1", "d" * 64, "Second B report.", chain_direction_id=started["targets"][0]["direction_id"],
             )
             completed = await save_direction_via_recipe(mcp, {
                 "work_id": work.work_id, "direction_id": "direction-complete",
-                "source_kind": "MANAGER_RETURN", "source_task_id": "task-two",
+                "source_kind": "MANAGER_RETURN", "source_task_id": "task-two-1",
                 "source_generation": 1, "decision": "COMPLETE",
                 "direction_text": "A3 accepts the final evidence and closes the chain.",
             })
             self.assertEqual("COMPLETE", completed["chain_direction"]["decision"])
             self.assertEqual("NOT_PLANNED", completed["chain_direction"]["chain_state"])
-            self.assertEqual("direction-two", completed["chain_direction"]["chain_branch"]["parent_direction_id"])
+            self.assertEqual(started["targets"][0]["direction_id"], completed["chain_direction"]["chain_branch"]["parent_direction_id"])
             self.assertEqual("RESUME", completed["chain_direction"]["chain_branch"]["kind"])

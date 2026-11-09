@@ -1,4 +1,4 @@
-# Chain Message 공통 설명서
+# Chain Recipe 공통 설명서
 
 Chat·Work·Codex에서 같은 BCT 연결을 쓰면 같은 설명서와 도구 계약을 확인할 수 있다.
 소스 옆에서 볼 때는 이 파일을 열고, 일반 Chat에서는 `bct_capabilities(include_manual=true)`를 호출한다.
@@ -9,13 +9,13 @@ Chat·Work·Codex에서 같은 BCT 연결을 쓰면 같은 설명서와 도구 �
 
 ## 바로 시작하는 노드 안내
 
-일반 작업의 기본 입구는 `bct_chain_message`다. Task Message / Send Message를 사용자가
+일반 작업의 기본 입구는 `bct_chain_recipe`다. Task Message / Send Message를 사용자가
 명시한 경우에만 그 별도 경로를 사용한다. 이 안내는 역할 지정이나 실행 권한을 새로 부여하지 않는다.
 
-- A: `bct_chain_message(instruction=요청)` → 현재 현실·대화망과 내부 질문 확인 →
+- A: `bct_chain_recipe(instruction=요청)` → 현재 현실·대화망과 내부 질문 확인 →
   A가 의도·완료 기준·대상별 지시·필요한 망 변경을 판단 →
   같은 `bct_chain_recipe(action="save", entry_context_id=준비 결과, assessment=판단, ...)` →
-  `bct_chain_message(action="start", chain_direction_id=저장한ID, ...)`.
+  `bct_chain_recipe(action="send", direction_id=저장한ID, ...)`.
   질문은 A가 답한다. 사용자에게 사용법이나 질문지 작성을 떠넘기지 않는다.
 - 전달받은 B/C: 이 지시의 수신자로서 지정된 범위만 처리한다. 새 Manager를 자칭하지 않는다.
   현재 환경을 읽고 세부 계획을 세워 `bct_set_execute_plan`으로 전달받은
@@ -23,7 +23,7 @@ Chat·Work·Codex에서 같은 BCT 연결을 쓰면 같은 설명서와 도구 �
 - 응답 끝: 진전이 있고 계속할 일이 있으면 `NEXT TASK — SELF: 다음 지시`,
   완료·위험·정체·판단 필요이면 `NEXT TASK — MANAGER: 결과와 반환 지시` 중 하나를 남긴다.
   고정 횟수만으로 왕복하지 않는다. 응답 감시는 BCT 백그라운드가 담당하므로 A가 붙잡혀 기다리지 않는다.
-- BA/CA를 받은 A: 정확한 반환 Task/generation으로 Chain Message의 prepare에 다시 들어가
+- BA/CA를 받은 A: 정확한 반환 Task/generation으로 Chain Recipe의 prepare에 다시 들어가
   현재 상태와 방향을 재검토한다. 반환이 선언된 Direction에서 온 경우 prepare 결과의
   `return_chain_link`가 원래 Direction·Task·generation을 보여 주며, 같은 entry_context로
   save하면 다음 Direction은 그 부모에 자동 연결된다. 다른 부모로 바꾸어 저장할 수 없다.
@@ -57,7 +57,7 @@ UNKNOWN 외부 효과를 새 ID로 재전송하지 않기, 이미 발생한 효�
 않기다. 같은 UUID가 다른 탭/창으로 이동한 경우에는 현재 관찰로 다시 결합한다.
 다른 대화 노드가 필요하면 A가 다음 Direction에서 그 UUID를 명시한다.
 
-대표 입구는 `bct_chain_message`다. 일반 작업 요청은 이 입구를 사용한다.
+대표 입구는 `bct_chain_recipe`다. 일반 작업 요청은 이 입구를 사용한다.
 사용자가 Task Message 또는 Send Message를 명시한 경우에만 그 방식을 직접 쓴다.
 `bct_task_message`는 사용자 방향을 다듬는 Set Direction의 다른 이름이 아니다.
 
@@ -66,7 +66,7 @@ UNKNOWN 외부 효과를 새 ID로 재전송하지 않기, 이미 발생한 효�
 ```text
 사용자의 요청 또는 정확한 BA/CA 반환
   ↓
-bct_chain_message(instruction=요청) 또는 action="prepare"
+bct_chain_recipe(instruction=요청) 또는 action="prepare"
   └─ 현재 A의 정확한 UUID를 알고 있으면 `origin_conversation_key`로 함께 넘김
   └─ bct_chain_recipe(action="prepare") 내부 호출
       ├─ 현재 Core/런타임/Work/작업 영수증/CI Inbox 조회
@@ -91,7 +91,7 @@ Recover Node R
      `RECOVERY_NEEDED` Wake 기록만 남김. A가 읽고 다음 Direction을 작성하며,
      BCT는 자동 재전송·새 Chat 생성·교체를 하지 않음.
   ↓
-bct_chain_message(action="start", chain_direction_id=기록한 방향)
+bct_chain_recipe(action="send", direction_id=기록한 방향)
   ├─ 기록한 망 변경을 기존 bct_set_conversation_network로 적용
   ├─ A의 반환 대화와 각 선언 대상의 현재 UUID·탭·창 재확인
   └─ 지금 실행할 각 대상 B/C/D에 대해
@@ -111,7 +111,7 @@ B/C/X/S가 자기 범위의 구체적인 계획을 세움
   ├─ SELF → 같은 대상에 다음 턴 전달, 기존 계획·맥락 연결
   └─ MANAGER → A에게 결과 반환
                  ↓
-계속할 경우 A가 bct_chain_message(action="prepare",
+계속할 경우 A가 bct_chain_recipe(action="prepare",
  source_kind="MANAGER_RETURN", source_task_id=..., source_generation=...) 재호출
 현재 현실부터 다시 읽고 다음 방향을 판단
   └─ 선언된 Direction에서 온 정확한 반환이면 다음 save는 원래 Direction에
@@ -313,15 +313,11 @@ A는 `COMPLETE`, `NEW_TASK`, `ASK_USER`, `HOLD`를 판단한다. NEW_TASK가 메
 
 - 이미 정확한 대상·지시를 가진 기존 호출은 종전 send/watch 경로를 유지한다.
   기존 자유문 Direction은 보존하지만 새 질문 검토를 거친 것으로 표시하지 않는다.
-- `bct_chain_message`의 결과와 상태 영수증은 `execution_path`를 기록한다.
+- Chain Recipe 전송의 결과와 상태 영수증은 `execution_path`를 기록한다.
   `DIRECTION_DECLARED`는 저장된 `chain_direction_id`에 연결된 정식 경로이고,
   `DIRECT_EXACT_TARGET`은 Direction 없이 정확한 대상·지시를 명시한 호환 직접 경로다.
   직접 경로는 유효한 1:1 전송·감시일 수 있으나 대화망 판단이나 Direction 저장 성공을
   뜻하지 않는다. 과거 감시는 임의로 재분류하지 않고 `LEGACY_UNCLASSIFIED`로 읽는다.
-- 기존 `bct_prepare_supervisor_chain` 기록과 과거 ID는 삭제하지 않는다. 이 도구는
-  저장된 `assessment`가 없는 옛 Direction만 읽는 호환 경로다. 새 질문 기반 Direction으로
-  호출하면 `SUPERVISOR_ROUTE_LEGACY_COMPATIBILITY_ONLY`를 돌려주며, C를 포함한 모든 대상은
-  같은 대상별 Chain Recipe 전송 경로로 처리한다.
 - `bct_set_execute_plan` / `bct_get_execute_plan`은 수신 대상이 작성한 정확한 계획의
   저장·조회와 같은 Chain의 SELF 맥락 연결이다. 임의 프로그램을 실행하는 명령이 아니다.
   하나의 Direction/Task는 하나의 `plan_id`를 가지며, 여러 작업 phase는 새 계획 ID가 아니라
@@ -333,15 +329,15 @@ A는 `COMPLETE`, `NEW_TASK`, `ASK_USER`, `HOLD`를 판단한다. NEW_TASK가 메
 - `action="preflight"`는 읽기 전용이다. 망 변경을 미리 적용하지 않으므로 준비가
   안 된 망은 `NETWORK_PREPARATION_REQUIRED`로 반환한다. READY도 실제 전송 성공은 아니다.
 
-소스 회귀 검증: `tests/test_direction_review.py`, `tests/test_chain_direction.py`,
-`tests/test_chain_message_preflight.py`와 기존 Chain/네트워크/복구/MCP 테스트.
+소스 회귀 검증: `tests/test_direction_review.py`, `tests/test_chain_direction.py`와
+기존 Chain/네트워크/복구/MCP 테스트.
 브라우저 효과를 모의한 격리 테스트와 실제 일반 Chat LIVE E2E는 구분해서 보고한다.
 
 ## 이름과 역할
 
 | 이름 | 이 소스에서 하는 일 |
 | --- | --- |
-| `bct_chain_message` | 전체 레시피의 입구. A 질문 준비 → A 판단 기록 → 대상별 정확 전송·감시 조합 |
+| `bct_chain_recipe` | 전체 레시피의 입구. A 질문 준비 → A 판단 기록 → 대상별 정확 전송·감시 조합 |
 | `bct_status` | 현재 Core·런타임·노드 등 종합 상태 조회 |
 | `bct_get_conversation_network` | 저장된 대화망 정보 조회 |
 | `bct_check_conversation_network` | 현재 관찰과 저장된 망 정보를 함께 점검. 조회가 망 변경을 뜻하지 않음 |
@@ -385,7 +381,7 @@ A는 `COMPLETE`, `NEW_TASK`, `ASK_USER`, `HOLD`를 판단한다. NEW_TASK가 메
 
 위의 노드 안내는 별도 사본으로 편집하지 않는다. `bct_capabilities` 기본 응답과
 Chain/Set Direction의 prepare 응답에 `manual_guidance`로 자동 포함한다.
-`bct_capabilities(tool_name="bct_chain_message")`에는 전체 설명서도 자동 포함된다.
+`bct_capabilities(tool_name="bct_chain_recipe")`에는 전체 설명서도 자동 포함된다.
 새 질문 기반 방향의 수신자 지시에는 같은 안내·설명서 해시·조회 방법이 붙는다.
 이미 기록한 대상 지시와 기존 직접 전송 원문은 재작성하지 않으며, 기존 SELF/BA 감시도 재등록하지 않는다.
 설명서 번들이 없거나 손상되면 조회에 `UNAVAILABLE`을 표시하고, 안내가 필요한 새 대상 지시를
