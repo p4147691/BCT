@@ -2634,7 +2634,8 @@ def build_mcp(
         description=(
             "Stage or commit replacement of one PAUSED node. action=prepare records an "
             "exact healthy successor and returns an inheritance instruction; action=start "
-            "also sends that instruction through Chain Message using exact RCC identities; "
+            "also sends that instruction through the internal common delivery path using "
+            "exact RCC identities; "
             "action=commit succeeds only after the successor's inheritance watch exists. "
             "No UNKNOWN effect is replayed and BCT never chooses the successor."
         ),
@@ -2680,7 +2681,7 @@ def build_mcp(
                 )
                 return {"status": "INHERITANCE_SENT" if sent.get("status") == "WATCHING"
                         else "INHERITANCE_UNCONFIRMED",
-                        "replace_node": prepared, "chain_message": sent}
+                        "replace_node": prepared, "delivery": sent}
             if action == "commit":
                 current_case = await asyncio.to_thread(
                     ledger.get, work=work, case_id=case_id,

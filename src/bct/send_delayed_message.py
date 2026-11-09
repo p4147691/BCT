@@ -457,6 +457,7 @@ class DurableWatchLedger:
                         and baseline.get("latestUserTextOccurrenceCount") != 1)):
                 raise ValueError("DELAYED_SOURCE_USER_PROOF_REQUIRED")
             context["source_proof_kind"] = "RCC_PREARM_USER_TURN"
+        rebound_from_not_applied = ""
         with self.store.transaction() as db:
             if exclusive_conversation_watch:
                 overlapping = db.execute(
@@ -510,17 +511,67 @@ class DurableWatchLedger:
             elif existing["state"] == "WATCHING":
                 gen = int(existing["generation"])
                 old = json.loads(existing["context_json"] or "{}")
-                if (existing["conversation_key"] != conversation_key
-                        or old.get("work_id") != work_id
-                        or old.get("manager_conversation_key") != manager_conversation_key
-                    or old.get("max_generations", 0) != max_generations
-                    or (planned and (old.get("source_send_operation_id") != planned_send_operation_id
-                                     or old.get("source_send_sha256") != context["source_send_sha256"]))):
+                stable_context = (
+                    existing["conversation_key"] == conversation_key
+                    and old.get("work_id") == work_id
+                    and old.get("manager_conversation_key") == manager_conversation_key
+                    and old.get("max_generations", 0) == max_generations
+                )
+                planned_binding_changed = bool(
+                    planned and old.get("source_send_operation_id") != planned_send_operation_id
+                )
+                if (not stable_context
+                        or (planned and old.get("source_send_sha256") != context["source_send_sha256"])):
                     raise ValueError("DELAYED_CONTEXT_CHANGED")
+                if planned_binding_changed:
+                    # The response Watch is deliberately registered before the
+                    # browser send.  If that exact send is proven NOT_APPLIED,
+                    # keep the same Task/Generation and bind a later explicit
+                    # retry operation to it.  APPLIED and UNKNOWN are never
+                    # eligible: either could already own an external user turn.
+                    previous_operation_id = str(old.get("source_send_operation_id") or "")
+                    previous = db.execute(
+                        "SELECT state,outcome,work_id,principal_id,assignment_epoch "
+                        "FROM operations WHERE operation_id=?",
+                        (previous_operation_id,),
+                    ).fetchone()
+                    if (previous is None
+                            or previous["state"] != "FINISHED"
+                            or previous["outcome"] != "NOT_APPLIED"
+                            or previous["work_id"] != work_id
+                            or previous["principal_id"] != principal_id
+                            or int(previous["assignment_epoch"]) != assignment_epoch):
+                        raise ValueError(
+                            "DELAYED_PLANNED_SEND_REBIND_REQUIRES_NOT_APPLIED"
+                        )
+                    history = old.get("confirmed_not_applied_rebinds")
+                    if not isinstance(history, list):
+                        history = []
+                    history.append({
+                        "from_operation_id": previous_operation_id,
+                        "to_operation_id": planned_send_operation_id,
+                        "at": time.time(),
+                    })
+                    old["confirmed_not_applied_rebinds"] = history[-8:]
+                    old["source_send_operation_id"] = planned_send_operation_id
+                    old["source_send_sha256"] = context["source_send_sha256"]
+                    old.pop("watch_diagnostic_reason", None)
+                    updated = db.execute(
+                        "UPDATE delayed_send_watches SET source_send_receipt=?,context_json=? "
+                        "WHERE task_id=? AND generation=? AND state='WATCHING'",
+                        (registration_receipt, json.dumps(old, sort_keys=True), task_id, gen),
+                    )
+                    if updated.rowcount != 1:
+                        raise ValueError("DELAYED_PLANNED_SEND_REBIND_RACE")
+                    rebound_from_not_applied = previous_operation_id
                 created = False
             else:
                 raise ValueError("DELAYED_TASK_ALREADY_FINISHED")
-        return {"task_id":task_id,"generation":gen,"state":"WATCHING","created":created}
+        return {
+            "task_id": task_id, "generation": gen,
+            "state": "WATCHING", "created": created,
+            "rebound_from_not_applied": rebound_from_not_applied,
+        }
 
     def cancel_task(self, *, task_id: str, generation: int,
                     work_id: str, principal_id: str, assignment_epoch: int) -> dict:

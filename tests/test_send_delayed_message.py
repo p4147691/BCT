@@ -2,6 +2,7 @@ import unittest
 import hashlib
 import tempfile
 from pathlib import Path
+from bct.core.models import Outcome, Work
 from bct.core.store import Store
 
 from bct.send_delayed_message import (
@@ -403,6 +404,94 @@ class SendDelayedMessageTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,"OWNER_MISMATCH"):
                 ledger.cancel_task(task_id="task-cancel",generation=1,
                     work_id="work-owner",principal_id="principal-owner",assignment_epoch=2)
+
+    def test_planned_watch_rebinds_only_after_exact_send_not_applied(self):
+        with tempfile.TemporaryDirectory() as root:
+            store = Store(Path(root) / "state.sqlite")
+            work = Work("work-owner", "retry", (root,), frozenset({"browser"}),
+                        "principal-owner")
+            store.create_work(work)
+            ledger = DurableWatchLedger(store)
+            baseline = {"responseTurnCount": 1, "generating": False,
+                        "responseTurnKey": "old", "responseSha256": "a" * 64}
+            common = dict(
+                task_id="task-retry", work_id=work.work_id,
+                principal_id=work.owner_principal_id,
+                assignment_epoch=work.assignment_epoch,
+                instance_id="instance", conversation_key="worker",
+                manager_conversation_key="manager", manager_instance_id="instance",
+                baseline=baseline, planned_send_text="same instruction",
+            )
+            ledger.prearm_task(
+                registration_receipt="arm-old",
+                planned_send_operation_id="send-old", **common,
+            )
+            created, _ = store.begin_operation(
+                operation_id="send-old", work=work,
+                principal_id=work.owner_principal_id,
+                request_digest="digest-old", capability="browser", target="instance",
+                resources=("rcc-instance:instance",), policy_revision="test",
+            )
+            self.assertTrue(created)
+            store.finish_operation(
+                operation_id="send-old", outcome=Outcome.NOT_APPLIED,
+                evidence={"error": "focus"}, error="focus", release_claims=True,
+            )
+            ledger.record_watch_diagnostic(
+                {"task_id": "task-retry", "generation": 1},
+                "SOURCE_PROVENANCE_MISMATCH",
+            )
+
+            rebound = ledger.prearm_task(
+                registration_receipt="arm-retry",
+                planned_send_operation_id="send-retry", **common,
+            )
+            self.assertFalse(rebound["created"])
+            self.assertEqual("send-old", rebound["rebound_from_not_applied"])
+            saved = ledger.get("task-retry", 1)
+            context = __import__("json").loads(saved["context_json"])
+            self.assertEqual("WATCHING", saved["state"])
+            self.assertEqual("send-retry", context["source_send_operation_id"])
+            self.assertNotIn("watch_diagnostic_reason", context)
+            self.assertEqual("send-old",
+                context["confirmed_not_applied_rebinds"][-1]["from_operation_id"])
+
+    def test_planned_watch_never_rebinds_unknown_send(self):
+        with tempfile.TemporaryDirectory() as root:
+            store = Store(Path(root) / "state.sqlite")
+            work = Work("work-owner", "retry", (root,), frozenset({"browser"}),
+                        "principal-owner")
+            store.create_work(work)
+            ledger = DurableWatchLedger(store)
+            common = dict(
+                task_id="task-unknown", work_id=work.work_id,
+                principal_id=work.owner_principal_id,
+                assignment_epoch=work.assignment_epoch,
+                instance_id="instance", conversation_key="worker",
+                manager_conversation_key="manager", manager_instance_id="instance",
+                baseline={"responseTurnCount": 1, "generating": False,
+                          "responseTurnKey": "old", "responseSha256": "a" * 64},
+                planned_send_text="same instruction",
+            )
+            ledger.prearm_task(registration_receipt="arm-old",
+                planned_send_operation_id="send-unknown", **common)
+            store.begin_operation(
+                operation_id="send-unknown", work=work,
+                principal_id=work.owner_principal_id,
+                request_digest="digest-unknown", capability="browser", target="instance",
+                resources=("rcc-instance:instance",), policy_revision="test",
+            )
+            store.finish_operation(
+                operation_id="send-unknown", outcome=Outcome.UNKNOWN,
+                evidence={"error": "uncertain"}, error="uncertain", release_claims=False,
+            )
+            with self.assertRaisesRegex(
+                    ValueError, "REBIND_REQUIRES_NOT_APPLIED"):
+                ledger.prearm_task(registration_receipt="arm-retry",
+                    planned_send_operation_id="send-retry", **common)
+            context = __import__("json").loads(
+                ledger.get("task-unknown", 1)["context_json"])
+            self.assertEqual("send-unknown", context["source_send_operation_id"])
 
     def test_chain_mode_exclusively_prearms_one_conversation_watch(self):
         with tempfile.TemporaryDirectory() as root:
