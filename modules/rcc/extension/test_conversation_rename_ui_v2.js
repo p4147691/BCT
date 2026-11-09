@@ -61,6 +61,7 @@ const context = vm.createContext({
   currentConversationKey: () => 'exact-key',
   MouseEvent: class {},
   PointerEvent: class {},
+  FocusEvent: class {},
   InputEvent: class {},
   Event: class {},
   KeyboardEvent: class {},
@@ -114,6 +115,9 @@ assert.equal(
 const dotKey = 'b227a510-d0cb-4466-a2f5-4e401b456dca~6af1261141a8819aa57d94044451fee3';
 const dotAnchor = visibleNode({ 'aria-current': 'page' }, '내 dot');
 dotAnchor.href = `https://chatgpt.com/dots/${dotKey}`;
+const dotRow = visibleNode();
+dotAnchor.closest = (selector) => selector.includes('[data-sidebar-item="true"]') ? dotRow : null;
+dotAnchor.parentElement = dotRow;
 context.location.href = dotAnchor.href;
 document.querySelectorAll = (selector) => selector === 'a[href]' ? [dotAnchor] : [];
 assert.equal(vm.runInContext('dotKeyFromLocation()', context), dotKey,
@@ -122,5 +126,9 @@ assert.equal(vm.runInContext(`exactDotAnchors('${dotKey}').length`, context), 1,
   'the sidebar target must match the entire Dot address rather than a UUID-like fragment');
 assert.equal(vm.runInContext("exactDotAnchors('b227a510-d0cb-4466-a2f5-4e401b456dca~wrong').length", context), 0,
   'a different Dot context reference must not be accepted as the same target');
+context.dotAnchor = dotAnchor;
+context.dotRow = dotRow;
+assert.equal(vm.runInContext('conversationRow(dotAnchor) === dotRow', context), true,
+  'Dot context-menu targeting must use the complete sidebar row rather than only its nested link');
 
 console.log('conversation rename UI v2: PASS');

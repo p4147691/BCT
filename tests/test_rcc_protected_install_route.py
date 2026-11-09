@@ -221,10 +221,10 @@ class ProtectedRccRouteTests(unittest.TestCase):
             ri.CANONICAL_WIRE_MANIFEST_SHA256,
         )
 
-    def test_dot_title_rename_route_upgrades_exact_68_to_69(self):
+    def test_dot_title_rename_row_target_updates_exact_69_to_69(self):
         route = DeployFeature._rcc_route_config("rcc-inspect-dot-title-rename")
         self.assertEqual(route["candidate_version"], "1.0.69")
-        self.assertEqual(route["installed_version"], "1.0.68")
+        self.assertEqual(route["installed_version"], "1.0.69")
         self.assertEqual(route["manifest_file"], ri.DOT_TITLE_RENAME_MANIFEST)
         self.assertEqual(route["candidate"], ri.DOT_TITLE_RENAME_STAGE)
         self.assertEqual(route["backup_source"], ri.DOT_TITLE_RENAME_ROLLBACK)
@@ -256,9 +256,9 @@ class ProtectedRccRouteTests(unittest.TestCase):
 
     def test_protected_plan_accepts_dot_title_rename_candidate_69(self):
         identities = {
-            self.live: (self.extension_id, "1.0.68"),
+            self.live: (self.extension_id, "1.0.69"),
             self.source: (self.extension_id, "1.0.69"),
-            self.reference: (self.extension_id, "1.0.68"),
+            self.reference: (self.extension_id, "1.0.69"),
         }
         with patch.object(ri, "_identity", side_effect=lambda path: identities[path]), \
                 patch.object(ri, "_exact"):
@@ -270,7 +270,7 @@ class ProtectedRccRouteTests(unittest.TestCase):
                 manifest_file=self.policy_manifest,
                 journal=self.journal / "N73-TEST-DOT-TITLE-RENAME.json",
                 candidate_version="1.0.69",
-                installed_version="1.0.68",
+                installed_version="1.0.69",
             )
         self.assertEqual(plan["candidate_files"], 58)
 

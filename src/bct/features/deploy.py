@@ -985,7 +985,7 @@ class DeployFeature:
         routes = (
             ("-dot-title-rename", rcc.DOT_TITLE_RENAME_MANIFEST_SHA256,
              rcc.DOT_TITLE_RENAME_STAGE, rcc.DOT_TITLE_RENAME_ROLLBACK,
-             rcc.DOT_TITLE_RENAME_MANIFEST, rcc.DOT_TITLE_RENAME_JOURNAL, "1.0.69", "1.0.68"),
+             rcc.DOT_TITLE_RENAME_MANIFEST, rcc.DOT_TITLE_RENAME_JOURNAL, "1.0.69", "1.0.69"),
             ("-canonical-wire", rcc.CANONICAL_WIRE_MANIFEST_SHA256,
              rcc.CANONICAL_WIRE_STAGE, rcc.CANONICAL_WIRE_ROLLBACK,
              rcc.CANONICAL_WIRE_MANIFEST, rcc.CANONICAL_WIRE_JOURNAL, "1.0.67", "1.0.66"),

@@ -202,13 +202,21 @@ function currentConversationMenuButton() {
 
 function dispatchRenameHover(node) {
   const common = { bubbles: true, cancelable: true, composed: true, view: window };
+  node.focus?.({ preventScroll: true });
   if (typeof PointerEvent === 'function') {
+    node.dispatchEvent(new PointerEvent('pointerenter', {
+      ...common, pointerId: 1, pointerType: 'mouse', isPrimary: true,
+    }));
     node.dispatchEvent(new PointerEvent('pointerover', {
       ...common, pointerId: 1, pointerType: 'mouse', isPrimary: true,
     }));
   }
+  node.dispatchEvent(new MouseEvent('mouseenter', common));
   node.dispatchEvent(new MouseEvent('mouseover', common));
   node.dispatchEvent(new MouseEvent('mousemove', common));
+  if (typeof FocusEvent === 'function') {
+    node.dispatchEvent(new FocusEvent('focusin', common));
+  }
 }
 
 function visibleRenameMenuItems() {
@@ -429,14 +437,15 @@ async function openDotRenameEditor(key) {
     throw renameUiError('DOT_RENAME_TARGET_STALE', 'NOT_APPLIED', diagnostic);
   }
   const anchor = await ensureDotAnchor(key);
-  dispatchRenameHover(conversationRow(anchor) || anchor);
+  const row = conversationRow(anchor) || anchor;
+  dispatchRenameHover(row);
   let menuButton = await waitForRenameUi(() => rowMenuButton(anchor), 1500);
   if (menuButton) {
     diagnostic.menuClick = 'BUTTON_ATTEMPTED';
     activateRenameUiElement(menuButton);
   } else {
     diagnostic.menuClick = 'CONTEXT_MENU_ATTEMPTED';
-    openContextMenu(anchor);
+    openContextMenu(row);
   }
   const visibleMenu = () => Array.from(
     document.querySelectorAll('[role="menu"], [data-radix-menu-content]')
@@ -447,7 +456,7 @@ async function openDotRenameEditor(key) {
   }, 2500);
   if (!renameItem && menuButton) {
     diagnostic.menuClick = 'CONTEXT_MENU_ATTEMPTED';
-    openContextMenu(anchor);
+    openContextMenu(row);
     renameItem = await waitForRenameUi(() => {
       if (visibleMenu()) diagnostic.menuVisible = 'OBSERVED';
       return findRenameMenuItem();
