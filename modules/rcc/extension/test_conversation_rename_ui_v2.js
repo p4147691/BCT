@@ -179,4 +179,20 @@ context.profileTitleLeaf = profileTitleLeaf;
 assert.equal(vm.runInContext('dotProfileTitleControl() === profileTitleLeaf', context), true,
   'a unique exact plain-text Dot profile title must bubble to its profile click handler');
 
+const customizeNameLeaf = visibleNode({}, '내 dot');
+customizeNameLeaf.children = [];
+const customizeDialog = visibleNode();
+customizeDialog.querySelectorAll = (selector) => {
+  if (selector === '*') return [customizeNameLeaf];
+  if (selector.includes('button')) return [];
+  return [];
+};
+document.querySelectorAll = (selector) => selector === '[role="dialog"]' ? [customizeDialog] : [];
+context.customizeDialog = customizeDialog;
+context.customizeNameLeaf = customizeNameLeaf;
+assert.equal(vm.runInContext('visibleDotCustomizationDialog() === customizeDialog', context), true,
+  'the visible Dot customizer must be bounded by its exact current title');
+assert.equal(vm.runInContext('dotCustomizationNameControl(customizeDialog) === customizeNameLeaf', context), true,
+  'the exact current name inside the Dot customizer must open the real name editor');
+
 console.log('conversation rename UI v2: PASS');

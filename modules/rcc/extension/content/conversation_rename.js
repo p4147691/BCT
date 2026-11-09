@@ -378,8 +378,40 @@ function findRenameEditor(anchor) {
   return all.length === 1 ? all[0] : null;
 }
 
-function findDotProfileRenameEditor() {
-  const dialog = Array.from(document.querySelectorAll('[role="dialog"]')).find(isVisible);
+function visibleDotCustomizationDialog() {
+  const dialogs = Array.from(document.querySelectorAll('[role="dialog"]')).filter(isVisible);
+  if (!dialogs.length) return null;
+  const title = currentDotDisplayTitle();
+  const exactTitleDialogs = dialogs.filter((dialog) =>
+    Array.from(dialog.querySelectorAll?.('*') || []).some((node) =>
+      isVisible(node) && normalizedUiText(node.textContent) === title
+    )
+  );
+  if (exactTitleDialogs.length === 1) return exactTitleDialogs[0];
+  return dialogs.length === 1 ? dialogs[0] : null;
+}
+
+function dotCustomizationNameControl(dialog) {
+  if (!dialog || !isVisible(dialog)) return null;
+  const title = currentDotDisplayTitle();
+  if (!title) return null;
+  const controls = Array.from(dialog.querySelectorAll?.(
+    'button, [role="button"], [tabindex="0"]'
+  ) || []).filter((node) => isVisible(node) && !node.disabled);
+  const exactControls = controls.filter((node) => renameSemanticText(node) === title);
+  if (exactControls.length === 1) return exactControls[0];
+  // The current Dot customizer renders the name as plain text inside a
+  // clickable React container.  Clicking the unique exact leaf bubbles to the
+  // container and opens the actual name editor without depending on CSS names.
+  const leaves = Array.from(dialog.querySelectorAll?.('*') || [])
+    .filter((node) => isVisible(node) && normalizedUiText(node.textContent) === title)
+    .filter((node) => !Array.from(node.children || []).some((child) =>
+      normalizedUiText(child.textContent) === title
+    ));
+  return leaves.length === 1 ? leaves[0] : null;
+}
+
+function findDotProfileRenameEditor(dialog = visibleDotCustomizationDialog()) {
   if (!dialog) return null;
   const editors = renameEditors().filter((node) => dialog.contains(node));
   const named = editors.filter((node) =>
@@ -544,20 +576,44 @@ function currentDotTitleMatches(key, title) {
 
 async function openDotRenameEditor(key) {
   const diagnostic = {
-    version: 2, identity: 'MATCH', menuButton: 'NOT_FOUND', menuClick: 'NOT_ATTEMPTED',
+    version: 3, identity: 'MATCH', menuButton: 'NOT_FOUND', menuClick: 'NOT_ATTEMPTED',
     menuVisible: 'NOT_OBSERVED', renameAction: 'NOT_FOUND', editor: 'NOT_CHECKED',
+    customizeDialog: 'NOT_OBSERVED', customizeName: 'NOT_ATTEMPTED',
   };
   if (dotKeyFromLocation() !== key) {
     diagnostic.identity = 'MISMATCH';
     throw renameUiError('DOT_RENAME_TARGET_STALE', 'NOT_APPLIED', diagnostic);
   }
-  const profileTitle = dotProfileTitleControl();
-  if (profileTitle) {
-    diagnostic.menuClick = 'PROFILE_TITLE_ATTEMPTED';
-    activateRenameUiElement(profileTitle);
-    const profileInput = await waitForRenameUi(() => findDotProfileRenameEditor(), 5000);
+  let customizeDialog = visibleDotCustomizationDialog();
+  const profileTitle = customizeDialog ? null : dotProfileTitleControl();
+  if (customizeDialog || profileTitle) {
+    if (!customizeDialog) {
+      diagnostic.menuClick = 'PROFILE_TITLE_ATTEMPTED';
+      activateRenameUiElement(profileTitle);
+      customizeDialog = await waitForRenameUi(() => visibleDotCustomizationDialog(), 5000);
+    }
+    if (!customizeDialog) {
+      throw renameUiError('DOT_CUSTOMIZATION_DIALOG_NOT_FOUND', 'NOT_APPLIED', diagnostic);
+    }
+    diagnostic.customizeDialog = 'OBSERVED';
+    let profileInput = findDotProfileRenameEditor(customizeDialog);
+    if (!profileInput) {
+      const nameControl = dotCustomizationNameControl(customizeDialog);
+      if (!nameControl) {
+        throw renameUiError('DOT_CUSTOMIZATION_NAME_CONTROL_NOT_FOUND', 'NOT_APPLIED', diagnostic);
+      }
+      if (dotKeyFromLocation() !== key) {
+        diagnostic.identity = 'MISMATCH';
+        throw renameUiError('DOT_RENAME_TARGET_STALE', 'NOT_APPLIED', diagnostic);
+      }
+      diagnostic.customizeName = 'ATTEMPTED';
+      activateRenameUiElement(nameControl);
+      profileInput = await waitForRenameUi(
+        () => findDotProfileRenameEditor(customizeDialog), 5000
+      );
+    }
     if (profileInput) {
-      diagnostic.renameAction = 'PROFILE_TITLE';
+      diagnostic.renameAction = 'CUSTOMIZATION_NAME';
       diagnostic.editor = 'FOUND';
       return { input: profileInput, diagnostic };
     }
