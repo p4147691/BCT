@@ -1411,7 +1411,12 @@ async function refreshMonitorIdentityIndex(state, force = false) {
     ...openEndpoints.map((ep) => String(ep?.conversation_key || "").trim()),
     ...bctOpenNodes.map((node) => String(node?.conversationKey || "").trim()),
   ].filter(Boolean));
-  if (!wanted.size) return false;
+  // Dot and confirmed Codex-local surfaces deliberately do not manufacture a
+  // /c/<UUID> conversation key.  They still need a fresh Native Chrome-window
+  // snapshot for the display-only HWND/desktop join.  Keep UUID matching below
+  // for mutation-safe identity, but do not skip the read-only projection merely
+  // because every currently open BCT node is one of those non-UUID surfaces.
+  if (!wanted.size && !bctOpenNodes.length) return false;
 
   const renderSignature = (location) => [
     String(location?.conversationKey || ""),
@@ -1984,8 +1989,12 @@ function syncMonitorBctNodeLocationLabels() {
       ? monitorDesktopState.desktopIds.indexOf(String(location.desktopId || ""))
       : -1;
     const position = row.querySelector(".monitor-bct-node-location");
+    // A blank conversation key is valid for Dot and Codex-local references, so
+    // it cannot identify a roster row.  Use the same exact selection key that
+    // rendered the row; this keeps its D# detail attached to its own Chrome
+    // window rather than the first other blank-key node.
     const node = monitorBctWindowNodesCache.find((item) =>
-      String(item?.conversationKey || "") === String(row.dataset.conversationKey || "")
+      monitorBctNodeSelectionKey(item) === String(row.dataset.nodeSelectionKey || "")
     );
     if (position) {
       const detail = monitorBctNodeDetail(node, index, location);

@@ -1822,7 +1822,12 @@ async function refreshMonitorIdentityIndex(state, force = false) {
     ...openEndpoints.map((ep) => String(ep?.conversation_key || "").trim()),
     ...bctOpenNodes.map((node) => String(node?.conversationKey || "").trim()),
   ].filter(Boolean));
-  if (!wanted.size) return false;
+  // Dot and confirmed Codex-local surfaces deliberately do not manufacture a
+  // /c/<UUID> conversation key.  They still need a fresh Native Chrome-window
+  // snapshot for the display-only HWND/desktop join.  Keep UUID matching below
+  // for mutation-safe identity, but do not skip the read-only projection merely
+  // because every currently open BCT node is one of those non-UUID surfaces.
+  if (!wanted.size && !bctOpenNodes.length) return false;
 
   const renderSignature = (location) => [
     String(location?.conversationKey || ""),
@@ -6544,7 +6549,12 @@ let monitorBctProjectionConvergenceKey = "";
 let monitorBctProjectionConvergenceAttempt = 0;
 let monitorBctProjectionConvergenceInflight = false;
 let monitorBctThumbnailProjectionAttemptKeys = new Set();
-const MONITOR_BCT_PROJECTION_CONVERGENCE_DELAYS_MS = Object.freeze([0, 450, 1400]);
+// This is an event-bound, finite reconciliation after Chrome changes routes or
+// windows.  It is not an ambient polling loop: the final two reads cover the
+// delayed Native virtual-desktop/Chrome HWND snapshot that otherwise leaves a
+// just-restored Dot node at D? until a user click creates another lifecycle
+// event.
+const MONITOR_BCT_PROJECTION_CONVERGENCE_DELAYS_MS = Object.freeze([0, 450, 1400, 3500, 8000]);
 
 function scheduleMonitorMinimizedBadgeConvergence(hwnd) {
   const key = String(hwnd || "").trim();
@@ -10964,8 +10974,12 @@ function syncMonitorBctNodeLocationLabels() {
       ? monitorDesktopState.desktopIds.indexOf(String(location.desktopId || ""))
       : -1;
     const position = row.querySelector(".monitor-bct-node-location");
+    // A blank conversation key is valid for Dot and Codex-local references, so
+    // it cannot identify a roster row.  Use the same exact selection key that
+    // rendered the row; this keeps its D# detail attached to its own Chrome
+    // window rather than the first other blank-key node.
     const node = monitorBctWindowNodesCache.find((item) =>
-      String(item?.conversationKey || "") === String(row.dataset.conversationKey || "")
+      monitorBctNodeSelectionKey(item) === String(row.dataset.nodeSelectionKey || "")
     );
     if (position) {
       const detail = monitorBctNodeDetail(node, index, location);

@@ -236,7 +236,12 @@ let monitorBctProjectionConvergenceKey = "";
 let monitorBctProjectionConvergenceAttempt = 0;
 let monitorBctProjectionConvergenceInflight = false;
 let monitorBctThumbnailProjectionAttemptKeys = new Set();
-const MONITOR_BCT_PROJECTION_CONVERGENCE_DELAYS_MS = Object.freeze([0, 450, 1400]);
+// This is an event-bound, finite reconciliation after Chrome changes routes or
+// windows.  It is not an ambient polling loop: the final two reads cover the
+// delayed Native virtual-desktop/Chrome HWND snapshot that otherwise leaves a
+// just-restored Dot node at D? until a user click creates another lifecycle
+// event.
+const MONITOR_BCT_PROJECTION_CONVERGENCE_DELAYS_MS = Object.freeze([0, 450, 1400, 3500, 8000]);
 
 /*@@MONITOR_FUNCTION:scheduleMonitorMinimizedBadgeConvergence@@*/
 if (monitorWorkers) monitorWorkers.dataset.columns = "3";

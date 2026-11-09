@@ -155,6 +155,12 @@ function loadModule() {
     "display-only location must fall back to one unique Chrome window id while exact session identity converges");
   assert.match(monitor, /monitorBctDisplayWindowHwnd = new Map[\s\S]*monitorWorkers\?\.isConnected\) syncMonitorBctNodeLocationLabels\(\);/,
     "a refreshed display binding must repaint existing D? node-list labels without requiring another click");
+  assert.match(monitor, /if \(!wanted\.size && !bctOpenNodes\.length\) return false;/,
+    "Dot and Codex-local surfaces must still enumerate Native Chrome windows when no ordinary conversation UUID is open");
+  assert.match(monitor, /monitorBctNodeSelectionKey\(item\) === String\(row\.dataset\.nodeSelectionKey \|\| ""\)/,
+    "a blank Dot or Codex conversation key must not borrow another blank-key node's location detail");
+  assert.match(monitor, /MONITOR_BCT_PROJECTION_CONVERGENCE_DELAYS_MS = Object\.freeze\(\[0, 450, 1400, 3500, 8000\]\)/,
+    "route-triggered projection convergence must cover a delayed Native desktop snapshot without ambient polling");
   assert.match(monitor, /const bctOpenNodes = \(Array\.isArray\(monitorBctWindowNodesCache\)[\s\S]*?\.filter\(\(node\) => String\(node\?\.instanceState \|\| ""\)\.toUpperCase\(\) === "OPEN"\);/,
     "desktop projection must re-index every open roster node, not only the active tab");
   assert.doesNotMatch(monitor, /const bctActiveNodes = [\s\S]{0,180}node\?\.active === true/,
