@@ -31,10 +31,16 @@ const monitorBctShell=MonitorBctShell.create({fetcher:async(url,init)=>{
  return fetch(location.origin+"/monitor/dot-node-info",init);
 }});
 """ + bootstrap[end:]
+bootstrap = bootstrap.replace(
+    'function setMonitorStatus(text,ok){document.body.dataset.status=String(ok);}',
+    'function setMonitorStatus(text,ok){document.body.dataset.status=String(ok);if(ok)document.body.dataset.testResult="PASS";}',
+)
 shell = (root / "extension/monitor-bct-shell.js").read_text(encoding="utf-8")
 source = (root / "domains/conversations.js").read_text(encoding="utf-8")
 editor = re.search(r"//@@FN_START:openMonitorBctRenameEditor\n(.*?)//@@FN_END:openMonitorBctRenameEditor",source,re.S)[1]
-html = "<!doctype html><body><script>"+shell+"\n"+editor+"\n"+bootstrap+"</script>"
+diagnostics = ("<script>window.addEventListener('error',e=>document.body.dataset.error=String(e.message));"
+               "window.addEventListener('unhandledrejection',e=>document.body.dataset.error=String(e.reason));</script>")
+html = "<!doctype html><body>"+diagnostics+"<script>"+shell+"\n"+editor+"\n"+bootstrap+"</script>"
 with tempfile.TemporaryDirectory(prefix="bct-dot-http-e2e-") as temp:
     temp = Path(temp)
     bct = SimpleNamespace(store=Store(temp / "state.sqlite"))
@@ -70,6 +76,9 @@ with tempfile.TemporaryDirectory(prefix="bct-dot-http-e2e-") as temp:
             capture_output=True,timeout=25)
         output=result.stdout.decode("utf-8",errors="replace")
         if 'data-test-result="PASS"' not in output:
+            print("Chrome exit:", result.returncode)
+            print("Chrome stderr:", result.stderr.decode("utf-8",errors="replace")[-6000:])
+            print("Browser error:", re.search(r'data-error="([^"]*)"', output).group(1) if 'data-error=' in output else "")
             print(output[-6000:]);raise AssertionError("BROWSER_HTTP_ROUNDTRIP_FAILED")
         persisted=dot_directory(Store(temp / "state.sqlite"))["opaque~context"]
         assert persisted["node_memo"]=="after" and persisted["revision"]==2,persisted
