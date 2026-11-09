@@ -163,6 +163,16 @@ saveButton.disabled = false;
 assert.equal(vm.runInContext('enabledRenameSaveControl(saveScope) === saveButton', context), true,
   'the exact enabled Korean Save control must be preferred after React updates');
 
+const rolelessRenameInput = visibleNode({ 'aria-label': '이름' });
+rolelessRenameInput.closest = () => null;
+const rolelessRenamePanel = visibleNode();
+rolelessRenamePanel.querySelectorAll = (selector) => selector === 'button' ? [saveButton] : [];
+rolelessRenameInput.parentElement = rolelessRenamePanel;
+context.rolelessRenameInput = rolelessRenameInput;
+context.rolelessRenamePanel = rolelessRenamePanel;
+assert.equal(vm.runInContext('renameSubmitScope(rolelessRenameInput) === rolelessRenamePanel', context), true,
+  'a role-less Dot name dialog must submit through its nearest semantic Save scope');
+
 const profileTitle = visibleNode({}, '내 dot');
 profileTitle.closest = () => null;
 document.title = '내 dot';

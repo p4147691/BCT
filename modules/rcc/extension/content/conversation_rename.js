@@ -546,8 +546,24 @@ function enabledRenameSaveControl(scope) {
   }) || null;
 }
 
-async function submitRenameEditor(input) {
-  const scope = input.closest?.('[role="dialog"]') || input.closest?.('form') || input.parentElement;
+function renameSubmitScope(input, scopeHint = null) {
+  const hasSave = (scope) => Array.from(scope?.querySelectorAll?.('button') || [])
+    .some((button) => /^(save|저장|confirm|확인)$/i.test(renameSemanticText(button))
+      || button.type === 'submit');
+  let scope = input.closest?.('[role="dialog"], [aria-modal="true"], [data-radix-dialog-content]')
+    || input.closest?.('form');
+  if (scope && hasSave(scope)) return scope;
+  scope = input.parentElement;
+  for (let depth = 0; scope && depth < 12; depth += 1, scope = scope.parentElement) {
+    if (scope === document.body || scope === document.documentElement) break;
+    if (hasSave(scope)) return scope;
+  }
+  if (scopeHint && scopeHint.contains?.(input) && hasSave(scopeHint)) return scopeHint;
+  return input.closest?.('form') || input.parentElement;
+}
+
+async function submitRenameEditor(input, scopeHint = null) {
+  const scope = renameSubmitScope(input, scopeHint);
   const form = input.closest?.('form');
   // React enables the dialog's Save button on a later render after the input
   // event.  Submitting the form immediately can bypass the actual onClick
@@ -657,7 +673,7 @@ async function openDotRenameEditor(key) {
     if (profileInput) {
       diagnostic.renameAction = 'CUSTOMIZATION_NAME';
       diagnostic.editor = 'FOUND';
-      return { input: profileInput, diagnostic };
+      return { input: profileInput, scope: customizeDialog, diagnostic };
     }
     throw renameUiError('DOT_PROFILE_RENAME_INPUT_NOT_FOUND', 'NOT_APPLIED', diagnostic);
   }
@@ -701,7 +717,8 @@ async function openDotRenameEditor(key) {
     throw renameUiError('DOT_RENAME_INPUT_NOT_FOUND', 'NOT_APPLIED', diagnostic);
   }
   diagnostic.editor = 'FOUND';
-  return { input, diagnostic };
+  return { input, scope: input.closest?.('[role="dialog"]') || input.closest?.('form') || null,
+    diagnostic };
 }
 
 async function renameDotUi(message) {
@@ -710,14 +727,14 @@ async function renameDotUi(message) {
   const title = normalizedUiText(message.title);
   if (!key || dotKeyFromLocation() !== key) throw renameUiError('DOT_RENAME_TARGET_STALE');
   if (!operationId || !title || title.length > 100) throw renameUiError('DOT_RENAME_INPUT_INVALID');
-  const { input } = await openDotRenameEditor(key);
+  const { input, scope } = await openDotRenameEditor(key);
   setRenameEditorValue(input, title);
   if (dotKeyFromLocation() !== key) throw renameUiError('DOT_RENAME_TARGET_STALE');
   await renameSleep(80);
   let effectStarted = false;
   try {
     effectStarted = true;
-    await submitRenameEditor(input);
+    await submitRenameEditor(input, scope);
     const accepted = await waitForRenameUi(() =>
       (!document.contains(input) || !isVisible(input)) && currentDotTitleMatches(key, title), 8000
     );
