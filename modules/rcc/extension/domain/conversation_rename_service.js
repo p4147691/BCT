@@ -94,6 +94,23 @@ async function executeDotRenameInMainWorld(tabId, operationId, dotKey, title) {
         node?.getAttribute?.('data-testid'), node?.textContent,
       ].filter(Boolean).join(' '));
       const sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+      const activate = (node) => {
+        node.scrollIntoView?.({ block: 'center', inline: 'center' });
+        node.focus?.({ preventScroll: true });
+        const init = { bubbles: true, cancelable: true, composed: true, view: window,
+          button: 0, buttons: 1 };
+        if (typeof PointerEvent === 'function') {
+          node.dispatchEvent(new PointerEvent('pointerdown', { ...init, pointerId: 1,
+            pointerType: 'mouse', isPrimary: true }));
+        }
+        node.dispatchEvent(new MouseEvent('mousedown', init));
+        if (typeof PointerEvent === 'function') {
+          node.dispatchEvent(new PointerEvent('pointerup', { ...init, buttons: 0, pointerId: 1,
+            pointerType: 'mouse', isPrimary: true }));
+        }
+        node.dispatchEvent(new MouseEvent('mouseup', { ...init, buttons: 0 }));
+        node.dispatchEvent(new MouseEvent('click', { ...init, buttons: 0 }));
+      };
       const wait = async (find, timeoutMs = 20000) => {
         const deadline = Date.now() + timeoutMs;
         while (Date.now() < deadline) {
@@ -193,7 +210,7 @@ async function executeDotRenameInMainWorld(tabId, operationId, dotKey, title) {
         if (!nameControl) return fail('DOT_CUSTOMIZATION_NAME_CONTROL_NOT_FOUND');
         diagnostic.nameControl = 'FOUND';
         const previousEditors = new Set(editors());
-        nameControl.click();
+        activate(nameControl);
         const input = await wait(() => {
           const fresh = editors().filter((node) => !previousEditors.has(node));
           const named = fresh.filter((node) => /name|title|이름|제목/i.test(semantic(node)));
