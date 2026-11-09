@@ -1,6 +1,6 @@
 {
   "schema": "bct.component-library.bundle.v1",
-  "source_fingerprint": "aa117f63106f314016c8ecc3037c7e383f44cfd93bf3d5deed85de1c8bf25fef",
+  "source_fingerprint": "c28e2c4e426f400abe9430430ff9ede018375d274df25e53884b0cd5b960a5fd",
   "source_hashes": {
     "docs/CHAIN_MESSAGE_RECIPE_V2.md": "32f2d2d18da89be87defe5eb14580dd3a0c359ae1815744fe39e9b3ac653ab21",
     "docs/component-library.v1.json": "05c4dbb7c6357ca05c7b6427e709b4f1856bb5a3ad8e7b106317567f4aa2ccaa",
@@ -17,7 +17,7 @@
     "modules/monitor/extension/monitor-bct-thumbnail-projection.js": "844b22e3ce253938e8672d86979ff6d462bdbeb14e55f59452462373ffa4b03d",
     "modules/monitor/extension/monitor-node-token-visual-contract.js": "08e8b59f51a46c31d13784b56beefa8ae3365d076e665a016425b3306282e1bc",
     "modules/monitor/extension/monitor-window-hwnd-contract.js": "81b0050ba0231328ad3514b35e1d085e18afcf7315bf4674d3e5604a61b34e6e",
-    "modules/rcc/extension/content/conversation_rename.js": "4f2937770c3d14d01308823c044fd6e61b57e19050bf6cbc34a89f2a3914e5dd",
+    "modules/rcc/extension/content/conversation_rename.js": "94199637687e133deb537d5011c260327b5a4cb06eaaffd673c1221f4a1c1027",
     "modules/rcc/extension/domain/conversation_rename_service.js": "efe325ce18951fc91ca6c8d6ba9f84cbb3468f7e8e6ceb15187c8b85f06d2cb2",
     "src/bct/chain_direction.py": "84fffaf0e19513b5bda381fdc18ac83debe8a86a99d1a0139b6b46e06d632577",
     "src/bct/chain_entry_policy.py": "2c076fd541dfaa9353b12526c6a41bdb1396169a6a81162e81861b8cc313dd34",
