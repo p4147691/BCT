@@ -946,6 +946,7 @@ body.desktop-window-monitor-active { background-image:none!important; background
 .monitor-bct-node-number { display:grid; place-items:center; width:27px; height:27px; border:1px solid rgba(117,184,255,.42); border-radius:7px; background:rgba(117,184,255,.13); color:#f2f8ff; font:900 13px/1 "Segoe UI","Malgun Gothic",sans-serif; }
 .monitor-bct-node-body { min-width:0; display:block; }
 .monitor-bct-node-title { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#f7f9fc; font:700 12px/1.25 "Segoe UI","Malgun Gothic",sans-serif; }
+.monitor-bct-node-role { display:inline-block; margin:2px 0 1px; color:#e2b4ff; font:900 9px/1 "Segoe UI","Malgun Gothic",sans-serif; letter-spacing:.08em; }
 .monitor-bct-node-presence { display:block; width:7px; height:7px; border-radius:50%; background:#62d99a; box-shadow:0 0 0 2px rgba(98,217,154,.11); }
 .monitor-bct-node-presence.is-busy { background:#ffc45c; box-shadow:0 0 0 2px rgba(255,196,92,.12); }
 .monitor-bct-node-empty { padding:15px 12px; border:1px dashed rgba(255,255,255,.13); border-radius:9px; color:rgba(225,234,245,.68); text-align:center; font:600 11px/1.45 "Segoe UI","Malgun Gothic",sans-serif; }
@@ -3649,6 +3650,7 @@ body.desktop-window-monitor-active { background-image:none!important; background
 .monitor-thumbnail-tab-token.is-abnormal { color:#ff5f67!important;cursor:pointer;pointer-events:auto; }
 .monitor-thumbnail-tab-token.is-role-manager { outline:1px solid #ffd75a!important;outline-offset:1px;border-radius:0!important; }
 .monitor-thumbnail-tab-token.is-role-supervisor { outline:1px solid #55a9ff!important;outline-offset:1px;border-radius:0!important; }
+.monitor-thumbnail-tab-token.is-role-orchestrator { color:#e2b4ff!important;outline:1px solid #b56be0!important;outline-offset:1px;border-radius:0!important; }
 .monitor-thumbnail-tab-token.is-selected { color:#fff!important;font-size:13px!important;font-weight:900;transform:scale(1.16);text-shadow:none!important; }
 .monitor-thumbnail-tab-prefix,.monitor-thumbnail-tab-separator { color:inherit;font-size:inherit;font-weight:inherit;text-shadow:none; }
 .monitor-desktop-thumb-label {
@@ -3670,8 +3672,11 @@ body.desktop-window-monitor-active { background-image:none!important; background
 .monitor-desktop-minimized-node.is-abnormal { color:#ff5f67!important;cursor:pointer;pointer-events:auto; }
 .monitor-desktop-minimized-node.is-role-manager { outline:1px solid #ffd75a!important;outline-offset:1px;border-radius:0!important; }
 .monitor-desktop-minimized-node.is-role-supervisor { outline:1px solid #55a9ff!important;outline-offset:1px;border-radius:0!important; }
+.monitor-desktop-minimized-node.is-role-orchestrator { color:#e2b4ff!important;outline:1px solid #b56be0!important;outline-offset:1px;border-radius:0!important; }
 .monitor-desktop-minimized-node-selected { color:#fff!important;font-size:13px!important;font-weight:900;line-height:14px;transform:scale(1.16);transform-origin:center;text-shadow:none!important; }
 .monitor-desktop-minimized-nodes .monitor-desktop-minimized-more { flex:0 0 auto;letter-spacing:.04em; }
 .monitor-desktop-minimized-prefix,.monitor-desktop-minimized-separator { color:rgba(255,255,255,.94);font:800 10px/14px "Segoe UI","Malgun Gothic",sans-serif; }
 
 .monitor-bct-orchestrator .monitor-bct-node-number { color: #d8a0ff; border-color: #b56be0; }
+.monitor-bct-node-row.is-dot { border-color:rgba(181,107,224,.52); background:rgba(125,70,166,.18); }
+.monitor-bct-node-row.is-dot:hover { border-color:#d8a0ff; background:rgba(144,82,188,.27); }

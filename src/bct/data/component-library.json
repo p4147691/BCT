@@ -1,6 +1,6 @@
 {
   "schema": "bct.component-library.bundle.v1",
-  "source_fingerprint": "1da1fff7682d5535604610b6cc7b18a8b41dc04dc46272542154b24d16159859",
+  "source_fingerprint": "3c060b19a697bf90cfa223080585a9b36ea398a88ee47a5db034420b5db8dfec",
   "source_hashes": {
     "docs/CHAIN_MESSAGE_RECIPE_V2.md": "32f2d2d18da89be87defe5eb14580dd3a0c359ae1815744fe39e9b3ac653ab21",
     "docs/component-library.v1.json": "93c9a24f6440e5d54b289b6ac66716337cad3022f65ec12f37c2b21f137df468",
@@ -10,12 +10,12 @@
     "modules/browser-bridge/native/native_host.py": "7a618302522f954fb953ce4f24c273d9fb1bc1d9c4eb0846f0c4cccdfb818b78",
     "modules/browser-bridge/native/persistent_host.py": "306d2bf6618cd5a274dd4e91fe0a2999ee0ce8cba1171bbfa80c4cb2d003f015",
     "modules/monitor/domains/desktop-lifecycle.js": "8269e05b3597723b2d47fdf2a8ddc8d3cca7cc93ae49a0f4db6ec506a6084158",
-    "modules/monitor/domains/node-identity.js": "0e0dc91f321463efeee5282afd1ab609f204233d3bfe9d52afad31d7de95a39b",
+    "modules/monitor/domains/node-identity.js": "45d05d2ce43c9290210931e14b85a7dc60f9694803d0f6c1cdc4e48f2e6ccf0c",
     "modules/monitor/extension/browser/tab-close-adapter.js": "25098987008308e97822ee12b5e62e93f39506bae165014c51b0aab3c95025b7",
     "modules/monitor/extension/features/rcc-command-catalog/monitor-rcc-command-catalog.js": "baf346f2f1e94c93d367cbd8a241c68a38a7ce7f4a4b20d32b0e3db33a40a651",
     "modules/monitor/extension/monitor-bct-shell.js": "698366f6a9fc9576917d3c3ef6c8dbfc74873a2153931f84d77555b8473402cb",
-    "modules/monitor/extension/monitor-bct-thumbnail-projection.js": "ec9123afd6e583b7a0c92602c84652df7edd25f275b6ee017d2c573e290781d8",
-    "modules/monitor/extension/monitor-node-token-visual-contract.js": "2168eeb18875dfa5c23aaa37aaad5acc7f6b43449c5a2c828ac937834314669e",
+    "modules/monitor/extension/monitor-bct-thumbnail-projection.js": "844b22e3ce253938e8672d86979ff6d462bdbeb14e55f59452462373ffa4b03d",
+    "modules/monitor/extension/monitor-node-token-visual-contract.js": "08e8b59f51a46c31d13784b56beefa8ae3365d076e665a016425b3306282e1bc",
     "modules/monitor/extension/monitor-window-hwnd-contract.js": "81b0050ba0231328ad3514b35e1d085e18afcf7315bf4674d3e5604a61b34e6e",
     "src/bct/chain_direction.py": "84fffaf0e19513b5bda381fdc18ac83debe8a86a99d1a0139b6b46e06d632577",
     "src/bct/chain_entry_policy.py": "2c076fd541dfaa9353b12526c6a41bdb1396169a6a81162e81861b8cc313dd34",

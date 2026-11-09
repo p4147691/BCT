@@ -19,6 +19,7 @@ const contract = ctx.MonitorNodeTokenVisualContract;
 assert.ok(Object.isFrozen(contract));
 const manager = { roleTags: ["USER", "Manager"] };
 const supervisor = { roleTags: ["supervisor"] };
+const dot = { dotKey: "ref~context", nodeLabel: "Dot", roleTags: ["Orchestrator"] };
 const working = { kind: "working", conversationKey: "c1" };
 const ready = { kind: "ready", conversationKey: "c2" };
 const abnormal = { kind: "abnormal", conversationKey: "c3" };
@@ -26,6 +27,8 @@ assert.deepEqual([...contract.classesFor(manager, working, false)],
   ["is-role-manager", "has-report", "is-working"]);
 assert.deepEqual([...contract.classesFor(supervisor, ready, true)],
   ["is-role-supervisor", "has-report", "is-ready", "is-selected"]);
+assert.equal(contract.roleFor(dot), "orchestrator");
+assert.deepEqual([...contract.classesFor(dot, {}, false)], ["is-role-orchestrator"]);
 assert.deepEqual([...contract.classesFor({}, abnormal, false)],
   ["has-report", "is-abnormal"]);
 assert.equal(contract.roleFor({ roleTags: ["manager", "supervisor"] }), "",
@@ -55,9 +58,9 @@ for (const selector of ["monitor-thumbnail-tab-token", "monitor-desktop-minimize
   assert.ok((selectedRule?.[1] || "").includes("transform:scale(1.16)"));
   assert.ok(css.indexOf(selected) > css.indexOf("." + selector + ".is-abnormal"),
     "selected white must override all activity rules");
-  for (const role of ["manager", "supervisor"]) {
+  for (const role of ["manager", "supervisor", "orchestrator"]) {
     const roleRule = css.match(new RegExp("\\." + selector + "\\.is-role-" + role + "\\s*\\{([^}]*)\\}"));
-    assert.match(roleRule?.[1] || "", new RegExp(role === "manager" ? "#ffd75a" : "#55a9ff"));
+    assert.match(roleRule?.[1] || "", new RegExp(role === "manager" ? "#ffd75a" : role === "supervisor" ? "#55a9ff" : "#b56be0"));
     assert.match(roleRule?.[1] || "", /outline:1px solid/);
     assert.match(roleRule?.[1] || "", /border-radius:0!important/);
   }
@@ -66,6 +69,8 @@ assert.match(projection, /MonitorNodeTokenVisualContract/);
 assert.match(projection, /nodeForTab/);
 assert.match(minimized, /MonitorNodeTokenVisualContract/);
 assert.match(bridge, /nodeForTab:/);
+assert.match(bridge, /\? "DOT"/);
+assert.match(minimized, /return "DOT"/);
 assert.ok(minimized.includes("shouldAcknowledge(selectedReport)"),
   "explicit list selection acknowledges only terminal reports");
 assert.ok(html.indexOf("monitor-node-token-visual-contract.js") <

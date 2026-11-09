@@ -75,6 +75,28 @@ function loadAdapter() {
   assert.equal(unknown.status, "UNKNOWN");
   assert.equal(unknown.ok, false);
 
+  const dotTarget = { tabId: 21, windowId: 34, dotKey: "b227a510-d0cb-4466-a2f5-4e401b456dca~6af1261141a8819aa57d94044451fee3" };
+  const dotTab = { id: 21, windowId: 34, url: `https://chatgpt.com/dots/${dotTarget.dotKey}`, active: false };
+  const dotCalls = [];
+  const dotResult = await loadAdapter().create({
+    tabs: {
+      get: async () => ({ ...dotTab }),
+      update: async (tabId, update) => { dotCalls.push(["tab", tabId, update]); dotTab.active = update.active === true; return { ...dotTab }; },
+    },
+    windows: {
+      get: async () => ({ id: 34, focused: true }),
+      update: async (windowId, update) => { dotCalls.push(["window", windowId, update]); return { id: windowId, focused: true }; },
+    },
+  }).focus(dotTarget);
+  assert.equal(dotResult.status, "APPLIED");
+  assert.deepEqual(JSON.parse(JSON.stringify(dotCalls)), [["tab", 21, { active: true }], ["window", 34, { focused: true }]]);
+  const dotMismatch = await loadAdapter().create({
+    tabs: { get: async () => ({ ...dotTab, url: "https://chatgpt.com/dots/other~reference" }), update: async () => { throw new Error("must not update"); } },
+    windows: { get: async () => ({ id: 34, focused: false }), update: async () => { throw new Error("must not update"); } },
+  }).focus(dotTarget);
+  assert.equal(dotMismatch.status, "NOT_APPLIED");
+  assert.equal(dotMismatch.error, "MONITOR_TAB_FOCUS_IDENTITY_MISMATCH");
+
   const background = fs.readFileSync(backgroundPath, "utf8");
   const monitor = fs.readFileSync(monitorPath, "utf8");
   assert.match(background, /importScripts\("browser\/tab-focus-adapter\.js"\)/);
@@ -83,12 +105,14 @@ function loadAdapter() {
   assert.match(monitor, /tabId: node\.tabId/);
   assert.match(monitor, /windowId: node\.windowId/);
   assert.match(monitor, /conversationKey: node\.conversationKey/);
+  assert.match(monitor, /dotKey: node\.dotKey/);
 
   console.log(JSON.stringify({
     status: "PASS",
     exact_identity_applied: true,
     mismatch_has_no_effect: true,
     ambiguous_effect_is_unknown: true,
+    exact_dot_identity_applied: true,
     background_and_node_wiring: true,
   }));
 })().catch((error) => {

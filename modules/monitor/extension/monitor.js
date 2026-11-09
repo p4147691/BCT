@@ -6687,7 +6687,7 @@ function monitorBctRoleTagsFromText(value) { return globalThis.MonitorDomainAPIs
 function monitorBctNodeRoleSummary(node) { return globalThis.MonitorDomainAPIs["node-identity"]["monitorBctNodeRoleSummary"].apply(this, arguments); }
 
 function monitorBctNodeRoleRank(node) {
-  if (node?.dotKey && node?.nodeLabel === "O") return -1;
+  if (node?.dotKey) return -1;
   const tags = Array.isArray(node?.roleTags)
     ? node.roleTags.map((tag) => String(tag).trim().toLowerCase())
     : [];
@@ -7212,6 +7212,8 @@ function getMonitorBctNodeInteractionService() {
       tabId: target?.tabId,
       windowId: target?.windowId,
       conversationKey: target?.conversationKey,
+      dotKey: target?.dotKey,
+      codexLocalReference: target?.codexLocalReference,
     }),
   });
   return monitorBctNodeInteractionService;
@@ -7297,7 +7299,7 @@ function renderMonitorBctWindowNodes(nodes) {
     nodes: [],
   });
   const orderedGroups = [...groups.values()].sort((left, right) =>
-    Number(left.key === "__unassigned__") - Number(right.key === "__unassigned__") ||
+    Number(right.key === "__unassigned__") - Number(left.key === "__unassigned__") ||
     left.name.localeCompare(right.name, "ko"));
   for (const group of orderedGroups) {
     const localNodeOrder = new Map(
@@ -7427,7 +7429,7 @@ function renderMonitorBctWindowNodes(nodes) {
     for (const [index, node] of group.nodes.entries()) {
     const row = document.createElement("article");
     row.className = "monitor-bct-node-row";
-    if (node.dotKey && node.nodeLabel === "O") row.classList.add("monitor-bct-orchestrator");
+    if (node.dotKey) row.classList.add("monitor-bct-orchestrator");
     if (node.codexLocalReference) row.classList.add("monitor-bct-codex-local");
     row.dataset.tabId = String(node.tabId);
     row.dataset.windowId = String(node.windowId);
@@ -7466,6 +7468,13 @@ function renderMonitorBctWindowNodes(nodes) {
     title.className = "monitor-bct-node-title";
     title.textContent = node.title;
     body.append(title);
+    const role = monitorBctNodeRoleSummary(node);
+    if (role) {
+      const roleBadge = document.createElement("span");
+      roleBadge.className = "monitor-bct-node-role";
+      roleBadge.textContent = role;
+      body.append(roleBadge);
+    }
     const location = document.createElement("small");
     location.className = "monitor-bct-node-location";
     const detail = monitorBctNodeDetail(node, desktopPosition, nativeLocation);
@@ -7482,6 +7491,7 @@ function renderMonitorBctWindowNodes(nodes) {
     const roleTags = Array.isArray(node.roleTags) ? node.roleTags.map((tag) => String(tag).trim().toLowerCase()) : [];
     row.classList.toggle("is-manager", roleTags.includes("manager"));
     row.classList.toggle("is-supervisor", !String(node.scopeName || "").trim() && roleTags.includes("supervisor"));
+    row.classList.toggle("is-dot", Boolean(node.dotKey));
     installMonitorBctRoleLongPress(row, node);
     row.addEventListener("dragstart", (event) => event.preventDefault());
     row.addEventListener("pointerdown", (event) => beginMonitorBctNodePointerDrag(event, row, node));
@@ -7521,6 +7531,8 @@ function renderMonitorBctWindowNodes(nodes) {
         tabId: node.tabId,
         windowId: node.windowId,
         conversationKey: node.conversationKey,
+        dotKey: node.dotKey,
+        codexLocalReference: node.codexLocalReference,
       };
       // A newly-created Chrome window does not have an exact HWND binding
       // until its tab becomes the observed active conversation.  Select the
@@ -10540,6 +10552,9 @@ function monitorBadgeNodeNumbersForHwnd(hwnd, state = monitorLastAiState, option
   // different Chrome window_ids onto one physical thumbnail window.
   const includeTabIds = options?.includeTabIds === true;
   const tokenFor = (node) => {
+    if (node?.dotKey) return "DOT";
+    const codex = /^C(\d{1,2})$/i.exec(String(node?.nodeLabel || "").trim());
+    if (codex) return `C${codex[1]}`;
     const match = /^N(\d+)$/.exec(String(node?.nodeLabel || "").trim());
     return match ? Number(match[1]) : "?";
   };
@@ -10915,7 +10930,9 @@ function syncMonitorThumbnailTabBadges(container, className) {
     locations: monitorWindowDesktopLocations,
     highlightedHwnd: monitorBctNodeHighlightedHwnd,
     selectedNodeHwnd: selectedHwnd,
-    selectedNodeToken: String(selectedNode?.nodeLabel || "").replace(/^N/, "") || "?",
+    selectedNodeToken: selectedNode?.dotKey
+      ? "DOT"
+      : String(selectedNode?.nodeLabel || "").replace(/^N/, "") || "?",
     selectedNodeTabId: Number(selectedNode?.tabId),
     numbersForHwnd: (hwnd, state) => monitorBadgeNodeNumbersForHwnd(hwnd, state, { includeTabIds: true }),
     nodeForTab: (tabId) => (Array.isArray(monitorBctWindowNodesCache)?monitorBctWindowNodesCache:[])

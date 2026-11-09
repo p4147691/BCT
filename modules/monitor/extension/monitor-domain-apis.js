@@ -64,6 +64,7 @@ function compareMonitorSharedSelectionRevision(leftValue, rightValue) {
 }
 
 function monitorBctNodeRoleSummary(node) {
+  if (node?.dotKey) return "DOT";
   const tags = Array.isArray(node?.roleTags)
     ? node.roleTags.map((value) => String(value || "").trim()).filter(Boolean)
     : [];

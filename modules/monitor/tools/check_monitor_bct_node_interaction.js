@@ -117,6 +117,12 @@ function loadModule() {
   assert.match(monitor, /row\.addEventListener\("dblclick"/);
   assert.match(monitor, /focusExactTab\(tabTarget\)[\s\S]{0,300}resolveMonitorBctNodeHwnd\(node\)/,
     "node double-click must activate the exact Chrome tab before resolving its fresh HWND binding");
+  assert.match(monitor, /dotKey: node\.dotKey,[\s\S]{0,120}codexLocalReference: node\.codexLocalReference/,
+    "the exact focus receipt must carry a Dot or confirmed local-reference identity without coercing either to a conversation UUID");
+  assert.match(monitor, /function monitorBctNodeRoleRank\(node\) \{\s*if \(node\?\.dotKey\) return -1/,
+    "Dot remains first in the unassigned node list before supervisor and Manager cards");
+  assert.match(monitor, /Number\(right\.key === "__unassigned__"\) - Number\(left\.key === "__unassigned__"\)/,
+    "the unassigned group, including Dot, must remain the first group in the node roster");
   assert.match(monitor, /const detail = monitorBctNodeDetail\(node, desktopPosition, nativeLocation\);\s*location\.textContent = detail\.text;/,
     "initial node-card render must use the complete compact detail contract");
   assert.match(monitor, /const detail = monitorBctNodeDetail\(node, index, location\);\s*position\.textContent = detail\.text;/,

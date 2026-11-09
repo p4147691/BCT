@@ -1185,7 +1185,9 @@ function syncMonitorThumbnailTabBadges(container, className) {
     locations: monitorWindowDesktopLocations,
     highlightedHwnd: monitorBctNodeHighlightedHwnd,
     selectedNodeHwnd: selectedHwnd,
-    selectedNodeToken: String(selectedNode?.nodeLabel || "").replace(/^N/, "") || "?",
+    selectedNodeToken: selectedNode?.dotKey
+      ? "DOT"
+      : String(selectedNode?.nodeLabel || "").replace(/^N/, "") || "?",
     selectedNodeTabId: Number(selectedNode?.tabId),
     numbersForHwnd: (hwnd, state) => monitorBadgeNodeNumbersForHwnd(hwnd, state, { includeTabIds: true }),
     nodeForTab: (tabId) => (Array.isArray(monitorBctWindowNodesCache)?monitorBctWindowNodesCache:[])

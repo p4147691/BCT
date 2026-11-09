@@ -26,9 +26,10 @@
         result.push(item);
         continue;
       }
-      // UUID-less tabs retain their exact tabId. Multiple `?` labels can then
-      // be rendered in order while selection still targets one real tab only.
-      if (item.token === "?") result.push(item);
+      // UUID-less tabs retain their exact tabId. Multiple `?` labels and the
+      // explicit DOT/C identities can then be rendered in order while
+      // selection still targets one real tab only.
+      if (item.token) result.push(item);
     }
     return result;
   }
@@ -147,7 +148,7 @@
           const kind = visuals.activityFor(report);
           const interactive = visuals.shouldAcknowledge(report) &&
             typeof options.onAcknowledge === "function";
-          const nodeName = item.token === "?" ? "새 노드" : `N${item.token}`;
+          const nodeName = item.token === "?" ? "새 노드" : /^\d+$/.test(item.token) ? `N${item.token}` : item.token;
           part.title = `${nodeName} · ${text(report?.label) || (kind === "working" ? "처리 중" : kind === "abnormal" ? "상태 확인 필요" : "확인 대기")}${interactive ? " · 클릭하여 확인" : ""}`;
           if (interactive) {
             part.setAttribute("role", "button");

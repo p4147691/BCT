@@ -4,6 +4,7 @@
 // Role authority comes exclusively from the current Monitor BCT node's roleTags.
 (function installMonitorNodeTokenVisualContract(root) {
   function roleFor(node) {
+    if (node?.dotKey) return "orchestrator";
     const tags = Array.isArray(node?.roleTags) ? node.roleTags
       .map((tag) => String(tag || "").trim().toLowerCase()) : [];
     // Bad input cannot decorate an unrelated node; a conflicting role is not
