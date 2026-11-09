@@ -245,6 +245,27 @@ async function executeDotRenameInMainWorld(tabId, operationId, dotKey, title) {
           input = await wait(freshEditor, 3000);
           if (input) break;
         }
+        if (!input) {
+          for (const candidate of activationCandidates) {
+            if (!document.contains(candidate)) continue;
+            const reactPropsKey = Object.keys(candidate)
+              .find((key) => key.startsWith('__reactProps$'));
+            const onClick = reactPropsKey && candidate[reactPropsKey]?.onClick;
+            if (typeof onClick !== 'function') continue;
+            try {
+              onClick({
+                type: 'click', target: candidate, currentTarget: candidate,
+                defaultPrevented: false, nativeEvent: { isTrusted: false },
+                preventDefault() { this.defaultPrevented = true; },
+                stopPropagation() {}, persist() {},
+              });
+            } catch (_) {
+              continue;
+            }
+            input = await wait(freshEditor, 3000);
+            if (input) break;
+          }
+        }
         if (!input) return fail('DOT_RENAME_INPUT_NOT_FOUND');
         diagnostic.editor = 'FOUND';
         const previousValue = input.value !== undefined
