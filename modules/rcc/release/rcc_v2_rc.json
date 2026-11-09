@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "kind": "RCC_REBUILD_V2_RC",
-  "candidate": "RCC_CANONICAL_COMMANDS_V1_20261108",
+  "candidate": "RCC_CHAT_TITLE_RENAME_RESILIENCE_20261109",
   "sourceRoot": "modules/rcc/extension",
   "candidateInventory": {
     "fileCount": 58,
@@ -113,8 +113,8 @@
       },
       {
         "path": "content/conversation_rename.js",
-        "size": 14187,
-        "sha256": "666413315fa75e25acf49a3d25a946ff5a6eb37bce0f5ee157cc145940734f7a"
+        "size": 16073,
+        "sha256": "fde59eb6a782b1c5acc56595e6bd97b2dc8ce818e9d456f9669efcdeadeb8331"
       },
       {
         "path": "content/orchestration_relay_executor.js",
@@ -233,8 +233,8 @@
       },
       {
         "path": "manifest.json",
-        "size": 1533,
-        "sha256": "08fdfaadf1b82acf34aa0964b59c3a11e56346163d0e3d476aa3786d401770c7"
+        "size": 1539,
+        "sha256": "deea2ca8d0e2ff585f0406c86cb537284337a837545524abd54240ec6c767610"
       },
       {
         "path": "network/directory.js",
@@ -297,7 +297,7 @@
         "sha256": "b3ad92bc20564a905bffc37f3e524e2c8e8c5ae71c02517a301cedd5cf1341cd"
       }
     ],
-    "aggregateSha256": "11031df529e506c566616c65cd68386280859325e11afa15520b0b9df5efd263"
+    "aggregateSha256": "7b9d954526987a2ee8f5a854ba5b28cf70ca08f26fd26c747ccf9b1d7f83f4a6"
   },
   "activeLoaderGraph": {
     "background": [

@@ -101,6 +101,10 @@ function rowMenuButton(anchor) {
   const row = conversationRow(anchor);
   const buttons = Array.from(row?.querySelectorAll?.('button') || [])
     .filter((button) => isVisible(button) && !button.disabled);
+  const popup = buttons.filter((button) =>
+    /menu/i.test(String(button.getAttribute?.('aria-haspopup') || ''))
+  );
+  if (popup.length === 1) return popup[0];
   const semantic = buttons.filter(isConversationMenuButton);
   if (semantic.length === 1) return semantic[0];
   const compact = buttons.filter((button) => {
@@ -111,17 +115,49 @@ function rowMenuButton(anchor) {
 }
 
 function currentConversationMenuButton() {
-  const surface = document.querySelector(
+  const currentTitle = normalizedUiText(String(document.title || '')
+    .replace(/\s*(?:[-–—|·]\s*)?ChatGPT\s*$/i, ''));
+  if (currentTitle) {
+    const titlePopups = Array.from(document.querySelectorAll('button[aria-haspopup="menu"]'))
+      .filter((button) => isVisible(button) && !button.disabled)
+      .filter((button) => normalizedUiText(button.textContent) === currentTitle);
+    if (titlePopups.length === 1) return titlePopups[0];
+  }
+  // ChatGPT has moved the current-chat menu between a dedicated test-id
+  // surface, a semantic header and the title toolbar.  Search only those
+  // bounded header surfaces; never select an arbitrary page/menu button.
+  const surfaceSelector = [
+    '[data-testid="app-shell-header-context-menu-surface"]',
+    '[data-testid*="app-shell-header"]',
+    '[data-testid*="conversation-header"]',
+    '[data-testid*="chat-header"]',
+    'main header',
+    'header',
+  ].join(',');
+  const surfaces = Array.from(document.querySelectorAll(surfaceSelector));
+  // Retain compatibility with the older dedicated surface and with small
+  // test/embedded DOM adapters that expose only querySelector.
+  const dedicated = document.querySelector?.(
     '[data-testid="app-shell-header-context-menu-surface"]'
   );
-  if (!surface || !isVisible(surface)) return null;
-  const buttons = Array.from(surface.querySelectorAll('button[aria-haspopup="menu"], button'))
+  if (dedicated && !surfaces.includes(dedicated)) surfaces.push(dedicated);
+  const visibleSurfaces = surfaces.filter((node) => isVisible(node));
+  const buttons = [...new Set(visibleSurfaces.flatMap((surface) =>
+    Array.from(surface.querySelectorAll('button[aria-haspopup="menu"], button'))
+  ))]
     .filter((button) => isVisible(button) && !button.disabled);
   const matches = buttons.filter((button) => {
     const text = renameSemanticText(button);
     return /^(more|more options|options|menu|chat actions?|더보기|더 보기|옵션|메뉴|채팅 작업|대화 작업)$/i.test(text);
   });
-  return matches.length === 1 ? matches[0] : null;
+  if (matches.length === 1) return matches[0];
+  // The current UI can render the title chevron as an icon-only popup button.
+  // Accept it only when exactly one visible menu-popup button exists across
+  // the bounded header surfaces.
+  const popup = buttons.filter((button) =>
+    /menu/i.test(String(button.getAttribute?.('aria-haspopup') || ''))
+  );
+  return popup.length === 1 ? popup[0] : null;
 }
 
 function dispatchRenameHover(node) {
@@ -141,6 +177,7 @@ function visibleRenameMenuItems() {
   // surfaces so an unrelated page button cannot become a rename candidate.
   const roots = Array.from(document.querySelectorAll(
     '[role="menu"], [data-radix-menu-content], [data-radix-popper-content-wrapper], '
+    + '[data-radix-menu-portal], [data-slot="dropdown-menu-content"], '
     + '[data-testid*="menu"], [data-testid*="popover"]'
   ))
     .filter((node) => isVisible(node));

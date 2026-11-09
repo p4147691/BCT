@@ -35,6 +35,7 @@ toolbar.querySelectorAll = (selector) =>
   selector === 'button[aria-haspopup="menu"], button' ? [toolbarButton] : [];
 
 const document = {
+  title: '전역 Supervisor 대기確認 - ChatGPT',
   querySelector: (selector) =>
     selector === '[data-testid="app-shell-header-context-menu-surface"]' ? toolbar : null,
   querySelectorAll: (selector) => {
@@ -83,6 +84,31 @@ assert.equal(
   vm.runInContext('findRenameEditor(null)', context),
   renameInput,
   'a rename dialog input with the implicit default text type must be recognized'
+);
+
+const titlePopup = visibleNode({ 'aria-haspopup': 'menu' }, '전역 Supervisor 대기確認');
+document.querySelector = () => null;
+document.querySelectorAll = (selector) =>
+  selector === 'button[aria-haspopup="menu"]' ? [titlePopup] : [];
+assert.equal(
+  vm.runInContext('currentConversationMenuButton()', context),
+  titlePopup,
+  'the unique popup whose text is the exact document title must identify the current conversation without header markup'
+);
+
+const changedHeaderPopup = visibleNode({ 'aria-haspopup': 'menu' });
+changedHeaderPopup.querySelectorAll = () => [];
+const changedHeader = visibleNode();
+changedHeader.querySelectorAll = (selector) => selector.includes('button') ? [changedHeaderPopup] : [];
+document.querySelector = () => null;
+document.querySelectorAll = (selector) => {
+  if (selector.includes('main header')) return [changedHeader];
+  return [];
+};
+assert.equal(
+  vm.runInContext('currentConversationMenuButton()', context),
+  changedHeaderPopup,
+  'one icon-only aria-haspopup menu button in the bounded current-chat header must survive ChatGPT header markup drift'
 );
 
 console.log('conversation rename UI v2: PASS');
