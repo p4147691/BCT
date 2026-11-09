@@ -218,12 +218,33 @@ async function executeDotRenameInMainWorld(tabId, operationId, dotKey, title) {
         if (!nameControl) return fail('DOT_CUSTOMIZATION_NAME_CONTROL_NOT_FOUND');
         diagnostic.nameControl = 'FOUND';
         const previousEditors = new Set(editors());
-        activate(nameControl);
-        const input = await wait(() => {
+        const freshEditor = () => {
           const fresh = editors().filter((node) => !previousEditors.has(node));
           const named = fresh.filter((node) => /name|title|이름|제목/i.test(semantic(node)));
           return named.length === 1 ? named[0] : (fresh.length === 1 ? fresh[0] : null);
-        });
+        };
+        const activationCandidates = [];
+        const addCandidate = (node) => {
+          if (node && node !== outer && outer.contains(node) && visible(node) &&
+              !node.disabled && !activationCandidates.includes(node)) {
+            activationCandidates.push(node);
+          }
+        };
+        controls.forEach(addCandidate);
+        addCandidate(hitTarget);
+        addCandidate(nameLeaf);
+        let ancestor = (hitTarget || nameLeaf)?.parentElement;
+        for (let depth = 0; ancestor && ancestor !== outer && depth < 10;
+          depth += 1, ancestor = ancestor.parentElement) {
+          addCandidate(ancestor);
+        }
+        let input = null;
+        for (const candidate of activationCandidates) {
+          if (!document.contains(candidate)) continue;
+          activate(candidate);
+          input = await wait(freshEditor, 3000);
+          if (input) break;
+        }
         if (!input) return fail('DOT_RENAME_INPUT_NOT_FOUND');
         diagnostic.editor = 'FOUND';
         const previousValue = input.value !== undefined
