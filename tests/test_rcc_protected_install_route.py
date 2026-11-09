@@ -272,6 +272,8 @@ class ProtectedRccRouteTests(unittest.TestCase):
         )
 
     def test_protected_inspect_accepts_composer_rebind_69_to_70(self):
+        for folder in (self.live, self.reference):
+            (folder / "f56.txt").write_text("56:1.0.69", encoding="utf-8")
         for folder, version in (
             (self.live, "1.0.69"),
             (self.reference, "1.0.69"),
@@ -296,7 +298,7 @@ class ProtectedRccRouteTests(unittest.TestCase):
             candidate_version="1.0.70",
             installed_version="1.0.69",
         )
-        self.assertEqual(plan["installed_files"], 57)
+        self.assertEqual(plan["installed_files"], 58)
         self.assertEqual(plan["candidate_files"], 58)
         self.assertFalse(self.journal.exists())
 
