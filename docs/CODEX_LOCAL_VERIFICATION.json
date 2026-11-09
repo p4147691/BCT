@@ -1,8 +1,8 @@
 {
   "base_sha": "91a56c4886180e3220aa8d7a26b2257d786bbffd",
-  "candidate_head_sha": "37e9fdeac22193778d76c955d0cf96b4dab749be",
-  "integration_merge_sha": "85ad66a9005604ad23b46536f999416476efb2f2",
-  "candidate_state": "DOT_TITLE_RENAME_LOCAL_VERIFIED_CI_PENDING",
+  "candidate_head_sha": "bd7fb532f893e23d41b3f40cd18e8e1278109199",
+  "integration_merge_sha": "bd7fb532f893e23d41b3f40cd18e8e1278109199",
+  "candidate_state": "DEPLOYED_LIVE_E2E_BLOCKED_DOT_TAB_NOT_OPEN",
   "verification_environment": "PYTHONPATH=src",
   "codex_tests_passed": 7,
   "conversation_network_regression_tests_passed": 22,
@@ -50,15 +50,15 @@
     "live_monitor_validation": "Published to the guarded installed Monitor payload as version 2.0.192; check_monitor_installed_runtime.py confirmed bundle hash e2bfe90029a01cf07b578fffb74c23caf2e9f0a51489216a84dc8a2131dd3836, and the official reload ACK was refreshed at 2026-11-09T14:37:18+09:00. Physical route-transition E2E remains user-observed rather than automated."
   },
   "monitor_dot_title_rename": {
-    "candidate_code_sha": "37e9fdeac22193778d76c955d0cf96b4dab749be",
-    "scope": "Enable actual ChatGPT Dot title rename from Monitor Node Info through the exact full compound Dot route, RCC session and tab. Codex local references remain read-only and unchanged.",
-    "checks": ["92 focused Python tests PASS after component bundle regeneration", "Dot rename Core/RCC/Monitor JS contracts PASS", "Monitor structure PASS", "RCC 1.0.69 release inventory PASS", "compileall and diff-check PASS"],
-    "deployment": "PENDING_EXACT_CANDIDATE_CI",
-    "physical_e2e": "NOT_YET_RUN"
+    "candidate_code_sha": "bd7fb532f893e23d41b3f40cd18e8e1278109199",
+    "scope": "Enable actual ChatGPT Dot title rename from Monitor Node Info through the exact full compound Dot route, preferring the current Dot profile title above Active and retaining the sidebar fallback. Codex local references remain read-only and unchanged.",
+    "checks": ["Exact full 6-shard CI 42597550120: SUCCESS", "test_rcc_integration.py: 82 PASS", "test_rcc_protected_install_route.py: 27 PASS", "test_codex_surface.py: 7 PASS", "test_conversation_network.py: 22 PASS", "Dot rename service/UI JS contracts PASS", "RCC 1.0.69 release inventory PASS", "component library and diff checks PASS"],
+    "deployment": "CORE_GENERATION_400_AND_RCC_INSTALLED_VERIFIED_RELOADED",
+    "physical_e2e": "BLOCKED_AFTER_RELOAD_NO_DOT_TAB_OPEN; NO_RENAME_DISPATCHED"
   },
   "checks": ["post-integration focused suite: 74 PASS", "build_monitor_bundle.py: PASS", "build_monitor_js_index.py: PASS", "analyze_monitor_dependencies.py --write: PASS", "build_component_library.py --write --reviewed: PASS", "test_codex_surface.py: 7 PASS", "test_conversation_network.py: 22 PASS", "check_monitor_codex_surface.js: PASS", "check_monitor_dot_browser.py --codex: PASS_READ_ONLY", "check_monitor_dot_http_e2e.py: PASS_TEST_ORIGIN_ADAPTER", "check_monitor_structure.py: PASS", "compileall: PASS", "git diff --check: PASS", "build_component_library.py: PASS"],
   "live_changes": true,
-  "live_validation": {"core_release_sha": "bbec5a26566a05ba87e1dbf1a6eddb1c4c66a482", "core_generation": 392, "monitor_version": "2.0.186", "monitor_reload_ack": "PASS", "codex_surface_directory_in_read_only_projection": true},
+  "live_validation": {"core_release_sha": "bd7fb532f893e23d41b3f40cd18e8e1278109199", "core_generation": 400, "monitor_version": "2.0.195", "monitor_reload_ack": "UNCHANGED", "rcc_candidate_aggregate_sha256": "7fc037ef2224f30a7c57b017d0a56fb14e645a6be0c21edd6a22548002c2a711", "rcc_install_verify": "PASS_AND_RELOADED_ONCE", "codex_surface_directory_in_read_only_projection": true},
   "full_live_e2e": false,
   "files_sha256_reference": "docs/DOT_ORCHESTRATOR_VERIFICATION.json"
 }
