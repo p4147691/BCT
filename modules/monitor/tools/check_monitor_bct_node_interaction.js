@@ -287,6 +287,10 @@ function loadModule() {
     "Manager role color must stay in the fill while its resting border remains neutral");
   assert.match(css, /\.monitor-bct-node-row\.is-supervisor\s*\{[^}]*border-color:rgba\(255,255,255,\.12\)/,
     "Supervisor role color must stay in the fill while its resting border remains neutral");
+  assert.match(css, /\.monitor-bct-node-row\.is-dot\s*\{[^}]*linear-gradient\(90deg,rgba\(107,44,190,\.62\),rgba\(169,74,231,\.38\)\)[^}]*border-color:rgba\(255,255,255,\.12\)/,
+    "Dot purple must carry the same dense gradient weight and neutral resting border as other command roles");
+  assert.match(css, /\.monitor-bct-node-number\s*\{[^}]*width:30px;[^}]*font-size:11px;[^}]*white-space:nowrap;/,
+    "three-character DOT and N99 node badges must fit without intruding into the card title column");
   assert.match(css, /\.monitor-bct-node-row\.is-selected\s*\{[^}]*outline:2px solid rgba\(255,181,71,\.98\)!important/,
     "exact tab selection must use a separate strong outline rather than the role border");
   assert.match(css, /monitor-bct-node-target-highlighted[\s\S]{0,480}outline:3px solid rgba\(255,181,71,\.98\)!important/,

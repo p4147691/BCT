@@ -3556,7 +3556,7 @@ body.desktop-window-monitor-active { background-image:none!important; background
 }
 .monitor-bct-scope-caret { width:0;height:0;border-left:4px solid transparent;border-right:4px solid transparent;border-top:6px solid rgba(220,233,247,.72);transform-origin:50% 35%; }
 .monitor-bct-scope-heading[aria-expanded="false"] .monitor-bct-scope-caret { transform:rotate(-90deg); }
-.monitor-bct-node-row { grid-template-columns:29px minmax(0,1fr) 17px; }
+.monitor-bct-node-row { grid-template-columns:34px minmax(0,1fr) 17px; }
 .monitor-bct-node-row.is-manager { background:linear-gradient(90deg,rgba(196,124,8,.58),rgba(238,169,20,.34));border-color:rgba(255,255,255,.12);box-shadow:inset 0 1px 0 rgba(255,255,255,.04); }
 .monitor-bct-node-row.monitor-bct-manager-hold { box-shadow:inset 0 0 0 2px rgba(255,215,90,.42); }
 .monitor-bct-node-row.is-supervisor { background:linear-gradient(90deg,rgba(20,87,205,.58),rgba(25,115,235,.34));border-color:rgba(255,255,255,.12);box-shadow:inset 0 1px 0 rgba(255,255,255,.04); }
@@ -3676,6 +3676,7 @@ body.desktop-window-monitor-active { background-image:none!important; background
 .monitor-desktop-minimized-nodes .monitor-desktop-minimized-more { flex:0 0 auto;letter-spacing:.04em; }
 .monitor-desktop-minimized-prefix,.monitor-desktop-minimized-separator { color:rgba(255,255,255,.94);font:800 10px/14px "Segoe UI","Malgun Gothic",sans-serif; }
 
-.monitor-bct-orchestrator .monitor-bct-node-number { color: #d8a0ff; border-color: #b56be0; }
-.monitor-bct-node-row.is-dot { border-color:rgba(181,107,224,.52); background:rgba(125,70,166,.18); }
-.monitor-bct-node-row.is-dot:hover { border-color:#d8a0ff; background:rgba(144,82,188,.27); }
+.monitor-bct-node-number { width:30px; font-size:11px; letter-spacing:0; white-space:nowrap; }
+.monitor-bct-orchestrator .monitor-bct-node-number { color:#efceff; border-color:#c46df0; background:rgba(153,59,213,.24); }
+.monitor-bct-node-row.is-dot { background:linear-gradient(90deg,rgba(107,44,190,.62),rgba(169,74,231,.38)); border-color:rgba(255,255,255,.12); box-shadow:inset 0 1px 0 rgba(255,255,255,.04); }
+.monitor-bct-node-row.is-dot:hover { border-color:#e1b1ff; background:linear-gradient(90deg,rgba(123,52,211,.72),rgba(181,82,242,.46)); }
