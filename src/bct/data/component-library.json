@@ -1,6 +1,6 @@
 {
   "schema": "bct.component-library.bundle.v1",
-  "source_fingerprint": "be88961e5ce9c55ecd0461781b33d52022ffd42188429224479311bc6fdd7f50",
+  "source_fingerprint": "c9616ba511bd1ea8137ebda1e61e4332f82a0fb5f354cc8d90286f1e6f9aba7e",
   "source_hashes": {
     "docs/CHAIN_MESSAGE_RECIPE_V2.md": "32f2d2d18da89be87defe5eb14580dd3a0c359ae1815744fe39e9b3ac653ab21",
     "docs/component-library.v1.json": "05c4dbb7c6357ca05c7b6427e709b4f1856bb5a3ad8e7b106317567f4aa2ccaa",
@@ -10,10 +10,10 @@
     "modules/browser-bridge/native/native_host.py": "7a618302522f954fb953ce4f24c273d9fb1bc1d9c4eb0846f0c4cccdfb818b78",
     "modules/browser-bridge/native/persistent_host.py": "306d2bf6618cd5a274dd4e91fe0a2999ee0ce8cba1171bbfa80c4cb2d003f015",
     "modules/monitor/domains/desktop-lifecycle.js": "8269e05b3597723b2d47fdf2a8ddc8d3cca7cc93ae49a0f4db6ec506a6084158",
-    "modules/monitor/domains/node-identity.js": "639542fd9ae10db3533fe120941e134000c743df62d2defae0774c0ac69a0950",
+    "modules/monitor/domains/node-identity.js": "bc0e99ebfa4a50ba05909be67dfe7ea26f5f756daa9a920765521566a1cbdc57",
     "modules/monitor/extension/browser/tab-close-adapter.js": "25098987008308e97822ee12b5e62e93f39506bae165014c51b0aab3c95025b7",
     "modules/monitor/extension/features/rcc-command-catalog/monitor-rcc-command-catalog.js": "baf346f2f1e94c93d367cbd8a241c68a38a7ce7f4a4b20d32b0e3db33a40a651",
-    "modules/monitor/extension/monitor-bct-shell.js": "b9b337b6c7a143284eeb845d84e6022affe3643902962b227280707a0cb23f1c",
+    "modules/monitor/extension/monitor-bct-shell.js": "a269ed0228afb799ab1406e54d30527f04430d113149f9853f9220d7a9f4f853",
     "modules/monitor/extension/monitor-bct-thumbnail-projection.js": "844b22e3ce253938e8672d86979ff6d462bdbeb14e55f59452462373ffa4b03d",
     "modules/monitor/extension/monitor-node-token-visual-contract.js": "08e8b59f51a46c31d13784b56beefa8ae3365d076e665a016425b3306282e1bc",
     "modules/monitor/extension/monitor-window-hwnd-contract.js": "81b0050ba0231328ad3514b35e1d085e18afcf7315bf4674d3e5604a61b34e6e",
@@ -29,7 +29,7 @@
     "src/bct/codex_surface.py": "7ec0ac55ec19c4ba5fb67fcfa22cfecc29e899ee57521832ac403ba58f10887b",
     "src/bct/component_library.py": "f5e5d5f3640639f3e1a725c12dae68383a33a2cebee205300f9a0e9ec1ead54a",
     "src/bct/continuation_primitives.py": "4ff4fc92c329a1c0515c1b5a174ba3550fe47e67693d3237cdf8491b9aa0505a",
-    "src/bct/conversation_network.py": "054ef66fc29e6514eb485214e876969b2dc9ee61edb9181997f627822ee04e88",
+    "src/bct/conversation_network.py": "fde1f20616343cf9042c23e1aa69f3d6f0ae9c3677c338a06b74255a161dcaab",
     "src/bct/core/chat_stream_rcc_watch.py": "0db47e0b0991d5b5e406f3c60c60c2a5874fc2f5409b31dc0582313d624b6324",
     "src/bct/delivery_continuation_recovery.py": "2da105389388c6e1e3e405b178dc3ce85ff50fd874edfd322619d7e1f4aff4cb",
     "src/bct/dot_identity.py": "d6aef9d17828baf2aeadc4e7f568a47aaea91030f0d8d17ef3c16300c66e1026",
@@ -38,7 +38,7 @@
     "src/bct/features/rcc.py": "67f80534e0ec8d7cba76975a0cdc5f05cb5a0150ec204d775670c61863a1b794",
     "src/bct/mcp_server.py": "198e711fc3973a91ccee34e10f8b79c1616ced083bbb16325b8274bba016a051",
     "src/bct/node_recovery.py": "27c7845d6f18fa8a36e1adb609b5658e1b60a62512d087b0f0fec6623fb77713",
-    "src/bct/runtime_server.py": "54449d94fb9d1db55b318a5870e5c4804ecd7adfb1796ad78daed015c36201e5",
+    "src/bct/runtime_server.py": "d108cd1a1cfdae1a2cb2e57ab00a397238db3413095faf5562b0c514470f4cff",
     "src/bct/send_delayed_message.py": "b83f70aae1d92b2fc7c46823e476c0d2b706f9096b459d6fb536567ec35c0f58",
     "src/bct/task_message.py": "549f40e968a0797065da0725c1380c97ab98729695047426463b2767fd63b5ed"
   },
