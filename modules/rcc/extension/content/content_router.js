@@ -636,6 +636,17 @@ if (message.type === 'relay:renameConversation') {
     return true;
 
 
+}
+
+if (message.type === 'relay:renameDot') {
+    renameDotUi(message).then(sendResponse).catch((error) => sendResponse({
+      ok: false,
+      effectState: error?.effectState || 'UNKNOWN',
+      error: String(error?.message || error || 'DOT_RENAME_UI_FAILED'),
+      operationId: String(message.operationId || ''),
+      ...(error?.renameDiagnostic ? { renameDiagnostic: error.renameDiagnostic } : {}),
+    }));
+    return true;
   }
   sendResponse({ ok: false, error: `RCC_CONTENT_MESSAGE_DISABLED:${String(message?.type || '')}` });
   return false;

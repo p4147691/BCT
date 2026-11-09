@@ -12,6 +12,7 @@ from bct.runtime_server import (
     ensure_monitor_work,
     monitor_extension_origin_allowed,
     run_monitor_conversation_rename,
+    run_monitor_dot_rename,
     run_monitor_conversation_order_update,
     run_monitor_conversation_scope_update,
     run_monitor_rcc_reload,
@@ -41,7 +42,9 @@ class FakeRelayClient:
             "ok": True,
             "savedTitle": values["extra"]["title"],
             "tabId": values["extra"]["tabId"],
-            "conversationKey": values["extra"]["conversationKey"],
+            **({"conversationKey": values["extra"]["conversationKey"]}
+               if "conversationKey" in values["extra"] else
+               {"dotKey": values["extra"]["dotKey"]}),
         }
 
 
@@ -99,6 +102,39 @@ class MonitorConversationRenameTests(unittest.TestCase):
                 (self.payload()["conversation_key"],),
             ).fetchone()
         self.assertEqual("바뀐 실제 제목", stored["display_name"])
+
+    def test_dot_rename_uses_separate_exact_reference_and_durable_receipt(self):
+        payload = {
+            "instance_id": "instance123",
+            "session_id": "session123",
+            "tab_id": 19,
+            "dot_key": "b227a510-d0cb-4466-a2f5-4e401b456dca~6af1261141a8819aa57d94044451fee3",
+            "title": "바뀐 Dot 이름",
+            "operation_id": "monitor-dot-rename-1",
+        }
+        first = run_monitor_dot_rename(
+            self.bct, principal=self.principal, payload=payload,
+        )
+        duplicate = run_monitor_dot_rename(
+            self.bct, principal=self.principal, payload=payload,
+        )
+        self.assertEqual(Outcome.APPLIED.value, first["outcome"])
+        self.assertTrue(duplicate["duplicate"])
+        self.assertEqual(1, len(self.client.calls))
+        self.assertEqual("rcc_rename_dot", self.client.calls[0]["command"])
+        self.assertEqual(payload["dot_key"], self.client.calls[0]["extra"]["dotKey"])
+        self.assertNotIn("conversationKey", self.client.calls[0]["extra"])
+
+    def test_dot_rename_rejects_non_dot_identity_before_dispatch(self):
+        with self.assertRaisesRegex(ValueError, "DOT_REFERENCE_INVALID"):
+            run_monitor_dot_rename(
+                self.bct, principal=self.principal, payload={
+                    "instance_id": "instance123", "session_id": "session123",
+                    "tab_id": 19, "dot_key": "6ad4bb5d-6624-83ee-b045-e57fdad5120e",
+                    "title": "잘못된 대상", "operation_id": "monitor-dot-rename-bad",
+                },
+            )
+        self.assertEqual([], self.client.calls)
 
     def test_scope_update_enforces_manager_uniqueness_without_execution_claim(self):
         first = run_monitor_conversation_scope_update(self.bct, payload={

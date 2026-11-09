@@ -307,6 +307,12 @@ async function handleNativeCommand(message) {
 
         }
 
+    if (message.command === 'rename-dot') {
+          const result = await renameDot(message, requestId);
+          postNative({ type: 'host:result', requestId, ...result });
+          return;
+        }
+
     if (message.command === 'conversation-bind') {
 
           const result = await bindExactConversation(message);

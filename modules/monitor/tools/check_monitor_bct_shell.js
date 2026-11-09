@@ -73,6 +73,22 @@ const context = {
         },
       };
     }
+    if (url === "http://127.0.0.1:18790/monitor/dot-title/rename") {
+      assert.equal(init.method, "POST");
+      assert.deepEqual(JSON.parse(init.body), {
+        instance_id: "rcc-live",
+        session_id: "session-live",
+        tab_id: 19,
+        dot_key: "dot-reference~dot-context",
+        title: "새 Dot 이름",
+        operation_id: "monitor.dot.rename.test-id",
+        timeout_s: 30,
+      });
+      return {
+        ok: true, status: 200,
+        async json() { return { outcome: "APPLIED", output: { result: { savedTitle: "새 Dot 이름" } } }; },
+      };
+    }
     if (url === "http://127.0.0.1:18790/monitor/rcc/reload") {
       assert.equal(init.method, "POST");
       assert.deepEqual(JSON.parse(init.body), {
@@ -293,6 +309,11 @@ assert.match(monitorSource, /installMonitorBctRoleLongPress\(row, node\)/);
   assert.throws(() => shell.windowNodes({ rcc: {} }), /BCT_RCC_STATE_INVALID/);
   const renamed = await shell.renameConversation(nodes[0], " 새 이름 ");
   assert.equal(renamed.operationId, "monitor.rename.test-id");
+  const dotRenamed = await shell.renameDot({
+    instanceId: "rcc-live", sessionId: "session-live", tabId: 19,
+    dotKey: "dot-reference~dot-context",
+  }, " 새 Dot 이름 ");
+  assert.equal(dotRenamed.operationId, "monitor.dot.rename.test-id");
   const reloaded = await shell.reloadRcc("rcc-live");
   assert.equal(reloaded.operationId, "monitor.rcc-reload.test-id");
   assert.equal(reloaded.instanceId, "rcc-live");

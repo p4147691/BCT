@@ -4,9 +4,10 @@ const vm = require('node:vm');
 
 const source = fs.readFileSync(`${__dirname}/domain/conversation_rename_service.js`, 'utf8');
 const conversationKey = '6ad75568-a1b2-c3d4-e5f6-123456789012';
+const dotKey = 'b227a510-d0cb-4466-a2f5-4e401b456dca~6af1261141a8819aa57d94044451fee3';
 const tab = { id: 42, windowId: 7, url: `https://chatgpt.com/c/${conversationKey}`, title: 'old' };
 
-function createHarness(reply = { ok: true, operationId: 'rename-op-1', savedTitle: 'new' }) {
+function createHarness(reply = { ok: true, operationId: 'rename-op-1', savedTitle: 'new' }, exactTab = tab) {
   const local = { renameReceiptsV1: {} };
   const sent = [];
   const context = vm.createContext({
@@ -18,7 +19,7 @@ function createHarness(reply = { ok: true, operationId: 'rename-op-1', savedTitl
     stateRepository: { setLocal: async (patch) => Object.assign(local, patch) },
     browserGateway: { getExactTab: async (tabId) => {
       if (tabId !== 42) throw new Error('missing');
-      return { ...tab };
+      return { ...exactTab };
     } },
     isChatTab: (value) => String(value?.url || '').startsWith('https://chatgpt.com/'),
     RelayCore: { conversationKey: (url) => /\/c\/([^/?#]+)/.exec(url)?.[1] || '' },
@@ -30,6 +31,7 @@ function createHarness(reply = { ok: true, operationId: 'rename-op-1', savedTitl
     String,
     Promise,
     Error,
+    URL,
   });
   vm.runInContext(source, context, { filename: 'conversation_rename_service.js' });
   return { context, local, sent };
@@ -73,6 +75,35 @@ function createHarness(reply = { ok: true, operationId: 'rename-op-1', savedTitl
   assert.equal(unknown.state, 'UNKNOWN');
   assert.equal(unknown.ambiguous, true);
   assert.equal(unknownHarness.local.renameReceiptsV1['rename-op-1'].terminal, false);
+
+  const dotHarness = createHarness(
+    { ok: true, operationId: 'dot-rename-op-1', savedTitle: 'new dot' },
+    { ...tab, url: `https://chatgpt.com/dots/${dotKey}` },
+  );
+  const dotRequest = {
+    operationId: 'dot-rename-op-1', dotKey, tabId: 42,
+    sessionId: 'session-1', title: 'new dot',
+  };
+  const dotResult = await dotHarness.context.renameDot(dotRequest, 'dot-request-1');
+  assert.equal(dotResult.ok, true);
+  assert.equal(dotResult.dotKey, dotKey);
+  assert.equal(dotHarness.sent[0].message.type, 'relay:renameDot');
+  assert.equal(dotHarness.sent[0].message.dotKey, dotKey);
+  assert.equal(dotHarness.sent[0].message.conversationKey, undefined);
+  const dotReplay = await dotHarness.context.renameDot(dotRequest, 'dot-request-1');
+  assert.equal(dotReplay.replayed, true);
+  assert.equal(dotHarness.sent.length, 1, 'Dot terminal replay must not repeat UI effect');
+
+  const mismatchedDot = createHarness(
+    { ok: true, operationId: 'dot-rename-op-2', savedTitle: 'wrong' },
+    { ...tab, url: `https://chatgpt.com/dots/other~context` },
+  );
+  const mismatch = await mismatchedDot.context.renameDot({
+    ...dotRequest, operationId: 'dot-rename-op-2', title: 'wrong',
+  }, 'dot-request-2');
+  assert.equal(mismatch.ok, false);
+  assert.equal(mismatch.error, 'DOT_RENAME_TAB_IDENTITY_MISMATCH');
+  assert.equal(mismatchedDot.sent.length, 0);
 
   console.log('conversation rename service v1: PASS');
 })().catch((error) => {

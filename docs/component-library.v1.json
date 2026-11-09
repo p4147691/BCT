@@ -641,6 +641,40 @@
       ]
     },
     {
+      "id": "rcc.dot_title_rename",
+      "kind": "module",
+      "maturity": "isolated",
+      "implementation": [
+        {
+          "path": "src/bct/runtime_server.py",
+          "symbol": "run_monitor_dot_rename / monitor_dot_title_rename"
+        },
+        {
+          "path": "modules/rcc/extension/domain/conversation_rename_service.js",
+          "symbol": "renameDot / exactDotRenameTab"
+        },
+        {
+          "path": "modules/rcc/extension/content/conversation_rename.js",
+          "symbol": "renameDotUi / openDotRenameEditor"
+        }
+      ],
+      "contract": "Rename the exact currently open Dot through its confirmed full compound /dots reference, RCC session and tab identity. It never converts either Dot reference segment into a conversation UUID.",
+      "effects": [
+        "chatgpt-dot-title-ui",
+        "rcc-rename-receipt"
+      ],
+      "safety": [
+        "exact-full-dot-reference",
+        "exact-session-and-tab",
+        "no-conversation-uuid-coercion",
+        "operation-id-idempotency",
+        "unknown-no-retry"
+      ],
+      "used_by": [
+        "Monitor Dot Node Info"
+      ]
+    },
+    {
       "id": "bct.codex_surface",
       "kind": "module",
       "maturity": "isolated",

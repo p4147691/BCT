@@ -35,6 +35,28 @@ async function exactRenameTab(tabId, conversationKey) {
   return tab;
 }
 
+function dotKeyFromUrl(value) {
+  try {
+    const url = new URL(String(value || ''));
+    if (!/^(?:chatgpt\.com|chat\.openai\.com)$/i.test(url.hostname)) return '';
+    return url.pathname.match(/^\/dots\/([A-Za-z0-9_-]{1,160}~[A-Za-z0-9_-]{1,160})\/?$/)?.[1] || '';
+  } catch (_) {
+    return '';
+  }
+}
+
+async function exactDotRenameTab(tabId, dotKey) {
+  let tab;
+  try {
+    tab = await browserGateway.getExactTab(tabId);
+  } catch (_) {
+    throw new Error('DOT_RENAME_TAB_NOT_OPEN');
+  }
+  if (!isChatTab(tab)) throw new Error('DOT_RENAME_TAB_NOT_CHATGPT');
+  if (dotKeyFromUrl(tab.url) !== dotKey) throw new Error('DOT_RENAME_TAB_IDENTITY_MISMATCH');
+  return tab;
+}
+
 async function runConversationRename(message, requestId) {
   const operationId = String(message.operationId || requestId || '').trim();
   const conversationKey = String(message.conversationKey || '').trim();
@@ -159,6 +181,97 @@ function renameConversation(message, requestId) {
   const run = renameReceiptMutationChain.then(
     () => runConversationRename(message, requestId),
     () => runConversationRename(message, requestId)
+  );
+  renameReceiptMutationChain = run.then(() => undefined, () => undefined);
+  return run;
+}
+
+async function runDotRename(message, requestId) {
+  const operationId = String(message.operationId || requestId || '').trim();
+  const dotKey = String(message.dotKey || '').trim();
+  const sessionId = String(message.sessionId || '').trim();
+  const title = String(message.title || '').trim();
+  const tabId = Number(message.tabId);
+  if (!/^[A-Za-z0-9_.:-]{1,80}$/.test(operationId)) {
+    return renameResultError('DOT_RENAME_OPERATION_ID_INVALID');
+  }
+  if (!/^[A-Za-z0-9_-]{1,160}~[A-Za-z0-9_-]{1,160}$/.test(dotKey) || !sessionId ||
+      !Number.isSafeInteger(tabId) || tabId <= 0 || !title || title.length > 100) {
+    return renameResultError('DOT_RENAME_EXACT_IDENTITY_REQUIRED');
+  }
+  await endpointSessionReady;
+  if (sessionId !== endpointSessionId) return renameResultError('DOT_RENAME_SESSION_STALE');
+
+  const fingerprint = JSON.stringify(['DOT', dotKey, tabId, sessionId, title]);
+  const state = await loadState();
+  const existing = state.renameReceipts?.[operationId] || null;
+  if (existing) {
+    if (existing.fingerprint !== fingerprint) {
+      return renameResultError('DOT_RENAME_OPERATION_ID_REUSE_MISMATCH');
+    }
+    if (existing.terminal === true && existing.result) return { ...existing.result, replayed: true };
+    return renameResultError('DOT_RENAME_PRIOR_EFFECT_UNRESOLVED', 'UNKNOWN');
+  }
+
+  try {
+    await exactDotRenameTab(tabId, dotKey);
+  } catch (error) {
+    return renameResultError(error?.message || error);
+  }
+  const prepared = {
+    version: 1, terminal: false, command: 'rename-dot', fingerprint,
+    operationId, dotKey, tabId, sessionId, title, state: 'PREPARED', updatedAt: Date.now(),
+  };
+  try {
+    await writeRenameReceipt(operationId, prepared);
+  } catch (_) {
+    return renameResultError('DOT_RENAME_RECEIPT_PREPARE_FAILED');
+  }
+
+  let reply;
+  try {
+    reply = await sendToChatTab(tabId, { type: 'relay:renameDot', operationId, dotKey, title });
+  } catch (error) {
+    return renameResultError(String(error?.message || error || 'DOT_RENAME_TRANSPORT_UNKNOWN'), 'UNKNOWN');
+  }
+  if (reply?.ok === true && reply.savedTitle === title && reply.operationId === operationId) {
+    try {
+      await exactDotRenameTab(tabId, dotKey);
+    } catch (_) {
+      return renameResultError('DOT_RENAME_POST_EFFECT_IDENTITY_UNKNOWN', 'UNKNOWN');
+    }
+    const result = {
+      ok: true, state: 'APPLIED', effectState: 'APPLIED', ambiguous: false,
+      operationId, savedTitle: title, tabId, dotKey, sessionId,
+    };
+    try {
+      await writeRenameReceipt(operationId, {
+        ...prepared, terminal: true, state: 'APPLIED', result, updatedAt: Date.now(),
+      });
+    } catch (_) {
+      return renameResultError('DOT_RENAME_TERMINAL_RECEIPT_UNKNOWN', 'UNKNOWN');
+    }
+    await publishEndpointSnapshot('dot-renamed').catch(() => null);
+    return result;
+  }
+  const notApplied = reply?.effectState === 'NOT_APPLIED';
+  const result = renameResultError(
+    reply?.error || 'DOT_RENAME_CONTENT_ACK_INVALID', notApplied ? 'NOT_APPLIED' : 'UNKNOWN'
+  );
+  if (reply?.renameDiagnostic && typeof reply.renameDiagnostic === 'object') {
+    result.renameDiagnostic = reply.renameDiagnostic;
+  }
+  await writeRenameReceipt(operationId, {
+    ...prepared, terminal: notApplied, state: result.state,
+    result: notApplied ? result : undefined, error: result.error, updatedAt: Date.now(),
+  }).catch(() => null);
+  return result;
+}
+
+function renameDot(message, requestId) {
+  const run = renameReceiptMutationChain.then(
+    () => runDotRename(message, requestId),
+    () => runDotRename(message, requestId)
   );
   renameReceiptMutationChain = run.then(() => undefined, () => undefined);
   return run;

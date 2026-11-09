@@ -56,7 +56,7 @@ def main() -> int:
         "files": records,
         "aggregateSha256": inventory_digest(records),
     }
-    release["candidate"] = "RCC_CHAT_TITLE_RENAME_RESILIENCE_20261109"
+    release["candidate"] = "RCC_DOT_TITLE_RENAME_20261109"
     RELEASE.write_text(
         json.dumps(release, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8", newline="\n",

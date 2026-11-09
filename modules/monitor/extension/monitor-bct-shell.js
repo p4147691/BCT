@@ -10,6 +10,7 @@
     monitorState: "http://127.0.0.1:18790/monitor/state",
     rccCommandCatalog: "http://127.0.0.1:18790/monitor/rcc-command-catalog",
     renameConversation: "http://127.0.0.1:18790/monitor/conversation-title/rename",
+    renameDot: "http://127.0.0.1:18790/monitor/dot-title/rename",
     updateConversationScope: "http://127.0.0.1:18790/monitor/conversation-network/update",
     reorderConversations: "http://127.0.0.1:18790/monitor/conversation-network/reorder",
     retireConversationNode: "http://127.0.0.1:18790/monitor/conversation-node/retire",
@@ -249,6 +250,49 @@
       return Object.freeze({ receipt, operationId: generated, title });
     }
 
+    async function renameDot(node, nextTitle, operationId = "") {
+      if (typeof fetcher !== "function") throw new Error("BCT_DOT_RENAME_FETCH_UNAVAILABLE");
+      const title = String(nextTitle || "").trim();
+      const instanceId = String(node?.instanceId || "").trim();
+      const sessionId = String(node?.sessionId || "").trim();
+      const dotKey = String(node?.dotKey || "").trim();
+      const tabId = Number(node?.tabId || 0);
+      if (!instanceId || !sessionId ||
+          !/^[A-Za-z0-9_-]{1,160}~[A-Za-z0-9_-]{1,160}$/.test(dotKey) ||
+          !Number.isSafeInteger(tabId) || tabId <= 0) {
+        throw new Error("BCT_DOT_RENAME_EXACT_IDENTITY_REQUIRED");
+      }
+      if (!title || title.length > 100) throw new Error("BCT_DOT_RENAME_TITLE_INVALID");
+      const generated = String(operationId || `monitor.dot.rename.${randomId?.() || ""}`).trim();
+      if (!/^[A-Za-z0-9_.:-]{1,80}$/.test(generated)) {
+        throw new Error("BCT_DOT_RENAME_OPERATION_ID_INVALID");
+      }
+      const response = await fetcher(URLS.renameDot, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+        body: JSON.stringify({
+          instance_id: instanceId,
+          session_id: sessionId,
+          tab_id: tabId,
+          dot_key: dotKey,
+          title,
+          operation_id: generated,
+          timeout_s: 30,
+        }),
+      });
+      const receipt = await response?.json?.().catch(() => null);
+      if (!response?.ok) {
+        throw new Error(String(receipt?.error || `BCT_DOT_RENAME_HTTP_${Number(response?.status || 0)}`));
+      }
+      if (String(receipt?.outcome || "").toUpperCase() !== "APPLIED") {
+        throw new Error(String(receipt?.error || `BCT_DOT_RENAME_${receipt?.outcome || "UNVERIFIED"}`));
+      }
+      const savedTitle = String(receipt?.output?.result?.savedTitle || "").trim();
+      if (savedTitle && savedTitle !== title) throw new Error("BCT_DOT_RENAME_TITLE_MISMATCH");
+      return Object.freeze({ receipt, operationId: generated, title });
+    }
+
     async function reloadRcc(instanceId, operationId = "") {
       if (typeof fetcher !== "function") throw new Error("BCT_RCC_RELOAD_FETCH_UNAVAILABLE");
       const instance = String(instanceId || "").trim();
@@ -435,6 +479,7 @@
       managerStatuses,
       displayWindowNodes,
       renameConversation,
+      renameDot,
       updateConversationScope,
       transferManagerRole,
       reorderConversations,

@@ -111,4 +111,16 @@ assert.equal(
   'one icon-only aria-haspopup menu button in the bounded current-chat header must survive ChatGPT header markup drift'
 );
 
+const dotKey = 'b227a510-d0cb-4466-a2f5-4e401b456dca~6af1261141a8819aa57d94044451fee3';
+const dotAnchor = visibleNode({ 'aria-current': 'page' }, '내 dot');
+dotAnchor.href = `https://chatgpt.com/dots/${dotKey}`;
+context.location.href = dotAnchor.href;
+document.querySelectorAll = (selector) => selector === 'a[href]' ? [dotAnchor] : [];
+assert.equal(vm.runInContext('dotKeyFromLocation()', context), dotKey,
+  'the current Dot identity must be the full confirmed compound reference');
+assert.equal(vm.runInContext(`exactDotAnchors('${dotKey}').length`, context), 1,
+  'the sidebar target must match the entire Dot address rather than a UUID-like fragment');
+assert.equal(vm.runInContext("exactDotAnchors('b227a510-d0cb-4466-a2f5-4e401b456dca~wrong').length", context), 0,
+  'a different Dot context reference must not be accepted as the same target');
+
 console.log('conversation rename UI v2: PASS');

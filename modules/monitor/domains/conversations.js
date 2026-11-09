@@ -1317,7 +1317,9 @@ function openMonitorBctRenameEditor(node, row) {
     return;
   }
   const canRenameTitle = Boolean(
-    !node?.dotKey && !node?.codexLocalReference && monitorBctShell?.renameConversation
+    !node?.codexLocalReference
+    && ((node?.dotKey && monitorBctShell?.renameDot)
+      || (!node?.dotKey && monitorBctShell?.renameConversation))
     && node?.sessionId
     && node?.windowId !== undefined
     && node?.tabId !== undefined
@@ -1507,7 +1509,8 @@ function openMonitorBctRenameEditor(node, row) {
     let titleApplied = false;
     try {
       if (titleChanged) {
-        await monitorBctShell.renameConversation(node, title);
+        if (node.dotKey) await monitorBctShell.renameDot(node, title);
+        else await monitorBctShell.renameConversation(node, title);
         row.querySelector(".monitor-bct-node-title").textContent = title;
         currentTitle = title;
         titleApplied = true;

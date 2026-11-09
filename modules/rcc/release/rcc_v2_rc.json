@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "kind": "RCC_REBUILD_V2_RC",
-  "candidate": "RCC_CHAT_TITLE_RENAME_RESILIENCE_20261109",
+  "candidate": "RCC_DOT_TITLE_RENAME_20261109",
   "sourceRoot": "modules/rcc/extension",
   "candidateInventory": {
     "fileCount": 58,
@@ -23,8 +23,8 @@
       },
       {
         "path": "boot/platform_context.js",
-        "size": 1964,
-        "sha256": "c356ce6e9ee7faac2abdcc1042d9708c9ee1cf99ecc6a365f62bcd1283a7431f"
+        "size": 1965,
+        "sha256": "1b58dfdadc7091eb956dfbc7b1e0ab08b49a99e6b4618f4abca7c9baefd13852"
       },
       {
         "path": "browser/read_adapter.js",
@@ -103,18 +103,18 @@
       },
       {
         "path": "content/content_router.js",
-        "size": 29504,
-        "sha256": "3d2033ad44d4c5b1418a224b78d9a5fde1d9067f2fd46ecb259057ad530fd2f2"
+        "size": 29934,
+        "sha256": "adb4c01bf4d44b48cc0f9d79485f3921fdc0b9f601e95319d90b43417aa61c92"
       },
       {
         "path": "content/conversation_dom.js",
-        "size": 26011,
-        "sha256": "d8c90fa5674feca225e591e151599771182a609dab26021b2d421d9b014ab546"
+        "size": 26012,
+        "sha256": "1659bd70601b875d3b4ba3ce6bcd0ebf1ed60c1ac7bc250224d786578ad82f4e"
       },
       {
         "path": "content/conversation_rename.js",
-        "size": 16073,
-        "sha256": "fde59eb6a782b1c5acc56595e6bd97b2dc8ce818e9d456f9669efcdeadeb8331"
+        "size": 21727,
+        "sha256": "62f5d214b6314df12179af2965a6528726a0d1e9756a082d788f194c9ab8806b"
       },
       {
         "path": "content/orchestration_relay_executor.js",
@@ -158,8 +158,8 @@
       },
       {
         "path": "domain/conversation_rename_service.js",
-        "size": 5015,
-        "sha256": "729f18567c9e1425c63cc89f7f37b725a56e09e121353c07ec43ca55de13dfdc"
+        "size": 9351,
+        "sha256": "3e7c5e5a51eaaf33cef39d6a35f806783d32fd33ec9ee50b2c0314ae30bb1060"
       },
       {
         "path": "domain/delivery_ledger_service.js",
@@ -198,8 +198,8 @@
       },
       {
         "path": "domain/readonly_diagnostics.js",
-        "size": 36523,
-        "sha256": "1dd8d0449c78ed83852c68c38441fe1a856e5b17e80a582ac206db6e0d5cbde5"
+        "size": 36727,
+        "sha256": "8720aebf05b6ba74202335902bcef0477daf8da21858ff4432245308a771eb41"
       },
       {
         "path": "domain/runtime_message_service.js",
@@ -228,13 +228,13 @@
       },
       {
         "path": "legacy/command_policy.js",
-        "size": 8656,
-        "sha256": "2541f78880de0bedda47dda2b90605fd01360dd8c7f3a6d4bee40688da243629"
+        "size": 8706,
+        "sha256": "1e64df69b1a9a51d155f13e1628c3195b9f3f16e84c8e9ef89c471183a539a37"
       },
       {
         "path": "manifest.json",
-        "size": 1539,
-        "sha256": "deea2ca8d0e2ff585f0406c86cb537284337a837545524abd54240ec6c767610"
+        "size": 1527,
+        "sha256": "edda06d25f24205cb07e5607277657f9b30f45b20f1653bc322b4ff5bbe6fee8"
       },
       {
         "path": "network/directory.js",
@@ -297,7 +297,7 @@
         "sha256": "b3ad92bc20564a905bffc37f3e524e2c8e8c5ae71c02517a301cedd5cf1341cd"
       }
     ],
-    "aggregateSha256": "7b9d954526987a2ee8f5a854ba5b28cf70ca08f26fd26c747ccf9b1d7f83f4a6"
+    "aggregateSha256": "d95e9db4e72850b406cba15468388f735cfd7a4794431a6bac9640a602ad3fd3"
   },
   "activeLoaderGraph": {
     "background": [
@@ -421,6 +421,7 @@
       ],
       "nativeConversation": [
         "rename-conversation",
+        "rename-dot",
         "conversation-bind"
       ],
       "nativeAtomicChat": [
@@ -518,6 +519,7 @@
         "relay:probe",
         "relay:recoverExecution",
         "relay:renameConversation",
+        "relay:renameDot",
         "relay:retireComposerDraft",
         "relay:retireExecution",
         "relay:simpleExecute",
@@ -581,6 +583,7 @@
         "relay:newChatExecute",
         "relay:newChatStatus",
         "relay:renameConversation",
+        "relay:renameDot",
         "relay:deliveryRecoveryProof",
         "relay:exactUserTurnProof",
         "relay:exactReplyProof",

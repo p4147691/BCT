@@ -1,4 +1,4 @@
-const RCC_BUILD_VERSION = '2026-11-03-rcc-surface-handoff-v1';
+const RCC_BUILD_VERSION = '2026-11-09-rcc-dot-title-rename-v1';
 
 function editorCandidates() {
 

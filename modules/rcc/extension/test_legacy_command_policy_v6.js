@@ -16,6 +16,7 @@ const canonical = {
   'simple-relay-return': 'rcc_return_simple_relay_response',
   'new-chat-send': 'rcc_create_chat_and_send_message',
   'rename-conversation': 'rcc_rename_conversation',
+  'rename-dot': 'rcc_rename_dot',
   'conversation-bind': 'rcc_bind_conversation_to_node',
   'send-to-tab': 'rcc_send_message_to_tab',
   'send': 'rcc_send_message', 'presence': 'rcc_get_target_availability',
@@ -81,7 +82,7 @@ assert(runtimeHandler.indexOf('RccLegacyCommandPolicy.runtimeMessage(message?.ty
 for (const type of ['relay:manualSend', 'relay:autoDirective', 'relay:workerResult', 'relay:actNaturalCommand']) {
   assert(!runtimeHandler.includes(`message.type === '${type}'`), `${type} implementation must be pruned`);
 }
-for (const type of ['relay:simpleExecute', 'relay:simpleReadReply', 'relay:orchestrationExecute', 'relay:newChatExecute', 'relay:newChatStatus', 'relay:renameConversation', 'relay:activityProbe', 'relay:probe', 'relay:readLatestAssistant']) {
+for (const type of ['relay:simpleExecute', 'relay:simpleReadReply', 'relay:orchestrationExecute', 'relay:newChatExecute', 'relay:newChatStatus', 'relay:renameConversation', 'relay:renameDot', 'relay:activityProbe', 'relay:probe', 'relay:readLatestAssistant']) {
   assert(content.includes(`message.type === '${type}'`), `${type} active content route must remain`);
 }
 for (const type of ['relay:execute', 'relay:deliver', 'relay:bootstrap']) {

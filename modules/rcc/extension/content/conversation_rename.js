@@ -39,6 +39,36 @@ function exactConversationAnchors(key) {
   });
 }
 
+function dotKeyFromLocation(value = location.href) {
+  try {
+    const url = new URL(String(value || ''), location.href);
+    if (!/^(?:chatgpt\.com|chat\.openai\.com)$/i.test(url.hostname)) return '';
+    return url.pathname.match(/^\/dots\/([A-Za-z0-9_-]{1,160}~[A-Za-z0-9_-]{1,160})\/?$/)?.[1] || '';
+  } catch (_) {
+    return '';
+  }
+}
+
+function exactDotAnchors(key) {
+  return Array.from(document.querySelectorAll('a[href]')).filter((node) => {
+    try {
+      return dotKeyFromLocation(new URL(node.href, location.href).href) === key;
+    } catch (_) {
+      return false;
+    }
+  });
+}
+
+function visibleExactDotAnchor(key) {
+  const candidates = exactDotAnchors(key).filter((node) => isVisible(node));
+  const active = candidates.filter((node) =>
+    node.getAttribute('aria-current') === 'page' ||
+    node.getAttribute('data-active') === 'true' ||
+    Boolean(node.closest?.('[aria-selected="true"], [data-state="active"], [data-active="true"]'))
+  );
+  return active[0] || candidates[0] || null;
+}
+
 function visibleExactConversationAnchor(key) {
   const candidates = exactConversationAnchors(key).filter((node) => isVisible(node));
   const active = candidates.filter((node) =>
@@ -82,6 +112,16 @@ async function ensureConversationAnchor(key) {
   if (open) activateRenameUiElement(open);
   anchor = await waitForRenameUi(() => visibleExactConversationAnchor(key), 3500);
   if (!anchor) throw renameUiError('RENAME_TARGET_NOT_FOUND');
+  return anchor;
+}
+
+async function ensureDotAnchor(key) {
+  let anchor = visibleExactDotAnchor(key);
+  if (anchor) return anchor;
+  const open = sidebarOpenButton();
+  if (open) activateRenameUiElement(open);
+  anchor = await waitForRenameUi(() => visibleExactDotAnchor(key), 3500);
+  if (!anchor) throw renameUiError('DOT_RENAME_TARGET_NOT_FOUND');
   return anchor;
 }
 
@@ -362,6 +402,103 @@ async function renameConversationUi(message) {
     );
     if (!accepted) throw renameUiError('RENAME_UI_NOT_VERIFIED', 'UNKNOWN');
     if (currentConversationKey() !== key) throw renameUiError('RENAME_TARGET_STALE_AFTER_SAVE', 'UNKNOWN');
+    return { ok: true, effectState: 'APPLIED', operationId, savedTitle: title };
+  } catch (error) {
+    if (error?.effectState) throw error;
+    throw renameUiError(error?.message || error, effectStarted ? 'UNKNOWN' : 'NOT_APPLIED');
+  }
+}
+
+function currentDotTitleMatches(key, title) {
+  const documentTitle = normalizedUiText(String(document.title || '')
+    .replace(/\s*(?:[-–—|·]\s*)?ChatGPT\s*$/i, ''));
+  if (documentTitle === title) return true;
+  return exactDotAnchors(key).some((anchor) =>
+    normalizedUiText(anchor.textContent) === title ||
+    normalizedUiText(anchor.getAttribute('aria-label')).startsWith(title)
+  );
+}
+
+async function openDotRenameEditor(key) {
+  const diagnostic = {
+    version: 1, identity: 'MATCH', menuClick: 'NOT_ATTEMPTED',
+    menuVisible: 'NOT_OBSERVED', renameAction: 'NOT_FOUND', editor: 'NOT_CHECKED',
+  };
+  if (dotKeyFromLocation() !== key) {
+    diagnostic.identity = 'MISMATCH';
+    throw renameUiError('DOT_RENAME_TARGET_STALE', 'NOT_APPLIED', diagnostic);
+  }
+  const anchor = await ensureDotAnchor(key);
+  dispatchRenameHover(conversationRow(anchor) || anchor);
+  let menuButton = await waitForRenameUi(() => rowMenuButton(anchor), 1500);
+  if (menuButton) {
+    diagnostic.menuClick = 'BUTTON_ATTEMPTED';
+    activateRenameUiElement(menuButton);
+  } else {
+    diagnostic.menuClick = 'CONTEXT_MENU_ATTEMPTED';
+    openContextMenu(anchor);
+  }
+  const visibleMenu = () => Array.from(
+    document.querySelectorAll('[role="menu"], [data-radix-menu-content]')
+  ).some(isVisible);
+  let renameItem = await waitForRenameUi(() => {
+    if (visibleMenu()) diagnostic.menuVisible = 'OBSERVED';
+    return findRenameMenuItem();
+  }, 2500);
+  if (!renameItem && menuButton) {
+    diagnostic.menuClick = 'CONTEXT_MENU_ATTEMPTED';
+    openContextMenu(anchor);
+    renameItem = await waitForRenameUi(() => {
+      if (visibleMenu()) diagnostic.menuVisible = 'OBSERVED';
+      return findRenameMenuItem();
+    }, 2000);
+  }
+  if (!renameItem) throw renameUiError('DOT_RENAME_ACTION_NOT_FOUND', 'NOT_APPLIED', diagnostic);
+  diagnostic.renameAction = 'FOUND';
+  if (dotKeyFromLocation() !== key) {
+    diagnostic.identity = 'MISMATCH';
+    throw renameUiError('DOT_RENAME_TARGET_STALE', 'NOT_APPLIED', diagnostic);
+  }
+  activateRenameUiElement(renameItem);
+  const input = await waitForRenameUi(() => findRenameEditor(anchor), 5000);
+  if (!input) {
+    diagnostic.editor = 'NOT_FOUND';
+    throw renameUiError('DOT_RENAME_INPUT_NOT_FOUND', 'NOT_APPLIED', diagnostic);
+  }
+  diagnostic.editor = 'FOUND';
+  return { input, diagnostic };
+}
+
+async function renameDotUi(message) {
+  const key = String(message.dotKey || '').trim();
+  const operationId = String(message.operationId || '').trim();
+  const title = normalizedUiText(message.title);
+  if (!key || dotKeyFromLocation() !== key) throw renameUiError('DOT_RENAME_TARGET_STALE');
+  if (!operationId || !title || title.length > 100) throw renameUiError('DOT_RENAME_INPUT_INVALID');
+  const { input } = await openDotRenameEditor(key);
+  setRenameEditorValue(input, title);
+  const scope = input.closest?.('[role="dialog"]') || input.closest?.('form') || input.parentElement;
+  const form = input.closest?.('form');
+  const save = Array.from(scope?.querySelectorAll?.('button') || []).find((button) => {
+    if (!isVisible(button) || button.disabled) return false;
+    const text = renameSemanticText(button);
+    return /^(save|저장|confirm|확인)$/i.test(text) || button.type === 'submit';
+  });
+  if (dotKeyFromLocation() !== key) throw renameUiError('DOT_RENAME_TARGET_STALE');
+  await renameSleep(80);
+  let effectStarted = false;
+  try {
+    effectStarted = true;
+    if (form?.requestSubmit) form.requestSubmit(save?.type === 'submit' ? save : undefined);
+    else if (save) activateRenameUiElement(save);
+    else input.dispatchEvent(new KeyboardEvent('keydown', {
+      key: 'Enter', code: 'Enter', bubbles: true, cancelable: true,
+    }));
+    const accepted = await waitForRenameUi(() =>
+      (!document.contains(input) || !isVisible(input)) && currentDotTitleMatches(key, title), 8000
+    );
+    if (!accepted) throw renameUiError('DOT_RENAME_UI_NOT_VERIFIED', 'UNKNOWN');
+    if (dotKeyFromLocation() !== key) throw renameUiError('DOT_RENAME_TARGET_STALE_AFTER_SAVE', 'UNKNOWN');
     return { ok: true, effectState: 'APPLIED', operationId, savedTitle: title };
   } catch (error) {
     if (error?.effectState) throw error;

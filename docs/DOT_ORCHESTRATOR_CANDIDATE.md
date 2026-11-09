@@ -13,7 +13,9 @@ Same full route across tabs shares metadata; instance/session/window/tab remain 
 Different compound references are never merged. A second registration fails closed.
 Unregistered dot surfaces show Dot; saving Node Info registers the single O.
 O is global and unassigned. Candidate color is purple, subject to user preference.
-Only task/memo/advisory tags are edited; a dot browser title is not renamed through /c/.
+Task/memo/advisory tags remain Dot metadata. The browser title uses a separate
+exact `rename-dot` path bound to the full compound `/dots/<reference>` value,
+RCC session and tab; neither reference segment enters the normal `/c/` UUID path.
 Existing conversation UUID allocation, memberships and Supervisor rules are untouched.
 
 Limitations requiring further investigation: whether distinct compound routes refer to

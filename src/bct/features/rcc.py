@@ -50,7 +50,7 @@ _MUTATING_COMMANDS = {
     "create-chat-tab", "create-chat-window", "send-to-created-tab", "move-tab",
     "create-tab-group", "add-tab-to-group", "remove-tab-from-group", "move-tab-group",
     "update-tab-group", "close-conversation-tab",
-    "rename-conversation", "reload-extension", "send", "send-to-tab", "send-to-self",
+    "rename-conversation", "rename-dot", "reload-extension", "send", "send-to-tab", "send-to-self",
     "node-continue", "create-and-send", "new-chat-send", "send-message",
     "conversation-bind",
     "simple-relay-bind", "simple-relay-send", "simple-relay-return",
@@ -76,7 +76,7 @@ _RCC_NATIVE_COMMANDS = {
     "diagnose-composer", "diagnose-conversation-ui", "main-capture-get", "move-tab",
     "move-tab-group", "new-chat-send", "node-label-notify", "ping", "presence",
     "probe", "probe-tabs", "read-latest-assistant", "reload-extension",
-    "remove-tab-from-group", "rename-conversation", "rename-receipt", "result",
+    "remove-tab-from-group", "rename-conversation", "rename-dot", "rename-receipt", "result",
     "retire-composer-draft", "retire-recovered-execution", "send", "send-to-created-tab",
     "send-to-tab", "simple-relay-bind", "simple-relay-return", "simple-relay-send",
     "state", "tab-get", "tab-group-get", "tab-groups-list", "update-tab-group",
@@ -113,6 +113,7 @@ _RCC_CANONICAL_PUBLIC_BY_NATIVE = {
     "reload-extension": "rcc_reload_extension",
     "remove-tab-from-group": "rcc_move_tab_from_group",
     "rename-conversation": "rcc_rename_conversation",
+    "rename-dot": "rcc_rename_dot",
     "rename-receipt": "rcc_get_conversation_rename_evidence",
     "result": "rcc_get_operation_result",
     "retire-composer-draft": "rcc_retire_delivery_draft",
@@ -215,6 +216,7 @@ _COMMAND_CATALOG_PRESENTATION: dict[str, tuple[str, str, str, str]] = {
     "new-chat-send": ("메시지·새 대화", "새 대화를 만들고 첫 메시지를 보냅니다.", "메시지 전송", "창·생성/전송 영수증"),
     "conversation-bind": ("대화 식별·표시", "열린 대화 UUID를 정확한 탭·창·세션에 결합 기록합니다.", "기록·영수증 처리", "대화 UUID·탭·창·세션"),
     "rename-conversation": ("대화 식별·표시", "정확히 지정한 ChatGPT 대화의 이름을 바꿉니다.", "Chrome 상태 변경", "대화 UUID·탭·창·세션"),
+    "rename-dot": ("대화 식별·표시", "정확히 지정한 Dot 화면의 이름을 바꿉니다.", "Chrome 상태 변경", "Dot 복합 참조·탭·창·세션"),
     "rename-receipt": ("결과·영수증", "대화명 변경 영수증의 결과를 읽습니다.", "조회만", "이름변경 영수증"),
     "node-label-notify": ("대화 식별·표시", "대화에 연결된 노드 라벨 변경을 알립니다.", "Chrome 상태 변경", "대화 UUID·탭·창"),
     "simple-relay-bind": ("호환 릴레이", "단순 릴레이 전달을 위한 정확한 대상 결합을 기록합니다.", "기록·영수증 처리", "대화 UUID·탭·창·세션"),
@@ -327,7 +329,7 @@ def _command_group(command: str) -> str:
     }:
         return "chrome-layout-and-maintenance"
     if command in {
-        "conversation-bind", "rename-conversation", "rename-receipt",
+        "conversation-bind", "rename-conversation", "rename-dot", "rename-receipt",
         "node-label-notify", "inspect-rename-receipt", "reconcile-rename-conversation",
         "reclassify-rename-claim", "quarantine-legacy-rename-claim",
     }:
@@ -1720,6 +1722,21 @@ class BrowserFeature:
                 "conversationKey": conversation_key,
                 "title": title,
             })
+        elif command == "rename-dot":
+            allowed.update({"session_id", "tab_id", "dot_key", "title"})
+            session_id = str(arguments.get("session_id") or "").strip()
+            dot_reference = str(arguments.get("dot_key") or "").strip()
+            title = str(arguments.get("title") or "").strip()
+            if (not session_id or
+                    not re.fullmatch(r"[A-Za-z0-9_-]{1,160}~[A-Za-z0-9_-]{1,160}", dot_reference) or
+                    not title or len(title) > 100):
+                raise PreconditionError("RCC_DOT_RENAME_IDENTITY_REQUIRED")
+            prepared["extra"].update({
+                "sessionId": session_id,
+                "tabId": _positive_int(arguments.get("tab_id"), "RCC_TAB_ID_INVALID"),
+                "dotKey": dot_reference,
+                "title": title,
+            })
         unknown = set(arguments) - allowed
         if unknown:
             raise PreconditionError("RCC_ARGUMENT_NOT_ALLOWED:" + ",".join(sorted(unknown)))
@@ -1756,6 +1773,9 @@ class BrowserFeature:
             # Cosmetic effects must not claim the entire RCC instance.
             resource += ":rename:" + str(prepared["extra"]["tabId"]) + ":" + str(
                 prepared["extra"]["conversationKey"])
+        elif command == "rename-dot":
+            resource += ":dot-rename:" + str(prepared["extra"]["tabId"]) + ":" + str(
+                prepared["extra"]["dotKey"])
         elif (command in _READ_COMMANDS or command in {"delivery-preview", "delivery-response-read"}
               or command in _RECONCILE_COMMANDS
               or command in {_RENAME_INSPECTION_COMMAND, _OPERATOR_QUARANTINE_COMMAND}):

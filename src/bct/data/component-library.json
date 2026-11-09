@@ -1,9 +1,9 @@
 {
   "schema": "bct.component-library.bundle.v1",
-  "source_fingerprint": "82d8c4c2a7333f0a0144d586a0d6c332c2f23838d0eb9fd75164c8ffa81960cb",
+  "source_fingerprint": "9e73aa1d5da64fda3a2cd790001449e09cad58df54b0323518f8ac980626ad95",
   "source_hashes": {
     "docs/CHAIN_MESSAGE_RECIPE_V2.md": "32f2d2d18da89be87defe5eb14580dd3a0c359ae1815744fe39e9b3ac653ab21",
-    "docs/component-library.v1.json": "93c9a24f6440e5d54b289b6ac66716337cad3022f65ec12f37c2b21f137df468",
+    "docs/component-library.v1.json": "05c4dbb7c6357ca05c7b6427e709b4f1856bb5a3ad8e7b106317567f4aa2ccaa",
     "modules/browser-bridge/extension/background.js": "b058aeb8fa8f37b8a21ae8b70be21d003e976a97e9e5ca884d7a98f5dced4472",
     "modules/browser-bridge/extension/chat_tools.js": "cc91898a0c30c58f5bee4e6b7fea991282ce5a21f100cfaeb220cc300e4ee85b",
     "modules/browser-bridge/extension/tool_protocol.js": "05e244e856af58705de1c1fc50a9a8d5e63b9ca2e8ba8674cabe8d9ea9a8563a",
@@ -13,10 +13,12 @@
     "modules/monitor/domains/node-identity.js": "639542fd9ae10db3533fe120941e134000c743df62d2defae0774c0ac69a0950",
     "modules/monitor/extension/browser/tab-close-adapter.js": "25098987008308e97822ee12b5e62e93f39506bae165014c51b0aab3c95025b7",
     "modules/monitor/extension/features/rcc-command-catalog/monitor-rcc-command-catalog.js": "baf346f2f1e94c93d367cbd8a241c68a38a7ce7f4a4b20d32b0e3db33a40a651",
-    "modules/monitor/extension/monitor-bct-shell.js": "698366f6a9fc9576917d3c3ef6c8dbfc74873a2153931f84d77555b8473402cb",
+    "modules/monitor/extension/monitor-bct-shell.js": "b9b337b6c7a143284eeb845d84e6022affe3643902962b227280707a0cb23f1c",
     "modules/monitor/extension/monitor-bct-thumbnail-projection.js": "844b22e3ce253938e8672d86979ff6d462bdbeb14e55f59452462373ffa4b03d",
     "modules/monitor/extension/monitor-node-token-visual-contract.js": "08e8b59f51a46c31d13784b56beefa8ae3365d076e665a016425b3306282e1bc",
     "modules/monitor/extension/monitor-window-hwnd-contract.js": "81b0050ba0231328ad3514b35e1d085e18afcf7315bf4674d3e5604a61b34e6e",
+    "modules/rcc/extension/content/conversation_rename.js": "62f5d214b6314df12179af2965a6528726a0d1e9756a082d788f194c9ab8806b",
+    "modules/rcc/extension/domain/conversation_rename_service.js": "3e7c5e5a51eaaf33cef39d6a35f806783d32fd33ec9ee50b2c0314ae30bb1060",
     "src/bct/chain_direction.py": "84fffaf0e19513b5bda381fdc18ac83debe8a86a99d1a0139b6b46e06d632577",
     "src/bct/chain_entry_policy.py": "2c076fd541dfaa9353b12526c6a41bdb1396169a6a81162e81861b8cc313dd34",
     "src/bct/chain_execution_plan.py": "b100f2ee64a4e32168ad69b468b31b977d806504abc6af00521316c0d404c062",
@@ -33,10 +35,10 @@
     "src/bct/dot_identity.py": "d6aef9d17828baf2aeadc4e7f568a47aaea91030f0d8d17ef3c16300c66e1026",
     "src/bct/features/conversation_network.py": "950299ce295bf82f6efd2c993d8bddae1ce56294b7312ed97765ac516725f6ce",
     "src/bct/features/owned_extension_action.py": "6c164bfb0cacf132940f16c15dfc9f653937b48a91d5e3e3ba648ad07e4bfa15",
-    "src/bct/features/rcc.py": "bb9d0e6d7f44d408deba32c5daab333b0fee5bee311edd85db12fc3ef8963b02",
+    "src/bct/features/rcc.py": "019302c32bb28da93725720c8f31939833cee20f432f902b92d83d53dc0ba973",
     "src/bct/mcp_server.py": "198e711fc3973a91ccee34e10f8b79c1616ced083bbb16325b8274bba016a051",
     "src/bct/node_recovery.py": "27c7845d6f18fa8a36e1adb609b5658e1b60a62512d087b0f0fec6623fb77713",
-    "src/bct/runtime_server.py": "c625cd197e12f00b3f7af81f78f5c0f6e837cdf7210ad50072ce1acf3e943509",
+    "src/bct/runtime_server.py": "54449d94fb9d1db55b318a5870e5c4804ecd7adfb1796ad78daed015c36201e5",
     "src/bct/send_delayed_message.py": "b83f70aae1d92b2fc7c46823e476c0d2b706f9096b459d6fb536567ec35c0f58",
     "src/bct/task_message.py": "549f40e968a0797065da0725c1380c97ab98729695047426463b2767fd63b5ed"
   },
@@ -987,6 +989,40 @@
         ],
         "used_by": [
           "Monitor Node Info"
+        ]
+      },
+      {
+        "id": "rcc.dot_title_rename",
+        "kind": "module",
+        "maturity": "isolated",
+        "implementation": [
+          {
+            "path": "src/bct/runtime_server.py",
+            "symbol": "run_monitor_dot_rename / monitor_dot_title_rename"
+          },
+          {
+            "path": "modules/rcc/extension/domain/conversation_rename_service.js",
+            "symbol": "renameDot / exactDotRenameTab"
+          },
+          {
+            "path": "modules/rcc/extension/content/conversation_rename.js",
+            "symbol": "renameDotUi / openDotRenameEditor"
+          }
+        ],
+        "contract": "Rename the exact currently open Dot through its confirmed full compound /dots reference, RCC session and tab identity. It never converts either Dot reference segment into a conversation UUID.",
+        "effects": [
+          "chatgpt-dot-title-ui",
+          "rcc-rename-receipt"
+        ],
+        "safety": [
+          "exact-full-dot-reference",
+          "exact-session-and-tab",
+          "no-conversation-uuid-coercion",
+          "operation-id-idempotency",
+          "unknown-no-retry"
+        ],
+        "used_by": [
+          "Monitor Dot Node Info"
         ]
       },
       {

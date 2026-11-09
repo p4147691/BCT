@@ -20,7 +20,7 @@ from bct.core.models import BCTError, Principal, Work
 from bct.mcp_server import LocalBearerMiddleware, build_mcp
 from bct.monitor_runtime import build_monitor_state, build_monitor_ui_state
 from bct.codex_surface import register_codex_surfaces
-from bct.dot_identity import dot_directory, save_dot_info
+from bct.dot_identity import dot_directory, dot_key, save_dot_info
 from bct.status_views import status_view
 from bct.core.chat_stream_rcc_watch import ChatStreamRccWatch
 from bct.integrations.rcc import NamedPipeRelayClient
@@ -147,6 +147,44 @@ def run_monitor_conversation_rename(
             display_name=title,
         )
     return receipt
+
+
+def run_monitor_dot_rename(
+    bct: BCT,
+    *,
+    principal: Principal,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    """Rename one exact Dot surface without treating its reference as a chat UUID."""
+    allowed = {
+        "instance_id", "session_id", "tab_id", "dot_key",
+        "title", "operation_id", "timeout_s",
+    }
+    unknown = set(payload) - allowed
+    if unknown:
+        raise ValueError("MONITOR_DOT_RENAME_FIELD_NOT_ALLOWED:" + ",".join(sorted(unknown)))
+    operation_id = str(payload.get("operation_id") or "").strip()
+    if not _OPERATION_ID_PATTERN.fullmatch(operation_id):
+        raise ValueError("MONITOR_DOT_RENAME_OPERATION_ID_INVALID")
+    title = str(payload.get("title") or "").strip()
+    if not title or len(title) > 100:
+        raise ValueError("MONITOR_DOT_RENAME_TITLE_INVALID")
+    arguments = {
+        "command": "rename-dot",
+        "instance_id": str(payload.get("instance_id") or "").strip(),
+        "session_id": str(payload.get("session_id") or "").strip(),
+        "tab_id": payload.get("tab_id"),
+        "dot_key": dot_key(payload.get("dot_key")),
+        "title": title,
+        "timeout_s": payload.get("timeout_s", 30.0),
+    }
+    return bct.operations.run(
+        principal=principal,
+        work_id=MONITOR_WORK_ID,
+        operation_id=operation_id,
+        capability="browser",
+        arguments=arguments,
+    ).as_dict()
 
 
 def run_monitor_conversation_scope_update(
@@ -637,6 +675,28 @@ def main() -> int:
                 raise ValueError("MONITOR_RENAME_OBJECT_REQUIRED")
             result = await asyncio.to_thread(
                 run_monitor_conversation_rename,
+                bct,
+                principal=monitor_principal,
+                payload=payload,
+            )
+        except (ValueError, BCTError) as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
+        return JSONResponse(result)
+
+    @mcp.custom_route(
+        "/monitor/dot-title/rename",
+        methods=["POST"],
+        include_in_schema=False,
+    )
+    async def monitor_dot_title_rename(request: Request) -> JSONResponse:
+        if not monitor_extension_origin_allowed(request.headers.get("origin", "")):
+            return JSONResponse({"error": "MONITOR_EXTENSION_ORIGIN_INVALID"}, status_code=403)
+        try:
+            payload = await request.json()
+            if not isinstance(payload, dict):
+                raise ValueError("MONITOR_DOT_RENAME_OBJECT_REQUIRED")
+            result = await asyncio.to_thread(
+                run_monitor_dot_rename,
                 bct,
                 principal=monitor_principal,
                 payload=payload,

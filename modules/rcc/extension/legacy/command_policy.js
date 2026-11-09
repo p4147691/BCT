@@ -8,7 +8,7 @@
     'new-chat-send',
   ]);
   const CONVERSATION_COMMANDS = new Set([
-    'rename-conversation', 'conversation-bind',
+    'rename-conversation', 'rename-dot', 'conversation-bind',
   ]);
   // A bounded operator action against one exact, already-open Chrome tab.
   // It neither creates, moves, closes, nor discovers a replacement tab.
@@ -72,6 +72,7 @@
     'reload-extension': 'rcc_reload_extension',
     'remove-tab-from-group': 'rcc_move_tab_from_group',
     'rename-conversation': 'rcc_rename_conversation',
+    'rename-dot': 'rcc_rename_dot',
     'rename-receipt': 'rcc_get_conversation_rename_evidence',
     'result': 'rcc_get_operation_result',
     'retire-composer-draft': 'rcc_retire_delivery_draft',

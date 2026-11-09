@@ -19,7 +19,7 @@ class RccSourceBaselineTests(unittest.TestCase):
         release = json.loads((
             self.root / "modules" / "rcc" / "release" / "rcc_v2_rc.json"
         ).read_text(encoding="utf-8-sig"))
-        self.assertEqual("RCC_CANONICAL_COMMANDS_V1_20261108", release["candidate"])
+        self.assertEqual("RCC_DOT_TITLE_RENAME_20261109", release["candidate"])
         self.assertEqual(
             "ec256e89fdaf8ebd6bae5f6892ae3f108d660c1b235e9aa74a0fb371dbbe3ada",
             release["rollbackBaseline"]["aggregateSha256"],
@@ -60,8 +60,8 @@ class RccSourceBaselineTests(unittest.TestCase):
     def test_committed_manifest_preserves_bct_install_identity(self):
         manifest = json.loads((self.extension / "manifest.json").read_text(encoding="utf-8-sig"))
         self.assertEqual("BCT RCC", manifest["name"])
-        self.assertEqual("1.0.67", manifest["version"])
-        self.assertEqual("1.0.67 Canonical RCC Commands", manifest["version_name"])
+        self.assertEqual("1.0.69", manifest["version"])
+        self.assertEqual("1.0.69 Dot Title Rename", manifest["version_name"])
         self.assertEqual("BCT RCC", manifest["action"]["default_title"])
         self.assertNotIn("webRequest", manifest["permissions"])
         public_key = base64.b64decode(manifest["key"], validate=True)
@@ -85,7 +85,7 @@ class RccSourceBaselineTests(unittest.TestCase):
         runtime = (self.extension / "domain" / "runtime_message_service.js").read_text(encoding="utf-8")
         for command in (
             "ping", "presence", "state", "simple-relay-bind", "simple-relay-send",
-            "simple-relay-return", "new-chat-send", "rename-conversation",
+            "simple-relay-return", "new-chat-send", "rename-conversation", "rename-dot",
             "delivery-start", "delivery-cancel", "delivery-status", "delivery-return",
             "retire-composer-draft", "retire-recovered-execution",
             "delivery-manager-status", "delivery-response-read", "send-to-tab", "close-conversation-tab",
@@ -136,7 +136,7 @@ class RccSourceBaselineTests(unittest.TestCase):
             "relay:retireComposerDraft",
             "relay:simpleExecute", "relay:simpleReadReply", "relay:orchestrationExecute",
             "relay:newChatExecute",
-            "relay:newChatStatus", "relay:renameConversation",
+            "relay:newChatStatus", "relay:renameConversation", "relay:renameDot",
             "relay:readLatestAssistant",
         ):
             self.assertIn(f"message.type === '{message_type}'", content)
@@ -186,7 +186,7 @@ class RccSourceBaselineTests(unittest.TestCase):
                             loader.index("importScripts('background.js');"))
 
     def test_content_and_background_build_markers_match(self):
-        marker = "2026-11-03-rcc-surface-handoff-v1"
+        marker = "2026-11-09-rcc-dot-title-rename-v1"
         for name in ("content/conversation_dom.js", "boot/platform_context.js"):
             self.assertIn(marker, (self.extension / name).read_text(encoding="utf-8"))
 
