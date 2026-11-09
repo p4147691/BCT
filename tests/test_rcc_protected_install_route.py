@@ -235,7 +235,7 @@ class ProtectedRccRouteTests(unittest.TestCase):
         )
         self.assertEqual(
             ri.DOT_TITLE_RENAME_ROLLBACK.name,
-            "rollback_installed_1_0_69_custom_name_v14",
+            "rollback_installed_1_0_69_custom_name_v10",
         )
         self.assertEqual(
             ri.DOT_TITLE_RENAME_MANIFEST_SHA256,
