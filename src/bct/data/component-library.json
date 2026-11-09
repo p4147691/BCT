@@ -1,6 +1,6 @@
 {
   "schema": "bct.component-library.bundle.v1",
-  "source_fingerprint": "0d37c06f3025d91050a62aeb7dda1c6b69edc418e15696515d83f17be6363414",
+  "source_fingerprint": "bc68a65813ee82c4c7a627bb3010345db11a67e58a488c7e2c1c680bbdd53854",
   "source_hashes": {
     "docs/CHAIN_MESSAGE_RECIPE_V2.md": "f5ae7b9f5a370f9e03912136ece50a3b633e5ff9d8ec1e6affe9b547e7524ac9",
     "docs/component-library.v1.json": "93c9a24f6440e5d54b289b6ac66716337cad3022f65ec12f37c2b21f137df468",
@@ -30,7 +30,7 @@
     "src/bct/conversation_network.py": "054ef66fc29e6514eb485214e876969b2dc9ee61edb9181997f627822ee04e88",
     "src/bct/core/chat_stream_rcc_watch.py": "0db47e0b0991d5b5e406f3c60c60c2a5874fc2f5409b31dc0582313d624b6324",
     "src/bct/delivery_continuation_recovery.py": "2da105389388c6e1e3e405b178dc3ce85ff50fd874edfd322619d7e1f4aff4cb",
-    "src/bct/dot_identity.py": "9010703743a55c4b5c49f2f291eb3e3e6f2f58fdc71637d9b5f7d7a388bb1c1e",
+    "src/bct/dot_identity.py": "d6aef9d17828baf2aeadc4e7f568a47aaea91030f0d8d17ef3c16300c66e1026",
     "src/bct/features/conversation_network.py": "950299ce295bf82f6efd2c993d8bddae1ce56294b7312ed97765ac516725f6ce",
     "src/bct/features/owned_extension_action.py": "6c164bfb0cacf132940f16c15dfc9f653937b48a91d5e3e3ba648ad07e4bfa15",
     "src/bct/features/rcc.py": "bb9d0e6d7f44d408deba32c5daab333b0fee5bee311edd85db12fc3ef8963b02",
