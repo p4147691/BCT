@@ -87,6 +87,30 @@ function sidebarOpenButton() {
   }) || null;
 }
 
+function sidebarHoverRevealControl() {
+  // In the compact ChatGPT shell the full sidebar is a hover flyout from the
+  // Home icon instead of a persistent panel with an "open sidebar" button.
+  // Match only the visible Home control (including current Korean UI labels),
+  // never an arbitrary navigation link.
+  const controls = Array.from(document.querySelectorAll(
+    'nav button, nav a[href], aside button, aside a[href], '
+    + '[data-testid*="sidebar"] button, [data-testid*="sidebar"] a[href]'
+  )).filter((node) => isVisible(node) && !node.disabled);
+  const semantic = controls.filter((node) =>
+    /^(?:home|홈|chatgpt home|chatgpt 홈)$/i.test(renameSemanticText(node))
+  );
+  if (semantic.length === 1) return semantic[0];
+  const rootLinks = controls.filter((node) => {
+    try {
+      const url = new URL(String(node.href || node.getAttribute?.('href') || ''), location.href);
+      return /^(?:chatgpt\.com|chat\.openai\.com)$/i.test(url.hostname) && url.pathname === '/';
+    } catch (_) {
+      return false;
+    }
+  });
+  return rootLinks.length === 1 ? rootLinks[0] : null;
+}
+
 function activateRenameUiElement(element) {
   element.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
   const common = { bubbles: true, cancelable: true, composed: true, view: window, button: 0 };
@@ -118,6 +142,12 @@ async function ensureConversationAnchor(key) {
 async function ensureDotAnchor(key) {
   let anchor = visibleExactDotAnchor(key);
   if (anchor) return anchor;
+  const hoverReveal = sidebarHoverRevealControl();
+  if (hoverReveal) {
+    dispatchRenameHover(hoverReveal);
+    anchor = await waitForRenameUi(() => visibleExactDotAnchor(key), 2500);
+    if (anchor) return anchor;
+  }
   const open = sidebarOpenButton();
   if (open) activateRenameUiElement(open);
   anchor = await waitForRenameUi(() => visibleExactDotAnchor(key), 3500);

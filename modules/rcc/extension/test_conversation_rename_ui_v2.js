@@ -144,4 +144,11 @@ context.hiddenDotMenu = hiddenDotMenu;
 assert.equal(vm.runInContext('rowMenuButton(dotAnchor) === hiddenDotMenu', context), true,
   'the exact Dot row may use an opacity-hidden menu button before a trusted hover');
 
+const homeControl = visibleNode({ 'aria-label': '홈' });
+homeControl.href = 'https://chatgpt.com/';
+document.querySelectorAll = (selector) => selector.includes('nav button') ? [homeControl] : [];
+context.homeControl = homeControl;
+assert.equal(vm.runInContext('sidebarHoverRevealControl() === homeControl', context), true,
+  'the compact Korean ChatGPT shell must reveal the Dot flyout from the exact Home control');
+
 console.log('conversation rename UI v2: PASS');
