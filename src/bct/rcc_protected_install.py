@@ -92,12 +92,12 @@ CANONICAL_WIRE_ROLLBACK = CANONICAL_WIRE_ROOT / "rollback_installed_1_0_66"
 CANONICAL_WIRE_MANIFEST = CANONICAL_WIRE_ROOT / "release_manifest_canonical_wire_immutable.json"
 CANONICAL_WIRE_MANIFEST_SHA256 = "b49520dcef5061503e67f1b1e74742a7a914899b4621b64ae8e30b7b54326f58"
 CANONICAL_WIRE_JOURNAL = Path(r"D:\BCT\runtime\backups\rcc-guarded-install-canonical-wire")
-DOT_TITLE_RENAME_ROOT = Path(r"D:\BCT\data\RCC_DOT_PROFILE_SAVE_20261109")
-DOT_TITLE_RENAME_STAGE = DOT_TITLE_RENAME_ROOT / "candidate_1_0_69_profile_save"
+DOT_TITLE_RENAME_ROOT = Path(r"D:\BCT\data\RCC_DOT_PROFILE_SAVE_V2_20261109")
+DOT_TITLE_RENAME_STAGE = DOT_TITLE_RENAME_ROOT / "candidate_1_0_69_profile_save_v2"
 DOT_TITLE_RENAME_ROLLBACK = DOT_TITLE_RENAME_ROOT / "rollback_installed_1_0_69_hover"
-DOT_TITLE_RENAME_MANIFEST = DOT_TITLE_RENAME_ROOT / "release_manifest_dot_profile_save_immutable.json"
-DOT_TITLE_RENAME_MANIFEST_SHA256 = "c4dac6210d9b3131b179123867806b2c7b7abaf998a4c5f43fc36200d6c2ee45"
-DOT_TITLE_RENAME_JOURNAL = Path(r"D:\BCT\runtime\backups\rcc-guarded-install-dot-profile-save")
+DOT_TITLE_RENAME_MANIFEST = DOT_TITLE_RENAME_ROOT / "release_manifest_dot_profile_save_v2_immutable.json"
+DOT_TITLE_RENAME_MANIFEST_SHA256 = "325d11c935f328ea4bfb06bb14a5e15430fe931a57c7284f4c5b264037dfe3d5"
+DOT_TITLE_RENAME_JOURNAL = Path(r"D:\BCT\runtime\backups\rcc-guarded-install-dot-profile-save-v2")
 EXTENSION_ID = "ocbidbaplechjjdacmokhnfbdmgjkphf"
 OP_ID = re.compile(r"[A-Za-z0-9_.-]{1,80}\Z")
 
