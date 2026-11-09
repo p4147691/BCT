@@ -44,7 +44,7 @@ class DeliveryArchitectureInventoryTests(unittest.TestCase):
                 "retire-composer-draft", "retire-recovered-execution",
             },
             "CONVERSATION_COMMANDS": {
-                "rename-conversation", "conversation-bind",
+                "rename-conversation", "rename-dot", "conversation-bind",
             },
             "ORCHESTRATION_COMMANDS": {"send"},
             "READ_ONLY_COMMANDS": {
