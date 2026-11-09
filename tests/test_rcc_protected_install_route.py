@@ -271,6 +271,35 @@ class ProtectedRccRouteTests(unittest.TestCase):
             ri.COMPOSER_REBIND_MANIFEST_SHA256,
         )
 
+    def test_protected_inspect_accepts_composer_rebind_69_to_70(self):
+        for folder, version in (
+            (self.live, "1.0.69"),
+            (self.reference, "1.0.69"),
+            (self.source, "1.0.70"),
+        ):
+            manifest_path = folder / "manifest.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["version"] = version
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        self.release = {
+            "rollbackBaseline": self._inv(self.live),
+            "candidateInventory": self._inv(self.source),
+        }
+        self.policy_manifest.write_text(json.dumps(self.release), encoding="utf-8")
+        plan = ri.inspect(
+            "N73-TEST-COMPOSER-REBIND",
+            live=self.live,
+            candidate=self.source,
+            backup_source=self.reference,
+            manifest_file=self.policy_manifest,
+            journal_root=self.journal,
+            candidate_version="1.0.70",
+            installed_version="1.0.69",
+        )
+        self.assertEqual(plan["installed_files"], 57)
+        self.assertEqual(plan["candidate_files"], 58)
+        self.assertFalse(self.journal.exists())
+
     def test_protected_plan_accepts_canonical_wire_candidate_67(self):
         identities = {
             self.live: (self.extension_id, "1.0.66"),
