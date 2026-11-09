@@ -1,19 +1,19 @@
 {
   "schema": "bct.component-library.bundle.v1",
-  "source_fingerprint": "85074408c0b7381cf597a467263361acb436cea4e2b238d7788851ee5355a226",
+  "source_fingerprint": "fb2baa3b7be34b0c79cce30a192196d0961e41d25b556d236c6b150db0ebd5d0",
   "source_hashes": {
     "docs/CHAIN_MESSAGE_RECIPE_V2.md": "f5ae7b9f5a370f9e03912136ece50a3b633e5ff9d8ec1e6affe9b547e7524ac9",
-    "docs/component-library.v1.json": "acc98c530c124788e9d187af05f4cdb8f24abc849f7162c2dbdf0a25734b9450",
+    "docs/component-library.v1.json": "93c9a24f6440e5d54b289b6ac66716337cad3022f65ec12f37c2b21f137df468",
     "modules/browser-bridge/extension/background.js": "b058aeb8fa8f37b8a21ae8b70be21d003e976a97e9e5ca884d7a98f5dced4472",
     "modules/browser-bridge/extension/chat_tools.js": "cc91898a0c30c58f5bee4e6b7fea991282ce5a21f100cfaeb220cc300e4ee85b",
     "modules/browser-bridge/extension/tool_protocol.js": "05e244e856af58705de1c1fc50a9a8d5e63b9ca2e8ba8674cabe8d9ea9a8563a",
     "modules/browser-bridge/native/native_host.py": "7a618302522f954fb953ce4f24c273d9fb1bc1d9c4eb0846f0c4cccdfb818b78",
     "modules/browser-bridge/native/persistent_host.py": "306d2bf6618cd5a274dd4e91fe0a2999ee0ce8cba1171bbfa80c4cb2d003f015",
     "modules/monitor/domains/desktop-lifecycle.js": "8269e05b3597723b2d47fdf2a8ddc8d3cca7cc93ae49a0f4db6ec506a6084158",
-    "modules/monitor/domains/node-identity.js": "26b000f6749579117fd2a7b2adf4903a4a2c31c478aff2a9e24acc807b1410af",
+    "modules/monitor/domains/node-identity.js": "27d08e4e29f4880ef88dce0f24440d81007d1d3cffd4f0887eab71d8427c779c",
     "modules/monitor/extension/browser/tab-close-adapter.js": "25098987008308e97822ee12b5e62e93f39506bae165014c51b0aab3c95025b7",
     "modules/monitor/extension/features/rcc-command-catalog/monitor-rcc-command-catalog.js": "baf346f2f1e94c93d367cbd8a241c68a38a7ce7f4a4b20d32b0e3db33a40a651",
-    "modules/monitor/extension/monitor-bct-shell.js": "cea5b36cde29059bf3ead8274382b0c7f2aa6c6391d9c4e618b6482716ae9776",
+    "modules/monitor/extension/monitor-bct-shell.js": "698366f6a9fc9576917d3c3ef6c8dbfc74873a2153931f84d77555b8473402cb",
     "modules/monitor/extension/monitor-bct-thumbnail-projection.js": "ec9123afd6e583b7a0c92602c84652df7edd25f275b6ee017d2c573e290781d8",
     "modules/monitor/extension/monitor-node-token-visual-contract.js": "2168eeb18875dfa5c23aaa37aaad5acc7f6b43449c5a2c828ac937834314669e",
     "modules/monitor/extension/monitor-window-hwnd-contract.js": "81b0050ba0231328ad3514b35e1d085e18afcf7315bf4674d3e5604a61b34e6e",
@@ -24,17 +24,19 @@
     "src/bct/chat_input_queue.py": "0873721a88bdca3a84f16e5be9426a63360e98253ce02ceb6ec0dcf1fe9b3a87",
     "src/bct/code_block_organize.py": "aa9471232321334c1c2ce7f52f0fa4725a4016e13ba19bac942dd71f62622cfd",
     "src/bct/code_block_scan.py": "179a2a63497310b53900e49e44da9f71cbc9d2d1c2b9321279c9ebebb2c5646f",
+    "src/bct/codex_surface.py": "7ec0ac55ec19c4ba5fb67fcfa22cfecc29e899ee57521832ac403ba58f10887b",
     "src/bct/component_library.py": "f5e5d5f3640639f3e1a725c12dae68383a33a2cebee205300f9a0e9ec1ead54a",
     "src/bct/continuation_primitives.py": "4ff4fc92c329a1c0515c1b5a174ba3550fe47e67693d3237cdf8491b9aa0505a",
     "src/bct/conversation_network.py": "054ef66fc29e6514eb485214e876969b2dc9ee61edb9181997f627822ee04e88",
     "src/bct/core/chat_stream_rcc_watch.py": "0db47e0b0991d5b5e406f3c60c60c2a5874fc2f5409b31dc0582313d624b6324",
     "src/bct/delivery_continuation_recovery.py": "2da105389388c6e1e3e405b178dc3ce85ff50fd874edfd322619d7e1f4aff4cb",
+    "src/bct/dot_identity.py": "9010703743a55c4b5c49f2f291eb3e3e6f2f58fdc71637d9b5f7d7a388bb1c1e",
     "src/bct/features/conversation_network.py": "950299ce295bf82f6efd2c993d8bddae1ce56294b7312ed97765ac516725f6ce",
     "src/bct/features/owned_extension_action.py": "6c164bfb0cacf132940f16c15dfc9f653937b48a91d5e3e3ba648ad07e4bfa15",
     "src/bct/features/rcc.py": "bb9d0e6d7f44d408deba32c5daab333b0fee5bee311edd85db12fc3ef8963b02",
     "src/bct/mcp_server.py": "9db94bf93271c52d1faece42f87e524cded179e887e820fcf1be53d8d94c515b",
     "src/bct/node_recovery.py": "27c7845d6f18fa8a36e1adb609b5658e1b60a62512d087b0f0fec6623fb77713",
-    "src/bct/runtime_server.py": "cf1232bfa46c2e5041552495374c1f7e9bdb56e1f2ef04ca36b15ad5aa42c7a9",
+    "src/bct/runtime_server.py": "de40d3e9675cea496d475f050256e1e46a5db45abaaac86537b30c5a74f02d49",
     "src/bct/send_delayed_message.py": "b83f70aae1d92b2fc7c46823e476c0d2b706f9096b459d6fb536567ec35c0f58",
     "src/bct/task_message.py": "549f40e968a0797065da0725c1380c97ab98729695047426463b2767fd63b5ed"
   },
@@ -956,6 +958,65 @@
         ],
         "used_by": [
           "bct.chain_message"
+        ]
+      },
+      {
+        "id": "bct.dot_node_info",
+        "kind": "module",
+        "maturity": "isolated",
+        "implementation": [
+          {
+            "path": "src/bct/dot_identity.py",
+            "symbol": "dot_directory / save_dot_info"
+          },
+          {
+            "path": "src/bct/runtime_server.py",
+            "symbol": "dot_node_info_response"
+          }
+        ],
+        "contract": "Opaque compound dot route metadata, global singleton registration, exact revision conflict protection; never a conversation UUID or browser send target. Same route in multiple tabs shares metadata.",
+        "effects": [
+          "dot-metadata-only-sqlite"
+        ],
+        "safety": [
+          "no-conversation-uuid-coercion",
+          "no-browser-effects",
+          "exact-monitor-origin",
+          "revision-conflict",
+          "global-unassigned"
+        ],
+        "used_by": [
+          "Monitor Node Info"
+        ]
+      },
+      {
+        "id": "bct.codex_surface",
+        "kind": "module",
+        "maturity": "isolated",
+        "implementation": [
+          {
+            "path": "src/bct/codex_surface.py",
+            "symbol": "local_codex_reference / register_codex_surfaces / observed_codex_nodes"
+          },
+          {
+            "path": "src/bct/runtime_server.py",
+            "symbol": "codex_surface_register_response"
+          }
+        ],
+        "contract": "Exact observed local/client-new-thread route references, independently persistent C labels, explicit registration POST and read-only BCT projection. Local references do not imply stable Codex task identity or browser routing authority.",
+        "effects": [
+          "codex-display-registry-only-sqlite"
+        ],
+        "safety": [
+          "separate-c-and-n-namespace",
+          "serialized-idempotent-allocation",
+          "uuid-not-coerced",
+          "no-send-or-return",
+          "exact-monitor-origin"
+        ],
+        "used_by": [
+          "Monitor Codex surface display",
+          "BCT codex_nodes projection"
         ]
       }
     ]

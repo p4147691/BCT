@@ -1,0 +1,18 @@
+{
+  "base_sha": "91a56c4886180e3220aa8d7a26b2257d786bbffd",
+  "candidate_state": "UNCOMMITTED_ISOLATED_REVIEW_CANDIDATE",
+  "verification_environment": "PYTHONPATH=src",
+  "codex_tests_passed": 7,
+  "conversation_network_regression_tests_passed": 22,
+  "display_policy": "C1 through C99 then C1; assignment_sequence remains monotonic and C label is never a unique routing identity.",
+  "visual_policy": "C labels use subdued gray only for private/local observation; N and O colors are unchanged.",
+  "confirmed_route": "/local/client-new-thread:<UUID-shaped-reference>",
+  "unsupported_routes": "All other Codex local routes remain unclassified.",
+  "real_codex_task_id_mapping": "LOCAL_PRIVATE_BINDING_OBSERVED_NOT_INTEGRATED",
+  "transition_and_label_inheritance": "TRANSITION_OBSERVED_IN_PRIVATE_STATE_LABEL_INHERITANCE_NOT_IMPLEMENTED",
+  "node_info": "READ_ONLY_UNTIL_A_SUPPORTED_TASK_ID_BINDING_IS_AVAILABLE",
+  "checks": ["build_monitor_bundle.py: PASS", "build_monitor_js_index.py: PASS", "analyze_monitor_dependencies.py --write: PASS", "build_component_library.py --write --reviewed: PASS", "test_codex_surface.py: 7 PASS", "test_conversation_network.py: 22 PASS", "check_monitor_codex_surface.js: PASS", "check_monitor_dot_browser.py --codex: PASS_READ_ONLY", "check_monitor_dot_http_e2e.py: PASS_TEST_ORIGIN_ADAPTER", "check_monitor_structure.py: PASS", "compileall: PASS", "git diff --check: PASS", "build_component_library.py: PASS"],
+  "live_changes": false,
+  "full_live_e2e": false,
+  "files_sha256_reference": "docs/DOT_ORCHESTRATOR_VERIFICATION.json"
+}

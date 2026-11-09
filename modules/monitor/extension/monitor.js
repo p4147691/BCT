@@ -6676,6 +6676,7 @@ function monitorBctRoleTagsFromText(value) { return globalThis.MonitorDomainAPIs
 function monitorBctNodeRoleSummary(node) { return globalThis.MonitorDomainAPIs["node-identity"]["monitorBctNodeRoleSummary"].apply(this, arguments); }
 
 function monitorBctNodeRoleRank(node) {
+  if (node?.dotKey && node?.nodeLabel === "O") return -1;
   const tags = Array.isArray(node?.roleTags)
     ? node.roleTags.map((tag) => String(tag).trim().toLowerCase())
     : [];
@@ -6688,6 +6689,8 @@ function monitorBctNodeLocationText(node, desktopPosition) {
   return desktopPosition >= 0 ? `D${desktopPosition + 1}` : "D?";
 }
 function monitorBctNodeSurfaceText(node) {
+  if (node?.codexLocalReference) return "Codex";
+  if (node?.dotKey) return "Dot";
   if (!String(node?.conversationKey || "").trim()) return "New";
   const kind = String(node?.surfaceKind || "UNKNOWN").trim().toUpperCase();
   // The browser product surface is Chat or Work. CODEX_MARKERS describe who
@@ -6708,12 +6711,12 @@ function monitorBctNodeBurden(node) {
   return Object.freeze({ label, title: evidence.length ? evidence.join(" · ") : "탭 부담 관측값 없음" });
 }
 function openMonitorBctRenameEditor(node, row) {
-  if (!monitorBctShell?.updateConversationScope || !node?.conversationKey) {
+  if (!monitorBctShell?.updateConversationScope || (!node?.conversationKey && !node?.dotKey && !node?.codexLocalReference)) {
     setMonitorStatus("이 대화의 영속 신원을 확인할 수 없어 정보를 바꾸지 않았습니다.", false, 5000);
     return;
   }
   const canRenameTitle = Boolean(
-    monitorBctShell?.renameConversation
+    !node?.dotKey && !node?.codexLocalReference && monitorBctShell?.renameConversation
     && node?.sessionId
     && node?.windowId !== undefined
     && node?.tabId !== undefined
@@ -6749,6 +6752,17 @@ function openMonitorBctRenameEditor(node, row) {
     facts.append(line);
   };
   fact("대화 UUID", String(node.conversationKey || ""));
+  if (node.codexLocalReference) {
+    fact("Codex local reference", node.codexLocalReference);
+    fact("식별 범위", "비공개 로컬 바인딩 관찰 · BCT 실행 식별자 아님");
+    fact("지원", "회색 C 표시 번호와 정확한 탭 관찰 · 전송/반환 미지원");
+  }
+  if (node.dotKey) {
+    fact("Dot reference", node.dotReference);
+    fact("Dot context", node.dotContextReference);
+    fact("Role", "O · Orchestrator · 지휘관");
+    fact("Chain return", "미지원: 일반 대화 UUID와 반환 경로 결합이 필요합니다.");
+  }
   const mappedHwnd = monitorDisplayHwndForBrowserWindowId(node.windowId, monitorLastAiState, node.instanceId, node.sessionId);
   const nativeLocation = mappedHwnd ? monitorWindowDesktopLocations.get(mappedHwnd) : null;
   const desktopPosition = nativeLocation
@@ -6795,6 +6809,7 @@ function openMonitorBctRenameEditor(node, row) {
     120,
     "비우면 미소속",
   );
+  if (node.dotKey) { scopeField.control.value = ""; scopeField.control.disabled = true; }
   const taskField = makeField("담당 작업", String(node.assignedTask || ""), 240);
   const memoField = makeField("노드 메모", String(node.nodeMemo || ""), 2000);
   const rolesField = makeField(
@@ -6823,6 +6838,11 @@ function openMonitorBctRenameEditor(node, row) {
   confirm.className = "is-primary";
   confirm.textContent = "확인";
   actions.append(recovery, cancel, confirm);
+  if (node.codexLocalReference) {
+    for (const field of [scopeField,rolesField,taskField,memoField]) field.control.disabled = true;
+    confirm.hidden = true;
+    titleHint.textContent = "Codex 비공개 로컬 바인딩은 관찰만 합니다. BCT 전송·반환 식별자로 쓰지 않습니다.";
+  }
   dialog.append(head, facts, titleField.label, titleHint, scopeField.label, rolesField.label, taskField.label, memoField.label, roleHint, error, actions);
   overlay.append(dialog);
   document.body.append(overlay);
@@ -6855,6 +6875,7 @@ function openMonitorBctRenameEditor(node, row) {
     event.preventDefault();
     const editor = monitorBctRenameEditor;
     if (!editor || editor.busy) return;
+    if (node.codexLocalReference) return closeMonitorBctRenameEditor();
     const title = editor.canRenameTitle ? editor.input.value.trim() : currentTitle;
     const scopeName = editor.scopeInput.value.trim();
     const roleTags = monitorBctRoleTagsFromText(editor.rolesInput.value);
@@ -6899,10 +6920,15 @@ function openMonitorBctRenameEditor(node, row) {
         nodeMemo,
       });
       const nextSnapshot = (Array.isArray(monitorBctWindowNodesCache) ? monitorBctWindowNodesCache : [])
-        .map((candidate) => candidate?.conversationKey === node.conversationKey
+        // DOT and local Codex surfaces deliberately have no conversation UUID.
+        // A blank-key comparison would therefore update unrelated special nodes.
+        .map((candidate) => (node.dotKey
+          ? candidate?.dotKey === node.dotKey
+          : candidate?.conversationKey === node.conversationKey)
           ? Object.freeze({
             ...candidate,
             title: title || candidate.title,
+            dotRevision: Number(savedScope?.revision ?? candidate.dotRevision ?? 0),
             scopeId: String(savedScope?.scope_id ?? candidate.scopeId ?? ""),
             scopeName: String(savedScope?.scope_name ?? scopeName),
             roleTags: Object.freeze(Array.isArray(savedScope?.role_tags) ? [...savedScope.role_tags] : [...roleTags]),
@@ -6920,7 +6946,7 @@ function openMonitorBctRenameEditor(node, row) {
     } catch (renameError) {
       editor.busy = false;
       editor.input.disabled = !editor.canRenameTitle;
-      editor.scopeInput.disabled = false;
+      editor.scopeInput.disabled = Boolean(node.dotKey);
       editor.rolesInput.disabled = false;
       editor.taskInput.disabled = false;
       editor.memoInput.disabled = false;
@@ -7125,7 +7151,7 @@ function installMonitorBctRoleLongPress(row, node) {
       // refresh also scans RCC and physical window identity, so waiting for it
       // made a simple Supervisor toggle look stuck for several seconds.
       const nextSnapshot = (Array.isArray(monitorBctWindowNodesCache) ? monitorBctWindowNodesCache : [])
-        .map((candidate) => candidate?.conversationKey === node.conversationKey
+        .map((candidate) => (node.dotKey ? candidate?.dotKey === node.dotKey : candidate?.conversationKey === node.conversationKey)
           ? Object.freeze({
             ...candidate,
             scopeId: String(saved?.scope_id ?? saved?.project_id ?? (role === "supervisor" ? "" : candidate.scopeId) ?? ""),
@@ -7391,6 +7417,8 @@ function renderMonitorBctWindowNodes(nodes) {
     for (const [index, node] of group.nodes.entries()) {
     const row = document.createElement("article");
     row.className = "monitor-bct-node-row";
+    if (node.dotKey && node.nodeLabel === "O") row.classList.add("monitor-bct-orchestrator");
+    if (node.codexLocalReference) row.classList.add("monitor-bct-codex-local");
     row.dataset.tabId = String(node.tabId);
     row.dataset.windowId = String(node.windowId);
     row.dataset.instanceId = String(node.instanceId || "");
@@ -7416,7 +7444,9 @@ function renderMonitorBctWindowNodes(nodes) {
     const number = document.createElement("span");
     number.className = "monitor-bct-node-number";
     number.textContent = node.nodeLabel || "N?";
-    number.title = node.nodeLabel
+    number.title = node.codexLocalReference
+      ? "Codex 비공개 로컬 참조의 조회 전용 C 번호 · 전송 대상 아님"
+      : node.nodeLabel
       ? "BCT 대화망에 등록된 표시 전용 번호"
       : "관측됨 · 대화망 등록 전이라 표시 번호가 없습니다";
 
@@ -7504,7 +7534,7 @@ function renderMonitorBctWindowNodes(nodes) {
       event.preventDefault();
       row.click();
     });
-    if (node.conversationKey) {
+    if (node.conversationKey || node.dotKey || node.codexLocalReference) {
       row.addEventListener("contextmenu", (event) => {
         event.preventDefault();
         monitorBctSelectedNodeKey = monitorBctNodeSelectionKey(node);
