@@ -163,6 +163,26 @@ saveButton.disabled = false;
 assert.equal(vm.runInContext('enabledRenameSaveControl(saveScope) === saveButton', context), true,
   'the exact enabled Korean Save control must be preferred after React updates');
 
+const trackedInput = new context.HTMLInputElement();
+trackedInput.value = '내닷';
+trackedInput.focus = () => {};
+trackedInput.select = () => {};
+const trackedEvents = [];
+let trackedPrevious = null;
+trackedInput._valueTracker = { setValue: (value) => { trackedPrevious = value; } };
+trackedInput.dispatchEvent = (event) => { trackedEvents.push(event.constructor.name); };
+document.execCommand = (_command, _showUi, value) => {
+  trackedInput.value = value;
+  return true;
+};
+context.trackedInput = trackedInput;
+assert.equal(vm.runInContext("setRenameEditorValue(trackedInput, '내닷 확인3')", context), 'EDIT_COMMAND',
+  'the Dot name editor should retain the browser editing path');
+assert.equal(trackedPrevious, '내닷',
+  'the React value tracker must be restored to the pre-edit value before input dispatch');
+assert.deepEqual(trackedEvents, ['InputEvent', 'Event'],
+  'the controlled Dot input must receive input and change after execCommand');
+
 const rolelessRenameInput = visibleNode({ 'aria-label': '이름' });
 rolelessRenameInput.closest = () => null;
 const rolelessRenamePanel = visibleNode();

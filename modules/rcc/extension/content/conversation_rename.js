@@ -539,7 +539,10 @@ async function openConversationRenameEditor(key) {
 }
 
 function setRenameEditorValue(input, title) {
+  const previousValue = input.value !== undefined
+    ? String(input.value || '') : String(input.textContent || '');
   input.focus();
+  let method = 'NATIVE_SETTER';
   if (input instanceof HTMLInputElement || input instanceof HTMLTextAreaElement) {
     input.select?.();
     // execCommand follows the same browser editing path as keyboard input and
@@ -552,13 +555,21 @@ function setRenameEditorValue(input, title) {
       inserted = false;
     }
     if (inserted && input.value === title) {
-      input.dispatchEvent(new Event('change', { bubbles: true }));
-      return 'EDIT_COMMAND';
+      method = 'EDIT_COMMAND';
+    } else {
+      const proto = input instanceof HTMLTextAreaElement
+        ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+      const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+      if (setter) setter.call(input, title); else input.value = title;
     }
-    const proto = input instanceof HTMLTextAreaElement
-      ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
-    const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
-    if (setter) setter.call(input, title); else input.value = title;
+    // React keeps an internal value tracker.  Both execCommand and a native
+    // prototype setter can update the DOM before React's delegated input
+    // handler runs, making the handler treat the event as unchanged. Restore
+    // the tracker to the pre-edit value so the real input event below crosses
+    // the same controlled-input boundary as user typing.
+    try {
+      input._valueTracker?.setValue?.(previousValue);
+    } catch (_) {}
   } else {
     input.textContent = title;
   }
@@ -566,7 +577,7 @@ function setRenameEditorValue(input, title) {
     bubbles: true, inputType: 'insertText', data: title,
   }));
   input.dispatchEvent(new Event('change', { bubbles: true }));
-  return 'NATIVE_SETTER';
+  return method;
 }
 
 function enabledRenameSaveControl(scope) {
