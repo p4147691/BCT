@@ -276,6 +276,14 @@ function loadModule() {
     "switching to a ChatGPT tab reports selection as it becomes visible");
   assert.match(bootstrap, /const reportDirectTabSelection = \(\) => \{[\s\S]{0,240}const key = directConversationKey\(\);[\s\S]{0,240}conversationKey:key/,
     "the ChatGPT home/new-chat route reports its selected tab even with an empty conversation key");
+  assert.match(bootstrap, /const directRouteUrl = \(\) => `\$\{location\.origin\}\$\{location\.pathname\}\$\{location\.search\}\$\{location\.hash\}`;/,
+    "the ChatGPT bootstrap must identify the full SPA route without inventing a conversation UUID");
+  assert.match(bootstrap, /monitor-chat-route-changed/,
+    "a same-tab ChatGPT History API route change must notify Monitor");
+  assert.match(bootstrap, /new MutationObserver\(\(\)=>\{ reportDirectRouteChange\(\); scheduleDirectReport\(false\); \}\)/,
+    "existing coalesced DOM observation must detect an SPA route change without a polling loop");
+  assert.match(background, /message\?\.type === "monitor-chat-route-changed"[\s\S]{0,900}chrome\.tabs\.get\(tabId\)[\s\S]{0,700}publishMonitorChatNavigation\(tabId, url, "content-route"/,
+    "the background must re-read only the exact sender tab before refreshing a content-reported route");
   assert.match(monitor, /syncMonitorAllDesktopThumbnailNodeBadges\(\);/,
     "selection changes must reproject thumbnail number tokens immediately");
   assert.match(monitor, /renderMonitorBctWindowNodes\(monitorBctWindowNodesCache\);\s*syncMonitorBctNodeTargetHighlight\(\);/,

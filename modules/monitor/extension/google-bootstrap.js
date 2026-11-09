@@ -43,6 +43,14 @@
     return null;
   };
   const directConversationKey = () => { const m=location.pathname.match(/^\/c\/([^/?#]+)/); return m ? m[1] : ""; };
+  const directRouteUrl = () => `${location.origin}${location.pathname}${location.search}${location.hash}`;
+  let directLastRouteUrl = directRouteUrl();
+  const reportDirectRouteChange = () => {
+    const url = directRouteUrl();
+    if (url === directLastRouteUrl) return;
+    directLastRouteUrl = url;
+    try { chrome.runtime.sendMessage({ type:"monitor-chat-route-changed", url, at:Date.now() }).catch(()=>{}); } catch (_) {}
+  };
   const directActivityIndicatorId = "desktop-window-activity-indicator";
   const directSetActivityIndicator = (active) => {
     let node=document.getElementById(directActivityIndicatorId);
@@ -134,7 +142,9 @@
       directReport(false);
     }, document.hidden ? 450 : DIRECT_MUTATION_REPORT_DELAY_MS);
   };
-  new MutationObserver(()=>scheduleDirectReport(false)).observe(document.documentElement,{subtree:true,childList:true,attributes:true,attributeFilter:["data-testid","aria-label","disabled"]});
+  new MutationObserver(()=>{ reportDirectRouteChange(); scheduleDirectReport(false); }).observe(document.documentElement,{subtree:true,childList:true,attributes:true,attributeFilter:["data-testid","aria-label","disabled"]});
+  window.addEventListener("popstate", () => { reportDirectRouteChange(); reportDirectTabSelection(); scheduleDirectReport(true); });
+  window.addEventListener("hashchange", () => { reportDirectRouteChange(); reportDirectTabSelection(); scheduleDirectReport(true); });
   window.addEventListener("focus", () => { reportDirectTabSelection(); scheduleDirectReport(true); });
   document.addEventListener("visibilitychange", () => { if (!document.hidden) { reportDirectTabSelection(); scheduleDirectReport(true); } });
   directReport(true);

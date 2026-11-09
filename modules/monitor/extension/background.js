@@ -2230,6 +2230,20 @@ async function resumePendingMonitorReload() {
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
+  if (message?.type === "monitor-chat-route-changed") {
+    const tabId = Number(sender?.tab?.id);
+    if (!Number.isInteger(tabId) || tabId < 0) return false;
+    // ChatGPT can replace its route through History API without tabs.onUpdated.
+    // Re-read this exact sender tab rather than trusting the page-provided URL
+    // or polling every tab; the normal navigation debounce handles the burst.
+    chrome.tabs.get(tabId).then((tab) => {
+      const url = String(tab?.url || "");
+      void publishMonitorBrowserVisualChange(tabId, "content-route", tab);
+      void publishMonitorChatNavigation(tabId, url, "content-route", tab?.windowId, Boolean(tab?.active));
+    }).catch(() => {});
+    return false;
+  }
+
   if (message?.type === "monitor-register-popup-window") {
     const windowId = Number(sender?.tab?.windowId);
     if (!Number.isInteger(windowId)) { sendResponse({ ok:false }); return false; }
