@@ -10,6 +10,7 @@ const tab = { id: 42, windowId: 7, url: `https://chatgpt.com/c/${conversationKey
 function createHarness(reply = { ok: true, operationId: 'rename-op-1', savedTitle: 'new' }, exactTab = tab) {
   const local = { renameReceiptsV1: {} };
   const sent = [];
+  const executed = [];
   const context = vm.createContext({
     console,
     endpointSessionReady: Promise.resolve(),
@@ -17,10 +18,13 @@ function createHarness(reply = { ok: true, operationId: 'rename-op-1', savedTitl
     RENAME_RECEIPTS_KEY: 'renameReceiptsV1',
     loadState: async () => ({ renameReceipts: { ...local.renameReceiptsV1 } }),
     stateRepository: { setLocal: async (patch) => Object.assign(local, patch) },
-    browserGateway: { getExactTab: async (tabId) => {
-      if (tabId !== 42) throw new Error('missing');
-      return { ...exactTab };
-    } },
+    browserGateway: {
+      getExactTab: async (tabId) => {
+        if (tabId !== 42) throw new Error('missing');
+        return { ...exactTab };
+      },
+      executeScript: async (spec) => { executed.push(spec); return [{ result: reply }]; },
+    },
     isChatTab: (value) => String(value?.url || '').startsWith('https://chatgpt.com/'),
     RelayCore: { conversationKey: (url) => /\/c\/([^/?#]+)/.exec(url)?.[1] || '' },
     sendToChatTab: async (tabId, message) => { sent.push({ tabId, message }); return reply; },
@@ -34,7 +38,7 @@ function createHarness(reply = { ok: true, operationId: 'rename-op-1', savedTitl
     URL,
   });
   vm.runInContext(source, context, { filename: 'conversation_rename_service.js' });
-  return { context, local, sent };
+  return { context, local, sent, executed };
 }
 
 (async () => {
@@ -87,12 +91,14 @@ function createHarness(reply = { ok: true, operationId: 'rename-op-1', savedTitl
   const dotResult = await dotHarness.context.renameDot(dotRequest, 'dot-request-1');
   assert.equal(dotResult.ok, true);
   assert.equal(dotResult.dotKey, dotKey);
-  assert.equal(dotHarness.sent[0].message.type, 'relay:renameDot');
-  assert.equal(dotHarness.sent[0].message.dotKey, dotKey);
-  assert.equal(dotHarness.sent[0].message.conversationKey, undefined);
+  assert.equal(dotHarness.executed.length, 1);
+  assert.equal(dotHarness.executed[0].world, 'MAIN');
+  assert.equal(dotHarness.executed[0].target.tabId, 42);
+  assert.equal(dotHarness.executed[0].args[0].dotKey, dotKey);
+  assert.equal(dotHarness.executed[0].args[0].conversationKey, undefined);
   const dotReplay = await dotHarness.context.renameDot(dotRequest, 'dot-request-1');
   assert.equal(dotReplay.replayed, true);
-  assert.equal(dotHarness.sent.length, 1, 'Dot terminal replay must not repeat UI effect');
+  assert.equal(dotHarness.executed.length, 1, 'Dot terminal replay must not repeat UI effect');
 
   const dotNoopHarness = createHarness(
     { ok: false, effectState: 'UNKNOWN', error: 'must-not-dispatch' },
@@ -105,7 +111,7 @@ function createHarness(reply = { ok: true, operationId: 'rename-op-1', savedTitl
   const dotNoop = await dotNoopHarness.context.renameDot(dotNoopRequest, 'dot-noop-request-1');
   assert.equal(dotNoop.ok, true);
   assert.equal(dotNoop.noUiEffect, true);
-  assert.equal(dotNoopHarness.sent.length, 0, 'same-title Dot rename must not open the UI');
+  assert.equal(dotNoopHarness.executed.length, 0, 'same-title Dot rename must not open the UI');
 
   const dotUnknownHarness = createHarness(
     { ok: false, effectState: 'UNKNOWN', error: 'DOT_RENAME_UI_NOT_VERIFIED' },
@@ -119,7 +125,7 @@ function createHarness(reply = { ok: true, operationId: 'rename-op-1', savedTitl
     dotUnknownRequest, 'dot-unknown-request-1'
   );
   assert.equal(dotUnknown.state, 'UNKNOWN');
-  assert.equal(dotUnknownHarness.sent.length, 1);
+  assert.equal(dotUnknownHarness.executed.length, 1);
   dotUnknownHarness.context.browserGateway.getExactTab = async () => ({
     ...tab, url: `https://chatgpt.com/dots/${dotKey}`, title: 'resolved dot',
   });
@@ -128,7 +134,7 @@ function createHarness(reply = { ok: true, operationId: 'rename-op-1', savedTitl
   );
   assert.equal(dotReconciled.ok, true);
   assert.equal(dotReconciled.reconciled, true);
-  assert.equal(dotUnknownHarness.sent.length, 1, 'reconciliation must not repeat the UI effect');
+  assert.equal(dotUnknownHarness.executed.length, 1, 'reconciliation must not repeat the UI effect');
   assert.equal(dotUnknownHarness.local.renameReceiptsV1['dot-unknown-op-1'].terminal, true);
 
   const mismatchedDot = createHarness(
@@ -140,7 +146,7 @@ function createHarness(reply = { ok: true, operationId: 'rename-op-1', savedTitl
   }, 'dot-request-2');
   assert.equal(mismatch.ok, false);
   assert.equal(mismatch.error, 'DOT_RENAME_TAB_IDENTITY_MISMATCH');
-  assert.equal(mismatchedDot.sent.length, 0);
+  assert.equal(mismatchedDot.executed.length, 0);
 
   console.log('conversation rename service v1: PASS');
 })().catch((error) => {
