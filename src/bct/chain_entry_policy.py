@@ -2,17 +2,17 @@
 
 This module does not infer a user's natural-language request or send anything.
 It records the public routing rule used by callers and catalogue descriptions:
-ordinary assigned work enters through Chain Message; Task Message and Send
+ordinary assigned work enters through Chain Recipe; Task Message and Send
 Message are opt-in paths requested by name.
 """
 
 from __future__ import annotations
 
 
-DEFAULT_ENTRY = "CHAIN_MESSAGE"
+DEFAULT_ENTRY = "CHAIN_RECIPE"
 _ENTRIES = {
-    "CHAIN_MESSAGE": {
-        "tool": "bct_chain_message",
+    "CHAIN_RECIPE": {
+        "tool": "bct_chain_recipe",
         "reason": "ORDINARY_REQUEST_DEFAULT",
         "requires_explicit_request": False,
     },
@@ -32,7 +32,7 @@ _ENTRIES = {
 def select_message_entry(requested_entry: str = "") -> dict[str, object]:
     """Return the one public message entry selected by an explicit request.
 
-    An empty request is deliberately the ordinary-work default, Chain Message.
+    An empty request is deliberately the ordinary-work default, Chain Recipe.
     Callers that interpret human language must only pass TASK_MESSAGE or
     SEND_MESSAGE when the user actually named that route; this function never
     guesses intent from message contents.
@@ -58,7 +58,7 @@ def public_entry_policy() -> dict[str, object]:
             _ENTRIES["SEND_MESSAGE"]["tool"],
         ],
         "rule": (
-            "Ordinary assigned work uses Chain Message. Task Message and "
+            "Ordinary assigned work uses Chain Recipe. Task Message and "
             "Send Message require an explicit user request by name."
         ),
     }

@@ -22,10 +22,10 @@ bct_status                         read the current Core, RCC and Monitor facts
   -> bct_run_plan (when needed)     record a plan; it does not execute it
   -> choose one execution route
        A. session-start/node-sync -> bct_task_run -> one orchestration dispatch
-       B. bct_chain_message -> prearm -> one exact Worker message -> continuation recipe
+       B. bct_chain_recipe -> prearm -> one exact Worker message -> continuation recipe
 ```
 
-`bct_task_run` and `bct_chain_message` are not aliases.  The first publicly
+`bct_task_run` and `bct_chain_recipe` are not aliases.  The first publicly
 dispatches one prepared orchestration assignment.  The second is the current
 one-Worker durable message-flow entry point.  The continuation primitives
 described here live only below route B after its prearm; they do not turn it

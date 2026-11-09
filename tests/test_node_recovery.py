@@ -348,7 +348,7 @@ class _Operations:
 
 
 class NodeRecoveryPublicTests(unittest.IsolatedAsyncioTestCase):
-    async def test_check_then_pause_fences_public_chain_message(self):
+    async def test_check_then_pause_fences_common_delivery(self):
         with tempfile.TemporaryDirectory() as root:
             store = Store(Path(root) / "state.sqlite")
             store.create_work(Work(
@@ -369,14 +369,15 @@ class NodeRecoveryPublicTests(unittest.IsolatedAsyncioTestCase):
                 "work_id": "work", "case_id": "case-public", "reason": "stalled",
             })
             self.assertEqual("PAUSED", paused["pause_node"]["state"])
-            _, chain = await mcp.call_tool("bct_chain_message", {
+            _, chain = await mcp.call_tool("bct_task_message", {
                 "work_id": "work", "task_id": "task-2", "operation_id": "chain-2",
                 "action": "start", "instance_id": "instance", "session_id": "a" * 32,
                 "target_tab_id": 13, "target_window_id": 12,
                 "target_conversation_key": OLD, "origin_conversation_key": NEW,
                 "origin_instance_id": "instance", "instruction": "continue",
+                "acceptance": "Return the observed result to the Manager.",
             })
-            self.assertEqual("PAUSED", chain["status"])
+            self.assertEqual("PAUSED", chain["status"], chain)
             self.assertEqual([], ops.calls)
 
 

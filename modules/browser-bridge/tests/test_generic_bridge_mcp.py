@@ -80,7 +80,7 @@ class GenericBridgeMcpTests(unittest.TestCase):
                 self.assertEqual(0, process.returncode, process.stderr.decode("utf-8", "replace"))
                 replies = decode_all(process.stdout)
                 self.assertEqual(6, len(replies))
-                self.assertIn("bct_chain_message", replies[0]["tools"])
+                self.assertIn("bct_chain_recipe", replies[0]["tools"])
                 self.assertIn("bct_execute", replies[0]["tools"])
                 self.assertTrue(replies[1]["ok"])
                 self.assertTrue(replies[2]["ok"])
