@@ -35,10 +35,10 @@
       "kind": "full_recipe",
       "maturity": "bounded",
       "implementation": [
-        {"path": "src/bct/mcp_server.py", "symbol": "bct_chain_message"},
+        {"path": "src/bct/mcp_server.py", "symbol": "bct_chain_recipe"},
         {"path": "src/bct/chain_direction.py", "symbol": "prepare_direction_review / compose_target_direction"}
       ],
-      "contract": "General Chain Message recipe: current reality and questions for A, A-authored direction and per-recipient network decisions, exact first delivery and background response watch; B authors its own Execute Plan, then SELF or MANAGER. Manager return re-enters prepare for fresh A judgment. Existing exact-identity calls remain supported; BCT does not run an AI judgment loop internally.",
+      "contract": "General Chain Recipe: current reality and questions for A, A-authored direction and per-recipient network decisions, exact first delivery and background response watch; B authors its own Execute Plan, then SELF or MANAGER. Manager return re-enters prepare for fresh A judgment. BCT does not run an AI judgment loop internally.",
       "effects": ["direction-and-target-ledger", "declared-conversation-network-updates", "exact-browser-message", "durable-response-watch"],
       "safety": ["actual-ai-turn-boundaries", "fresh-recipient-uuid", "role-label-is-advisory", "per-target-instructions-and-receipts", "work-authorization", "partial-effects-reported", "unknown-no-replay"],
       "used_by": ["ordinary-user-assigned-work"]
@@ -51,7 +51,7 @@
         {"path": "src/bct/component_library.py", "symbol": "discover / get_manual_guidance"},
         {"path": "src/bct/mcp_server.py", "symbol": "bct_capabilities"}
       ],
-      "contract": "Read-only reusable-part search, exact runtime tool metadata and one packaged Chain Message manual shared by Chat, Work and Codex. Source-backed quick guidance is included in discovery, Chain prepare and new per-target instructions; looking up bct_chain_message returns the full manual. Existing recorded instructions remain immutable. Selection remains an A/B decision. Generated bundle is checked against canonical docs and affected sources.",
+      "contract": "Read-only reusable-part search, exact runtime tool metadata and one packaged Chain Recipe manual shared by Chat, Work and Codex. Source-backed quick guidance is included in discovery, Chain prepare and new per-target instructions; looking up bct_chain_recipe returns the full manual. Existing recorded instructions remain immutable. Selection remains an A/B decision. Generated bundle is checked against canonical docs and affected sources.",
       "effects": [],
       "safety": ["no-tool-execution", "no-permission-grant", "runtime-schema-authority", "internal-parts-not-callable-tools", "source-not-live-proof"],
       "used_by": ["bct.manager_direction", "bct.target_execution_plan", "bct.chain_message"]
@@ -70,7 +70,7 @@
           "symbol": "bct_capabilities"
         }
       ],
-      "contract": "Select Chain Message as the sole ordinary-work message entry; Task Message and Send Message are explicit user-request opt-ins.",
+      "contract": "Select Chain Recipe as the sole ordinary-work message entry; Task Message and Send Message are explicit user-request opt-ins.",
       "effects": [],
       "safety": [
         "no-natural-language-guessing",
@@ -96,10 +96,10 @@
         },
         {
           "path": "src/bct/mcp_server.py",
-          "symbol": "bct_chain_message(action=preflight)"
+          "symbol": "bct_chain_recipe(action=preflight)"
         }
       ],
-      "contract": "Read-only existing-Work browser-authority preflight and opt-in explicit NEXT TASK output instruction with exact preview SHA; default Chain Message text and durable watch semantics remain unchanged.",
+      "contract": "Read-only existing-Work browser-authority preflight and opt-in explicit NEXT TASK output instruction with exact preview SHA; default Chain Recipe text and durable watch semantics remain unchanged.",
       "effects": [],
       "safety": [
         "never-grants-work-actions",
@@ -580,7 +580,7 @@
         {"path": "src/bct/node_recovery.py", "symbol": "NodeRecoveryLedger.commit_replace"},
         {"path": "src/bct/mcp_server.py", "symbol": "bct_replace_node"}
       ],
-      "contract": "Prepare an AI-chosen successor, send inheritance through Chain Message, and commit only after watch proof.",
+      "contract": "Prepare an AI-chosen successor, send inheritance through the common Chain Recipe delivery path, and commit only after watch proof.",
       "effects": ["chain-message", "conversation-network-transfer", "recovery-case-state"],
       "safety": ["bct-never-chooses-successor", "atomic-conflict-rollback", "successor-watch-required"],
       "used_by": ["node.recovery"]

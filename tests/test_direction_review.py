@@ -138,10 +138,11 @@ class DirectionReviewTests(unittest.IsolatedAsyncioTestCase):
         return await self.call("bct_chain_recipe", action="save", entry_context_id=prepared["entry_context_id"], **arguments)
 
     async def start(self, **overrides):
-        return await self.call("bct_chain_message", **{
+        arguments = {
             "work_id": self.work.work_id, "task_id": "review-task", "operation_id": "review-operation",
-            "chain_direction_id": "direction-review", **overrides,
-        })
+            "direction_id": "direction-review", **overrides,
+        }
+        return await self.call("bct_chain_recipe", action=arguments.pop("action", "send"), **arguments)
 
     def sends(self):
         return [call for call in self.ops.calls if call["arguments"].get("command") == "send-message"]
@@ -150,7 +151,7 @@ class DirectionReviewTests(unittest.IsolatedAsyncioTestCase):
         upsert_project(self.store, project_id="old-project", display_name="Historical network")
         with self.store._readonly() as db:
             before = list(db.execute("SELECT name FROM sqlite_master ORDER BY name"))
-        result = await self.call("bct_chain_message", instruction="Finish the translation program.")
+        result = await self.call("bct_chain_recipe", source_text="Finish the translation program.")
         self.assertEqual("RECIPE_READY", result["status"], result)
         self.assertNotIn("questions", result["direction"])
         self.assertIn("Historical network", json.dumps(result["state"]["stored_networks"]))
@@ -699,8 +700,6 @@ class DirectionReviewTests(unittest.IsolatedAsyncioTestCase):
     async def test_caller_cannot_override_recorded_target_or_instruction(self):
         await self.save()
         self.assertEqual("DIRECTION_TARGET_NOT_DECLARED", (await self.start(target_conversation_key=key("d")))["reason"])
-        self.assertEqual("DIRECTION_USES_RECORDED_IDENTITIES", (await self.start(target_tab_id=50))["reason"])
-        self.assertEqual("DIRECTION_USES_RECORDED_IDENTITIES", (await self.start(instruction="Different"))["reason"])
         self.assertEqual([], self.ops.calls)
 
     async def test_exact_return_reenters_same_questions_with_provenance(self):
@@ -723,7 +722,7 @@ class DirectionReviewTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("RECIPE_READY", recipe_return["status"], recipe_return)
         self.assertEqual("EXACT_RETURN_BOUND", recipe_return["input"]["connection"])
         self.assertEqual("c" * 64, recipe_return["input"]["source_result_sha256"])
-        result = await self.call("bct_chain_message", action="prepare", work_id=self.work.work_id,
+        result = await self.call("bct_chain_recipe", action="prepare", work_id=self.work.work_id,
             source_kind="MANAGER_RETURN", source_task_id="returned-b", source_generation=1)
         self.assertEqual("RECIPE_READY", result["status"], result)
         self.assertEqual("c" * 64, result["input"]["source_result_sha256"])
@@ -731,7 +730,7 @@ class DirectionReviewTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Tests passed.", json.dumps(result["input"]["source_return"]))
         self.assertEqual("NOT_DECLARED", result["state"]["return_execute_plan_check"]["status"])
         self.assertNotIn("questions", result["direction"])
-        invalid = await self.call("bct_chain_message", action="prepare", work_id=self.work.work_id,
+        invalid = await self.call("bct_chain_recipe", action="prepare", work_id=self.work.work_id,
             source_kind="MANAGER_RETURN", source_task_id="missing", source_generation=1)
         self.assertEqual("CHAIN_DIRECTION_RETURN_NOT_EXACT", invalid["reason"])
         self.assertEqual([], self.ops.calls)
@@ -800,19 +799,12 @@ class DirectionReviewTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("return-direction", saved["chain_direction"]["chain_branch"]["parent_direction_id"])
         self.assertEqual("MANAGER_RETURN", saved["chain_direction"]["chain_branch"]["parent_step_id"])
         self.assertEqual("RESUME", saved["chain_direction"]["chain_branch"]["kind"])
-        legacy_route = await self.call(
-            "bct_prepare_supervisor_chain", work_id=self.work.work_id,
-            direction_id="return-to-supervisor",
-        )
-        self.assertEqual("INVALID_REQUEST", legacy_route["status"], legacy_route)
-        self.assertEqual("SUPERVISOR_ROUTE_LEGACY_COMPATIBILITY_ONLY", legacy_route["reason"])
         started = await self.call(
             "bct_chain_recipe", action="send", work_id=self.work.work_id,
             direction_id="return-to-supervisor", task_id="supervisor-review",
             operation_id="supervisor-review-operation",
         )
         self.assertEqual("STARTED", started["status"], started)
-        self.assertNotIn("supervisor_route", started)
         self.assertEqual({B, C}, {
             call["arguments"]["conversation_key"] for call in self.sends()
         })

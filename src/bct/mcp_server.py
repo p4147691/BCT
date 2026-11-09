@@ -42,7 +42,6 @@ MCP_PRINCIPAL_ID = "bct-mcp-local"
 _GENERAL_TOOLS = (
     "bct_capabilities", "bct_status", "queue_message", "bct_get_conversation_network", "bct_check_conversation_network", "scan_code_blocks", "organize_code_blocks",
     "bct_execution_context", "bct_set_direction", "bct_get_direction", "bct_chain_branch",
-    "bct_prepare_supervisor_chain",
     "bct_set_execute_plan", "bct_get_execute_plan", "bct_set_project_plan",
     "bct_check_node", "bct_recheck_node", "bct_pause_node", "bct_replace_node", "bct_reset_node",
     "bct_work_create", "bct_operation_get",
@@ -139,7 +138,7 @@ def build_mcp(
     server = FastMCP(
         "BCT",
         instructions=(
-            "For ordinary assigned work, begin with bct_chain_message(instruction=the request) "
+            "For ordinary assigned work, begin with bct_chain_recipe(instruction=the request) "
             "to read current reality and enter the Chain Recipe Direction R stage. A writes the "
             "refined direction; do not delegate its internal judgment to the user. Reuse an appropriate bounded Work "
             "or create one before effects, then use the matching bct_<capability> tools. "
@@ -147,7 +146,7 @@ def build_mcp(
             "and include_manual=true for the shared source manual. Before using unfamiliar commands, "
             "read their current tool_name contract instead of asking the user to explain BCT. "
             "Chain prepare and capabilities include manual_guidance; "
-            "tool_name=bct_chain_message also returns the full shared manual. Discovery never executes tools. "
+            "tool_name=bct_chain_recipe also returns the full shared manual. Discovery never executes tools. "
             "Reuse operation_id only for the exact same request."
         ),
         stateless_http=True,
@@ -988,8 +987,8 @@ def build_mcp(
     @server.tool(description=(
         "List this runtime's actual tools and capabilities. Optional query searches reusable parts and tools; "
         "tool_name returns the exact current input schema; component_id reads one part; include_manual "
-        "returns the shared Chain Message manual. manual_guidance is always included; "
-        "tool_name=bct_chain_message automatically includes the full manual. "
+        "returns the shared Chain Recipe manual. manual_guidance is always included; "
+        "tool_name=bct_chain_recipe automatically includes the full manual. "
         "Read-only, no Work required. limit/offset paginate search results."
     ), structured_output=True)
     async def bct_capabilities(query: str = "", tool_name: str = "", component_id: str = "",
@@ -1118,7 +1117,7 @@ def build_mcp(
     @server.tool(
         name="bct_chain_recipe",
         description=(
-            "Chain Recipe (full recipe). This entry runs Input R and State R, then presents Write Direction R "
+            "Chain Recipe (full recipe). Read its manual_guidance. This entry runs Input R and State R, then presents Write Direction R "
             "plus the remaining visible recipe sequence. action=send runs the declared "
             "Send Direction R after its saved Direction and target records are available. "
             "action=provision_worker composes the existing create-chat-tab/window, "
@@ -1145,7 +1144,7 @@ def build_mcp(
         branch_kind: str = "PRIMARY", branch_reason: str = "", branch_request_id: str = "",
     ) -> dict[str, Any]:
         """Run one explicit boundary of the Chain Recipe."""
-        if action not in {"prepare", "save", "recover_node", "prepare_send", "apply_network", "send", "provision_worker"}:
+        if action not in {"prepare", "save", "recover_node", "prepare_send", "apply_network", "send", "preflight", "provision_worker"}:
             return {"status": "INVALID_REQUEST", "reason": "CHAIN_RECIPE_ACTION_INVALID"}
         if action == "provision_worker":
             if (not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", task_id)
@@ -1343,7 +1342,7 @@ def build_mcp(
                 "effects": network["effects"],
                 "recipe_progress": chain_recipe_progress(completed_through=6, next_number=7),
             }
-        if action == "send":
+        if action in {"send", "preflight"}:
             if (not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", task_id)
                     or not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", operation_id)):
                 return {"status": "INVALID_REQUEST", "reason": "CHAIN_RECIPE_ID_INVALID"}
@@ -1366,14 +1365,16 @@ def build_mcp(
                     "status": "INVALID_REQUEST", "reason": "CHAIN_RECIPE_SEND_WORK_REQUIRED",
                     "work_observation": {key: value for key, value in work_access.items() if key != "work"},
                 }
-            recovered = await recover_node_recipe(
-                direction=direction, assessment=saved_assessment, work=work,
-            )
-            if recovered["status"] not in {"CHECKED", "SKIPPED"}:
-                return recovered
+            recovered = {"status": "SKIPPED", "reason": "PREFLIGHT_READ_ONLY"}
+            if action == "send":
+                recovered = await recover_node_recipe(
+                    direction=direction, assessment=saved_assessment, work=work,
+                )
+                if recovered["status"] not in {"CHECKED", "SKIPPED"}:
+                    return recovered
             sent = await _run_direction_targets(
                 direction=direction, assessment=saved_assessment, work=work,
-                task_id=task_id, operation_id=operation_id, action="start",
+                task_id=task_id, operation_id=operation_id, action=action,
                 target_conversation_key=target_conversation_key,
                 max_generations=max_generations,
             )
@@ -1964,7 +1965,7 @@ def build_mcp(
                 if route["node_info"].get("generating") is True:
                     results.append({"status": "TARGET_BUSY", "target_conversation_key": target["conversation_key"]})
                     continue
-                result = await bct_chain_message(
+                result = await send_chain_delivery(
                     work_id=work.work_id, task_id=child_task, operation_id=child_op, action="start",
                     chain_direction_id=child["direction_id"],
                     instance_id=route["instance_id"], session_id=route["session_id"],
@@ -2073,40 +2074,7 @@ def build_mcp(
             return {"status": "INVALID_REQUEST", "reason": "CHAIN_DIRECTION_NOT_FOUND"}
         return {"status": "READY", "direction": direction}
 
-    @server.tool(
-        name="bct_chain_message",
-        description=(
-            "DEFAULT ENTRY for ordinary assigned work: call with instruction only or action=prepare "
-            "to read reality and conversation networks and enter the Chain Recipe Direction R stage. "
-            "Read its automatic manual_guidance; bct_capabilities(tool_name='bct_chain_message') "
-            "returns the full shared manual and current schema without local file access. "
-            "After A saves an assessment, action=start with chain_direction_id applies its declared "
-            "conversation-network changes and sends each distinct target instruction through the existing exact path. "
-            "Work/task/operation identifiers are required for effects, not the initial read. Use this route "
-            "unless the user explicitly asks for Task Message or Send Message. "
-            "Start/status/cancel a durable one-target message continuation using "
-            "existing BCT send-message, Delayed Send and their exact receipts. "
-            "For start supply task_id, a unique operation_id prefix, exact RCC "
-            "instance/session and canonical target_/origin_ identity fields, "
-            "and the work instruction text. When chain_direction_id is supplied, "
-            "its saved direction_text is the exact instruction; instruction may "
-            "be omitted, and any supplied copy must match exactly. The command PREARMS BEFORE sending, "
-            "then submits the reserved text under the exact planned operation ID. "
-            "Status reads the owning Work's exact durable watch. "
-            "action=recovery_notices reads durable node-recovery Wake records for one exact "
-            "A return conversation; it does not send or recover a node. "
-            "Use action=preflight to verify existing Work browser authority and exact "
-            "outgoing instruction digest without sending or recording an Operation. "
-            "An opt-in continuation_output_contract=explicit-next-task-v1 appends an "
-            "explicit SELF/MANAGER marker request to both prearm and sent text; it "
-            "never creates a follow-up or relaxes response parsing. "
-            "A must supply the decisions; this recipe does not contain an LLM. "
-            "Existing exact-target calls still use the same send/watch path. Legacy worker_/manager_ "
-            "identity fields remain accepted only for compatibility. No UNKNOWN replay."
-        ),
-        structured_output=True,
-    )
-    async def bct_chain_message(
+    async def send_chain_delivery(
         work_id: str = "", task_id: str = "", operation_id: str = "",
         action: str = "start",
         instance_id: str = "", session_id: str = "",
@@ -2123,41 +2091,6 @@ def build_mcp(
         source_kind: str = "USER", source_task_id: str = "",
         source_generation: int = 0, project: str = "",
     ) -> dict[str, Any]:
-        # An ordinary request can enter here before Work or targets exist.
-        # The same reusable Set Direction stage also handles an exact BA/CA report.
-        if action == "prepare" or (action == "start" and not task_id and not chain_direction_id):
-            if (manager_conversation_key and origin_conversation_key
-                    and manager_conversation_key != origin_conversation_key):
-                return {"status": "INVALID_REQUEST", "reason": "CHAIN_MESSAGE_IDENTITY_CONFLICT"}
-            return await bct_chain_recipe(
-                work_id=work_id, action="prepare", source_text=instruction,
-                source_kind=source_kind, source_task_id=source_task_id,
-                source_generation=source_generation, project=project,
-                report_target_conversation_key=(
-                    origin_conversation_key or manager_conversation_key
-                ),
-            )
-        if action == "recovery_notices":
-            if (not work_id or not re.fullmatch(
-                    r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
-                    manager_conversation_key or "")):
-                return {"status": "INVALID_REQUEST", "reason": "RECOVERY_NOTICES_IDENTITY_REQUIRED"}
-            from bct.send_delayed_message import DurableWatchLedger
-            work = await asyncio.to_thread(bct.store.get_work, work_id)
-            if work.owner_principal_id != principal.principal_id:
-                return {"status": "NOT_FOUND", "work_id": work_id}
-            notices = await asyncio.to_thread(
-                DurableWatchLedger(bct.store).recovery_notices,
-                work_id=work_id,
-                report_target_conversation_key=manager_conversation_key,
-            )
-            return {
-                "status": "OK",
-                "work_id": work_id,
-                "report_target_conversation_key": manager_conversation_key,
-                "notices": notices,
-                "next_action": "AUTHOR_RECOVER_NODE_DIRECTION" if notices else "NONE",
-            }
         if (not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", task_id)
                 or not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", operation_id)):
             return {"status":"INVALID_REQUEST","reason":"CHAIN_MESSAGE_ID_INVALID"}
@@ -2232,7 +2165,6 @@ def build_mcp(
         work = work_access["work"]
 
         direction = None
-        supervisor_route = None
         execution_path = "DIRECTION_DECLARED" if chain_direction_id else "DIRECT_EXACT_TARGET"
         if chain_direction_id:
             loaded_direction = await read_saved_direction(
@@ -2249,106 +2181,13 @@ def build_mcp(
             import json
             assessment = json.loads(direction.get("assessment_json") or "{}")
             if assessment:
-                if (instruction or target_tab or target_window or instance_id or session_id
-                        or origin_conversation or origin_instance):
-                    return {"status":"INVALID_REQUEST","reason":"DIRECTION_USES_RECORDED_IDENTITIES"}
-                if action == "preflight":
-                    return await _run_direction_targets(
-                        direction=direction, assessment=assessment, work=work,
-                        task_id=task_id, operation_id=operation_id, action=action,
-                        target_conversation_key=str(target_conversation or ""),
-                        max_generations=max_generations,
-                    )
-                return await bct_chain_recipe(
-                    action="send", work_id=work_id, direction_id=chain_direction_id,
-                    task_id=task_id, operation_id=operation_id,
-                    target_conversation_key=str(target_conversation or ""),
-                    max_generations=max_generations,
-                )
+                return {"status":"INVALID_REQUEST","reason":"DIRECTION_REQUIRES_TARGET_DELIVERY"}
             if instruction and instruction != direction.get("direction_text"):
                 return {"status":"INVALID_REQUEST","reason":"CHAIN_DIRECTION_TEXT_MISMATCH"}
             if (direction.get("chain_task_id",""), direction.get("chain_operation_id","")) not in {
                     ("",""), (task_id,operation_id)}:
                 return {"status":"INVALID_REQUEST","reason":"CHAIN_DIRECTION_CHAIN_CONFLICT"}
             instruction = str(direction["direction_text"])
-            # A Supervisor route is prepared separately from transport.  It
-            # binds a BA-derived Direction to one fresh C attachment, and the
-            # normal 1:1 Chain primitive merely consumes that exact binding.
-            from bct.chain_supervisor_route import ChainSupervisorRouteLedger
-            try:
-                supervisor_route = await asyncio.to_thread(
-                    ChainSupervisorRouteLedger(bct.store).get,
-                    direction_id=chain_direction_id, work_id=work_id,
-                )
-            except ValueError as exc:
-                return {"status":"INVALID_REQUEST","reason":str(exc)}
-            if supervisor_route is not None:
-                # A tab/window may move between A's first preparation and the
-                # eventual send.  Re-observe C at the effect boundary.  A
-                # route may refresh only for the same conversation before a
-                # chain has been planned; a different candidate is never an
-                # implicit successor.
-                if status_provider is None:
-                    return {"status":"BLOCKED","reason":"SUPERVISOR_ROUTE_STATUS_UNAVAILABLE"}
-                from bct.chain_supervisor_route import resolve_confirmed_supervisor
-                route_snapshot = await asyncio.to_thread(status_provider)
-                route_rcc_scope = status_view(route_snapshot, "rcc")
-                current_target = resolve_confirmed_supervisor(
-                    node_view=status_view(route_snapshot, "node"),
-                    rcc_view=route_rcc_scope.get("rcc") if isinstance(route_rcc_scope, dict) else {},
-                )
-                if current_target.get("status") != "READY":
-                    return current_target
-                current_tuple = (
-                    str(current_target["conversation_key"]), str(current_target["instance_id"]),
-                    str(current_target["session_id"]), int(current_target["tab_id"]),
-                    int(current_target["window_id"]),
-                )
-                bound_tuple = (
-                    str(supervisor_route["conversation_key"]), str(supervisor_route["instance_id"]),
-                    str(supervisor_route["session_id"]), int(supervisor_route["tab_id"]),
-                    int(supervisor_route["window_id"]),
-                )
-                if current_tuple != bound_tuple:
-                    if action == "preflight":
-                        return {"status":"BLOCKED","reason":"SUPERVISOR_ROUTE_STALE_REPREPARE"}
-                    try:
-                        supervisor_route = await asyncio.to_thread(
-                            ChainSupervisorRouteLedger(bct.store).bind,
-                            direction_id=chain_direction_id, work_id=work_id,
-                            target=current_target,
-                        )
-                    except ValueError as exc:
-                        return {"status":"BLOCKED","reason":str(exc)}
-                expected_origin = ""
-                if direction.get("source_kind") == "MANAGER_RETURN":
-                    from bct.send_delayed_message import DurableWatchLedger
-                    context = await asyncio.to_thread(
-                        DurableWatchLedger(bct.store).read_execution_context,
-                        task_id=str(direction.get("source_task_id") or ""),
-                        generation=int(direction.get("source_generation") or 0),
-                    )
-                    expected_origin = str(((context or {}).get("binding") or {}).get(
-                        "manager_conversation_key") or "").lower()
-                if expected_origin and str(origin_conversation or "").lower() != expected_origin:
-                    return {"status":"INVALID_REQUEST","reason":"CHAIN_SUPERVISOR_ROUTE_ORIGIN_MISMATCH"}
-                supplied = any((target_tab, target_window, target_conversation, instance_id, session_id))
-                if supplied:
-                    try:
-                        await asyncio.to_thread(
-                            ChainSupervisorRouteLedger(bct.store).assert_target,
-                            direction_id=chain_direction_id, work_id=work_id,
-                            conversation_key=str(target_conversation or ""),
-                            instance_id=str(instance_id or ""), session_id=str(session_id or ""),
-                            tab_id=target_tab, window_id=target_window,
-                        )
-                    except ValueError as exc:
-                        return {"status":"INVALID_REQUEST","reason":str(exc)}
-                target_tab = int(supervisor_route["tab_id"])
-                target_window = int(supervisor_route["window_id"])
-                target_conversation = str(supervisor_route["conversation_key"])
-                instance_id = str(supervisor_route["instance_id"])
-                session_id = str(supervisor_route["session_id"])
         if (not re.fullmatch(r"[a-f0-9]{32}",str(session_id or "")) or
                 not isinstance(target_tab, int) or target_tab <= 0 or
                 not isinstance(target_window, int) or target_window <= 0):
@@ -2448,8 +2287,7 @@ def build_mcp(
                 "execution_path":execution_path,
                 "chain_direction_id":chain_direction_id,
                 "prearm":armed,"send":sent,
-                **({"chain_direction": direction} if direction is not None else {}),
-                **({"supervisor_route": supervisor_route} if supervisor_route is not None else {})}
+                **({"chain_direction": direction} if direction is not None else {})}
 
     @server.tool(
         name="bct_task_message",
@@ -2478,7 +2316,7 @@ def build_mcp(
         max_rounds: int = 0, generation: int = 1,
     ) -> dict[str, Any]:
         if action in {"status", "cancel"}:
-            result = await bct_chain_message(
+            result = await send_chain_delivery(
                 work_id=work_id, task_id=task_id, operation_id=operation_id,
                 action=action, generation=generation,
             )
@@ -2495,7 +2333,7 @@ def build_mcp(
             )
         except ValueError as exc:
             return {"status":"INVALID_REQUEST","reason":str(exc)}
-        result = await bct_chain_message(
+        result = await send_chain_delivery(
             work_id=work_id, task_id=task_id, operation_id=operation_id,
             action=action, instance_id=instance_id, session_id=session_id,
             target_tab_id=target_tab_id, target_window_id=target_window_id,
@@ -2830,7 +2668,7 @@ def build_mcp(
                 )
                 if action == "prepare":
                     return {"status": "OK", "replace_node": prepared}
-                sent = await bct_chain_message(
+                sent = await send_chain_delivery(
                     work_id=work_id, task_id=inheritance_task_id,
                     operation_id=operation_id, action="start", instance_id=instance_id,
                     session_id=session_id, target_tab_id=target_tab_id,
@@ -3024,63 +2862,6 @@ def build_mcp(
                     "next_safe_step": branch["next_safe_step"]}
         except ValueError as exc:
             return {"status": "INVALID_REQUEST", "reason": str(exc)}
-
-    @server.tool(
-        name="bct_prepare_supervisor_chain",
-        description=(
-            "Legacy compatibility only: prepare A→C only for an older NEW_TASK Direction with no saved "
-            "assessment, anchored to an exact BA "
-            "Manager return. Reads the fresh current node/RCC observation, requires exactly one "
-            "open global Supervisor, and binds that exact C conversation/tab/session to the Direction. "
-            "It never creates a role, elects a Supervisor, sends a message, or guesses a stopped node. "
-            "Call bct_chain_message with this direction afterward; a changed tab can be prepared again "
-            "before sending, but a different C requires a new A Direction. New Directions should use "
-            "the ordinary Chain Recipe targets path for every target role, including Supervisor."
-        ),
-        structured_output=True,
-    )
-    async def bct_prepare_supervisor_chain(work_id: str, direction_id: str) -> dict[str, Any]:
-        try:
-            work = await asyncio.to_thread(bct.store.get_work, work_id)
-        except KeyError:
-            return {"status":"NOT_FOUND","reason":"WORK_NOT_FOUND"}
-        if work.owner_principal_id != principal.principal_id:
-            return {"status":"NOT_FOUND","reason":"WORK_NOT_FOUND"}
-        saved_direction = await read_saved_direction(work_id=work_id, direction_id=direction_id)
-        if saved_direction["status"] != "READY":
-            return saved_direction
-        import json
-        try:
-            assessment = json.loads(saved_direction["direction"].get("assessment_json") or "{}")
-        except (TypeError, ValueError):
-            return {"status":"INVALID_REQUEST","reason":"CHAIN_DIRECTION_ASSESSMENT_INVALID"}
-        if assessment:
-            return {
-                "status": "INVALID_REQUEST",
-                "reason": "SUPERVISOR_ROUTE_LEGACY_COMPATIBILITY_ONLY",
-                "next": "Use bct_chain_recipe(action='send') for this declared target.",
-            }
-        if status_provider is None:
-            return {"status":"UNAVAILABLE","reason":"SUPERVISOR_ROUTE_STATUS_UNAVAILABLE"}
-        from bct.chain_supervisor_route import (
-            ChainSupervisorRouteLedger, resolve_confirmed_supervisor,
-        )
-        snapshot = await asyncio.to_thread(status_provider)
-        rcc_scope = status_view(snapshot, "rcc")
-        target = resolve_confirmed_supervisor(
-            node_view=status_view(snapshot, "node"),
-            rcc_view=rcc_scope.get("rcc") if isinstance(rcc_scope, dict) else {},
-        )
-        if target.get("status") != "READY":
-            return target
-        try:
-            route = await asyncio.to_thread(
-                ChainSupervisorRouteLedger(bct.store).bind,
-                direction_id=direction_id, work_id=work_id, target=target,
-            )
-        except ValueError as exc:
-            return {"status":"INVALID_REQUEST","reason":str(exc)}
-        return {"status":"READY","supervisor_route":route}
 
     @server.tool(
         name="bct_set_execute_plan",
