@@ -166,6 +166,7 @@ files = [
   "src/bct/rcc_protected_install.py",
   "src/bct/monitor_ui_layout.py",
   "src/bct/bottleneck_ack.py",
+  "src/bct/chain_manager_recovery.py",
   "src/bct/manager_decision_recovery.py",
   "src/bct/manager_succession_recovery.py",
   "src/bct/worker_dispatch_recovery.py",

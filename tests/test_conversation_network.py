@@ -12,7 +12,7 @@ from bct.conversation_network import (
     conversation_display_order_directory, conversation_scope_directory,
     patch_conversation_role_tags, project_view, record_monitor_snapshot,
     resolve_project_id, scope_directory, set_membership, upsert_conversation, upsert_project,
-    transfer_conversation_manager_role,
+    transfer_conversation_manager_role, manager_role_transfer_receipt,
 )
 from bct.core.store import Store
 
@@ -114,6 +114,14 @@ class ConversationNetworkTests(unittest.TestCase):
         )
         self.assertCountEqual(["계획"], moved["predecessor_role_tags"])
         self.assertCountEqual(["Worker", "실행", "Manager"], moved["role_tags"])
+        self.assertEqual(
+            moved["transfer_id"],
+            manager_role_transfer_receipt(
+                self.store, project_id=manager["scope_id"],
+                predecessor_conversation_key=MANAGER,
+                successor_conversation_key=WORKER,
+            )["transfer_id"],
+        )
         current = conversation_scope_directory(
             self.store, conversation_keys=[MANAGER, WORKER]
         )

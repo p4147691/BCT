@@ -9,6 +9,7 @@ from pathlib import Path
 from bct.service import BCT
 from bct.chain_direction import ChainDirectionLedger
 from bct.chain_execution_plan import ChainExecutionPlanLedger
+from bct.chain_manager_recovery import ChainManagerRecoveryLedger
 from bct.chain_worker_provision import ChainWorkerProvisionRecipe
 from bct.core.models import Principal, Outcome
 from bct.features.rcc import BrowserFeature
@@ -22,6 +23,7 @@ INSTANCE = "instance123"
 SESSION = "a" * 32
 WORKER = "6ae54613-5be8-83ee-9c47-1486efa232d8"
 MANAGER = "6ae467d4-6d64-83e8-9b3e-c8c8aeb91bb3"
+SUPERVISOR = "8ce76835-7df0-85aa-be69-36a8cfc454fa"
 SUCCESSOR = "7be65724-6cf9-84ff-ad58-2597fab343e9"
 
 
@@ -38,10 +40,12 @@ class SimulatedRcc:
         self.manual_user_text = "Initial manual work request"
         self.visible_count_override = None
         self.worker_detached = False
-        self.responses = {WORKER: ("", 0), MANAGER: ("", 0)}
+        self.manager_disconnected = False
+        self.responses = {WORKER: ("", 0), MANAGER: ("", 0), SUPERVISOR: ("", 0)}
         self.locations = {
             WORKER: {"tabId": 10, "windowId": 11, "index": 0},
             MANAGER: {"tabId": 12, "windowId": 11, "index": 1},
+            SUPERVISOR: {"tabId": 13, "windowId": 11, "index": 2},
         }
 
     def reply(self, conversation, body):
@@ -70,6 +74,7 @@ class SimulatedRcc:
             tabs = [
                 {**self.locations[WORKER], "url": "https://chatgpt.com/c/" + WORKER},
                 {**self.locations[MANAGER], "url": "https://chatgpt.com/c/" + MANAGER},
+                {**self.locations[SUPERVISOR], "url": "https://chatgpt.com/c/" + SUPERVISOR},
             ]
             if self.created:
                 tabs.append({**self.created, "url": self.created.get("url", "https://chatgpt.com/")})
@@ -84,6 +89,10 @@ class SimulatedRcc:
                          {"kind": self.attention, "label": self.attention}
                          if self.attention else None)}},
                     {**self.locations[MANAGER], "conversationKey": MANAGER,
+                     "generating": False, "connection": {
+                         "disconnected": self.manager_disconnected},
+                     "telemetry": {"user_attention": None}},
+                    {**self.locations[SUPERVISOR], "conversationKey": SUPERVISOR,
                      "generating": False, "connection": {"disconnected": False},
                      "telemetry": {"user_attention": None}},
                 ],
@@ -264,6 +273,100 @@ class SelfPrearmGuidanceTests(unittest.TestCase):
             self.assertEqual("WATCHING", watched["state"])
             self.assertEqual(MANAGER, json.loads(watched["context_json"])["recovery_needed"]["reported_manager_conversation_key"])
 class DelayedSendRccFlowTests(unittest.TestCase):
+    def test_disconnected_manager_return_is_checkpointed_and_collected_by_supervisor(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            policy = root / "bct.toml"
+            policy.write_text(
+                '[policy]\nnormal_actions=["browser"]\napproval_actions=[]\n',
+                encoding="utf-8",
+            )
+            bct = BCT(state_path=root / "state.sqlite", policy_path=policy)
+            rcc = SimulatedRcc()
+            browser = BrowserFeature(rcc, store=bct.store)
+            bct.operations._features["browser"] = browser
+            principal = Principal("tester", "test", frozenset({"browser"}))
+            work = bct.create_work(
+                work_id="manager-recovery-work",
+                request_summary="preserve a Manager return during A recovery",
+                roots=[str(root)], actions=["browser"], principal=principal,
+            )
+            service = SendDelayedMessageService(
+                store=bct.store, browser_feature=browser, operations=bct.operations,
+            )
+            rcc.reply(WORKER, "Earlier completed response before this exact Direction.")
+            prompt = "Complete this exact bounded task."
+            send_id = "manager-recovery-source-send"
+            armed = bct.operations.run(
+                principal=principal, work_id=work.work_id,
+                operation_id="manager-recovery-arm", capability="browser",
+                arguments={
+                    "command": "send-delayed-message",
+                    "task_id": "manager-recovery-task",
+                    "instance_id": INSTANCE,
+                    "conversation_key": WORKER,
+                    "manager_conversation_key": MANAGER,
+                    "manager_instance_id": INSTANCE,
+                    "supervisor_conversation_key": SUPERVISOR,
+                    "supervisor_instance_id": INSTANCE,
+                    "planned_send_operation_id": send_id,
+                    "planned_send_text": prompt,
+                    "execution_path": "DIRECTION_DECLARED",
+                    "chain_direction_id": "manager-recovery-direction",
+                },
+            )
+            self.assertEqual(Outcome.APPLIED, armed.outcome, armed.as_dict())
+            sent = bct.operations.run(
+                principal=principal, work_id=work.work_id,
+                operation_id=send_id, capability="browser",
+                arguments={
+                    "command": "send-message", "instance_id": INSTANCE,
+                    "session_id": SESSION, "tab_id": 10, "window_id": 11,
+                    "conversation_key": WORKER, "text": prompt,
+                },
+            )
+            self.assertEqual(Outcome.APPLIED, sent.outcome, sent.as_dict())
+            rcc.reply(
+                WORKER,
+                "Done.\nNEXT TASK — MANAGER\nPreserve this exact completion report.",
+            )
+            rcc.manager_disconnected = True
+            outcome = service.poll_once()
+            self.assertEqual(
+                "COLLECTED_BY_SUPERVISOR", outcome["events"][0]["status"]
+            )
+            self.assertEqual(SUPERVISOR, rcc.sent[-1][0])
+            self.assertIn("DO NOT ACT AS MANAGER", rcc.sent[-1][1])
+            checkpoint = ChainManagerRecoveryLedger(bct.store).get(
+                task_id="manager-recovery-task", generation=1,
+            )
+            self.assertEqual("COLLECTED_BY_SUPERVISOR", checkpoint["delivery_state"])
+            self.assertEqual(SUPERVISOR, checkpoint["destination_conversation_key"])
+            self.assertTrue(checkpoint["return_payload"].endswith(
+                "Preserve this exact completion report."
+            ))
+            inbox = ChainManagerRecoveryLedger(bct.store).inbox(
+                work_id=work.work_id,
+                report_target_conversation_key=SUPERVISOR,
+            )
+            self.assertEqual(1, len(inbox))
+            recovery = ChainManagerRecoveryLedger(bct.store)
+            self.assertEqual(1, recovery.rebind_active_manager(
+                work_id=work.work_id,
+                manager_conversation_key=SUCCESSOR,
+                succession_proofs=[{
+                    "transfer_id": "transfer-1",
+                    "predecessor_conversation_key": MANAGER,
+                    "successor_conversation_key": SUCCESSOR,
+                }],
+            ))
+            acknowledged = recovery.acknowledge(
+                work_id=work.work_id, task_id="manager-recovery-task",
+                generation=1, manager_conversation_key=SUCCESSOR,
+            )
+            self.assertEqual(SUCCESSOR, acknowledged["acknowledged_by"])
+            self.assertGreater(acknowledged["acknowledged_at"], 0)
+
     def test_chain_worker_provision_recipe_replays_without_duplicate_tab_or_send(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
