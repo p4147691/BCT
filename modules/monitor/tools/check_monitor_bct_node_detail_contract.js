@@ -81,6 +81,11 @@ assert.doesNotMatch(ordinary.text, /Chat\/Work/);
 const blank = context.monitorBctNodeDetail({ tabId: "blank", reasoningLevel: "UNKNOWN" }, -1, null);
 assert.equal(blank.text, "D? New 미확인 0분 미확인");
 
+const dotUnknown = context.monitorBctNodeDetail({ dotKey: "dot~context", surfaceKind: "DOT", reasoningLevel: "UNKNOWN" }, 0, null);
+assert.equal(dotUnknown.text, "D1 Dot 0분 미확인");
+assert.doesNotMatch(dotUnknown.title, /추론/,
+  "Dot without an observed reasoning setting must leave that optional field blank");
+
 const conversations = fs.readFileSync(path.join(__dirname, "../domains/conversations.js"), "utf8");
 const editor = conversations.match(/\/\/@@FN_START:openMonitorBctRenameEditor\n([\s\S]*?)\n\/\/@@FN_END:openMonitorBctRenameEditor/);
 assert.ok(editor, "right-click node information editor must remain in conversations.js");

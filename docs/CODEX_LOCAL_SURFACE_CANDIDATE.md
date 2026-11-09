@@ -24,8 +24,9 @@ remains the existing conversation-UUID contract. Cached unavailable observations
 cannot allocate new C labels. The observed reference is not sent to the generic
 UUID node-info, rename, send or return paths.
 
-Monitor displays C<number> and Codex in subdued gray to mean private/local observation,
-not a BCT-routable node. Right-click Node Info exposes the local reference and
+Monitor displays C<number> and Codex in the ordinary node presentation. The C
+label means only an observed, confirmed local-reference form, not a BCT-routable
+node or a claim that the work is private. Right-click Node Info exposes the local reference and
 limitations. This draft's metadata fields are read-only because no
 real task/Work mapping is established. Existing Codex CLI/account resource rows
 are not merged with these browser drafts by title or apparent account name.
@@ -46,7 +47,7 @@ when that exact reference is later associated with a task ID.
 
 It is not a public or versioned Codex API, is not available through RCC, and does
 not identify a ChatGPT `/c/` conversation or a send/return route. The candidate
-therefore does not read this private store in Core, expose task IDs to Monitor, or
+therefore does not read this unsupported local store in Core, expose task IDs to Monitor, or
 implement automatic task-ID/C-label inheritance. A future integration requires an
 official/supported binding API or an independently versioned local adapter with a
 fresh exact-binding proof and fail-closed behavior.

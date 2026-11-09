@@ -1355,8 +1355,8 @@ function openMonitorBctRenameEditor(node, row) {
   fact("대화 UUID", String(node.conversationKey || ""));
   if (node.codexLocalReference) {
     fact("Codex local reference", node.codexLocalReference);
-    fact("식별 범위", "비공개 로컬 바인딩 관찰 · BCT 실행 식별자 아님");
-    fact("지원", "회색 C 표시 번호와 정확한 탭 관찰 · 전송/반환 미지원");
+    fact("식별 범위", "확인된 로컬 참조 관찰 · BCT 실행 식별자 아님");
+    fact("지원", "C 표시 번호와 정확한 탭 관찰 · 전송/반환 미지원");
   }
   if (node.dotKey) {
     fact("Dot reference", node.dotReference);
@@ -1370,14 +1370,13 @@ function openMonitorBctRenameEditor(node, row) {
     ? monitorDesktopState.desktopIds.indexOf(String(nativeLocation.desktopId || ""))
     : -1;
   const reasoningObserved = String(node.reasoningRaw || node.reasoningLevel || "").trim();
-  const reasoning = !reasoningObserved || ["?", "UNKNOWN", "UNOBSERVED", "N/A"].includes(reasoningObserved.toUpperCase())
-    ? "미확인"
-    : reasoningObserved;
+  const reasoningUnknown = !reasoningObserved || ["?", "UNKNOWN", "UNOBSERVED", "N/A"].includes(reasoningObserved.toUpperCase());
+  const reasoning = reasoningUnknown ? (node.dotKey ? "" : "미확인") : reasoningObserved;
   const burden = monitorBctNodeBurden(node);
   fact("현재 위치", monitorBctNodeLocationText(node, desktopPosition));
   fact("창 상태", nativeLocation?.iconic === true ? "최소화" : "표시 중");
   fact("종류", monitorBctNodeSurfaceText(node));
-  fact("관측 추론 수준", reasoning);
+  if (reasoning) fact("관측 추론 수준", reasoning);
   fact("관측 경과", monitorBctNodeObservedAgeText(node).replace(/^관측 /, ""));
   fact("탭 부담", `${burden.label} · ${burden.title}`);
   fact("연결", `창 ${node.windowId} · 탭 ${node.tabId}`);
@@ -1442,7 +1441,7 @@ function openMonitorBctRenameEditor(node, row) {
   if (node.codexLocalReference) {
     for (const field of [scopeField,rolesField,taskField,memoField]) field.control.disabled = true;
     confirm.hidden = true;
-    titleHint.textContent = "Codex 비공개 로컬 바인딩은 관찰만 합니다. BCT 전송·반환 식별자로 쓰지 않습니다.";
+    titleHint.textContent = "Codex 로컬 참조는 관찰만 합니다. BCT 전송·반환 식별자로 쓰지 않습니다.";
   }
   dialog.append(head, facts, titleField.label, titleHint, scopeField.label, rolesField.label, taskField.label, memoField.label, roleHint, error, actions);
   overlay.append(dialog);

@@ -1811,13 +1811,16 @@ async function refreshMonitorIdentityIndex(state, force = false) {
     String(ep?.presence_state || "").toUpperCase() === "OPEN"
     && ["GOOGLE", "NAVER"].includes(String(ep?.profile_id || "").toUpperCase())
   );
-  const bctActiveNodes = (Array.isArray(monitorBctWindowNodesCache) ? monitorBctWindowNodesCache : [])
-    .filter((node) => node?.active === true && String(node?.instanceState || "").toUpperCase() === "OPEN");
-  if ((!openEndpoints.length && !bctActiveNodes.length) || !monitorDesktopState.desktopIds.length) return false;
+  // The roster renders every open tab, not only Chrome's active tab. Limit
+  // this read-only projection by open instance state, otherwise an inactive
+  // node remains D? until a user happens to click it.
+  const bctOpenNodes = (Array.isArray(monitorBctWindowNodesCache) ? monitorBctWindowNodesCache : [])
+    .filter((node) => String(node?.instanceState || "").toUpperCase() === "OPEN");
+  if ((!openEndpoints.length && !bctOpenNodes.length) || !monitorDesktopState.desktopIds.length) return false;
 
   const wanted = new Set([
     ...openEndpoints.map((ep) => String(ep?.conversation_key || "").trim()),
-    ...bctActiveNodes.map((node) => String(node?.conversationKey || "").trim()),
+    ...bctOpenNodes.map((node) => String(node?.conversationKey || "").trim()),
   ].filter(Boolean));
   if (!wanted.size) return false;
 
@@ -6427,9 +6430,10 @@ function monitorBctNodeDetail(node, desktopPosition, nativeLocation) {
   const minimized = nativeLocation?.iconic === true;
   const burden = monitorBctNodeBurden(node);
   const reasoningObserved = String(node?.reasoningRaw || node?.reasoningLevel || "").trim();
-  const reasoning = !reasoningObserved || ["?", "UNKNOWN", "UNOBSERVED", "N/A"].includes(reasoningObserved.toUpperCase())
-    ? "미확인"
-    : reasoningObserved;
+  const reasoningUnknown = !reasoningObserved || ["?", "UNKNOWN", "UNOBSERVED", "N/A"].includes(reasoningObserved.toUpperCase());
+  // Dot does not expose a reasoning-level setting. An absent observation is
+  // not an unknown setting, so leave this optional display field empty.
+  const reasoning = reasoningUnknown ? (node?.dotKey ? "" : "미확인") : reasoningObserved;
   // RCC can expose the model-selector label together with its value (for
   // example, "추론 수준Instant").  Keep that raw observation for the detail
   // surface, but remove the presentation label before producing the compact
@@ -6468,7 +6472,14 @@ function monitorBctNodeDetail(node, desktopPosition, nativeLocation) {
       observedAgeCompact,
       burden.label,
     ].filter(Boolean).join(" "),
-    title: `위치 ${locationText} · ${minimized ? "최소화됨" : "표시 중"} · 종류 ${surfaceText} · 추론 ${reasoning} · ${observedAge} · 부담 ${burden.label} (${burden.title})`,
+    title: [
+      `위치 ${locationText}`,
+      minimized ? "최소화됨" : "표시 중",
+      `종류 ${surfaceText}`,
+      reasoning ? `추론 ${reasoning}` : "",
+      observedAge,
+      `부담 ${burden.label} (${burden.title})`,
+    ].filter(Boolean).join(" · "),
   };
 }
 function setMonitorBctNodeViewMode(value) {
@@ -6754,8 +6765,8 @@ function openMonitorBctRenameEditor(node, row) {
   fact("대화 UUID", String(node.conversationKey || ""));
   if (node.codexLocalReference) {
     fact("Codex local reference", node.codexLocalReference);
-    fact("식별 범위", "비공개 로컬 바인딩 관찰 · BCT 실행 식별자 아님");
-    fact("지원", "회색 C 표시 번호와 정확한 탭 관찰 · 전송/반환 미지원");
+    fact("식별 범위", "확인된 로컬 참조 관찰 · BCT 실행 식별자 아님");
+    fact("지원", "C 표시 번호와 정확한 탭 관찰 · 전송/반환 미지원");
   }
   if (node.dotKey) {
     fact("Dot reference", node.dotReference);
@@ -6769,14 +6780,13 @@ function openMonitorBctRenameEditor(node, row) {
     ? monitorDesktopState.desktopIds.indexOf(String(nativeLocation.desktopId || ""))
     : -1;
   const reasoningObserved = String(node.reasoningRaw || node.reasoningLevel || "").trim();
-  const reasoning = !reasoningObserved || ["?", "UNKNOWN", "UNOBSERVED", "N/A"].includes(reasoningObserved.toUpperCase())
-    ? "미확인"
-    : reasoningObserved;
+  const reasoningUnknown = !reasoningObserved || ["?", "UNKNOWN", "UNOBSERVED", "N/A"].includes(reasoningObserved.toUpperCase());
+  const reasoning = reasoningUnknown ? (node.dotKey ? "" : "미확인") : reasoningObserved;
   const burden = monitorBctNodeBurden(node);
   fact("현재 위치", monitorBctNodeLocationText(node, desktopPosition));
   fact("창 상태", nativeLocation?.iconic === true ? "최소화" : "표시 중");
   fact("종류", monitorBctNodeSurfaceText(node));
-  fact("관측 추론 수준", reasoning);
+  if (reasoning) fact("관측 추론 수준", reasoning);
   fact("관측 경과", monitorBctNodeObservedAgeText(node).replace(/^관측 /, ""));
   fact("탭 부담", `${burden.label} · ${burden.title}`);
   fact("연결", `창 ${node.windowId} · 탭 ${node.tabId}`);
@@ -6841,7 +6851,7 @@ function openMonitorBctRenameEditor(node, row) {
   if (node.codexLocalReference) {
     for (const field of [scopeField,rolesField,taskField,memoField]) field.control.disabled = true;
     confirm.hidden = true;
-    titleHint.textContent = "Codex 비공개 로컬 바인딩은 관찰만 합니다. BCT 전송·반환 식별자로 쓰지 않습니다.";
+    titleHint.textContent = "Codex 로컬 참조는 관찰만 합니다. BCT 전송·반환 식별자로 쓰지 않습니다.";
   }
   dialog.append(head, facts, titleField.label, titleHint, scopeField.label, rolesField.label, taskField.label, memoField.label, roleHint, error, actions);
   overlay.append(dialog);

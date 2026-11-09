@@ -120,9 +120,10 @@ function monitorBctNodeDetail(node, desktopPosition, nativeLocation) {
   const minimized = nativeLocation?.iconic === true;
   const burden = monitorBctNodeBurden(node);
   const reasoningObserved = String(node?.reasoningRaw || node?.reasoningLevel || "").trim();
-  const reasoning = !reasoningObserved || ["?", "UNKNOWN", "UNOBSERVED", "N/A"].includes(reasoningObserved.toUpperCase())
-    ? "미확인"
-    : reasoningObserved;
+  const reasoningUnknown = !reasoningObserved || ["?", "UNKNOWN", "UNOBSERVED", "N/A"].includes(reasoningObserved.toUpperCase());
+  // Dot does not expose a reasoning-level setting. An absent observation is
+  // not an unknown setting, so leave this optional display field empty.
+  const reasoning = reasoningUnknown ? (node?.dotKey ? "" : "미확인") : reasoningObserved;
   // RCC can expose the model-selector label together with its value (for
   // example, "추론 수준Instant").  Keep that raw observation for the detail
   // surface, but remove the presentation label before producing the compact
@@ -161,7 +162,14 @@ function monitorBctNodeDetail(node, desktopPosition, nativeLocation) {
       observedAgeCompact,
       burden.label,
     ].filter(Boolean).join(" "),
-    title: `위치 ${locationText} · ${minimized ? "최소화됨" : "표시 중"} · 종류 ${surfaceText} · 추론 ${reasoning} · ${observedAge} · 부담 ${burden.label} (${burden.title})`,
+    title: [
+      `위치 ${locationText}`,
+      minimized ? "최소화됨" : "표시 중",
+      `종류 ${surfaceText}`,
+      reasoning ? `추론 ${reasoning}` : "",
+      observedAge,
+      `부담 ${burden.label} (${burden.title})`,
+    ].filter(Boolean).join(" · "),
   };
 }
 //@@FN_END:monitorBctNodeDetail
@@ -1387,13 +1395,16 @@ async function refreshMonitorIdentityIndex(state, force = false) {
     String(ep?.presence_state || "").toUpperCase() === "OPEN"
     && ["GOOGLE", "NAVER"].includes(String(ep?.profile_id || "").toUpperCase())
   );
-  const bctActiveNodes = (Array.isArray(monitorBctWindowNodesCache) ? monitorBctWindowNodesCache : [])
-    .filter((node) => node?.active === true && String(node?.instanceState || "").toUpperCase() === "OPEN");
-  if ((!openEndpoints.length && !bctActiveNodes.length) || !monitorDesktopState.desktopIds.length) return false;
+  // The roster renders every open tab, not only Chrome's active tab. Limit
+  // this read-only projection by open instance state, otherwise an inactive
+  // node remains D? until a user happens to click it.
+  const bctOpenNodes = (Array.isArray(monitorBctWindowNodesCache) ? monitorBctWindowNodesCache : [])
+    .filter((node) => String(node?.instanceState || "").toUpperCase() === "OPEN");
+  if ((!openEndpoints.length && !bctOpenNodes.length) || !monitorDesktopState.desktopIds.length) return false;
 
   const wanted = new Set([
     ...openEndpoints.map((ep) => String(ep?.conversation_key || "").trim()),
-    ...bctActiveNodes.map((node) => String(node?.conversationKey || "").trim()),
+    ...bctOpenNodes.map((node) => String(node?.conversationKey || "").trim()),
   ].filter(Boolean));
   if (!wanted.size) return false;
 

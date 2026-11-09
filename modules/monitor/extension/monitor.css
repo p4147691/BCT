@@ -3675,4 +3675,3 @@ body.desktop-window-monitor-active { background-image:none!important; background
 .monitor-desktop-minimized-prefix,.monitor-desktop-minimized-separator { color:rgba(255,255,255,.94);font:800 10px/14px "Segoe UI","Malgun Gothic",sans-serif; }
 
 .monitor-bct-orchestrator .monitor-bct-node-number { color: #d8a0ff; border-color: #b56be0; }
-.monitor-bct-codex-local .monitor-bct-node-number { color:#b6bec8; border-color:rgba(182,190,200,.52); background:rgba(150,160,172,.11); }

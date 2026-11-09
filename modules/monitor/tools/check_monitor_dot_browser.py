@@ -61,7 +61,7 @@ const active=monitorBctRenameEditor;
 if(!active || !active.input.disabled || !active.scopeInput.disabled ||
    !active.memoInput.disabled || !active.confirm.hidden)throw Error("Codex draft edit guard");
 if(!active.dialog.textContent.includes("C1") || !active.dialog.textContent.includes("Codex local reference")
- || !active.dialog.textContent.includes("비공개 로컬 바인딩"))
+ || !active.dialog.textContent.includes("확인된 로컬 참조 관찰"))
  throw Error("Codex facts missing");
 active.dialog.dispatchEvent(new Event("submit",{bubbles:true,cancelable:true}));
 if(monitorBctRenameEditor!==null)throw Error("Codex draft submit must close without writes");

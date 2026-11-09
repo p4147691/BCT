@@ -145,6 +145,10 @@ function loadModule() {
     "display-only location must fall back to one unique Chrome window id while exact session identity converges");
   assert.match(monitor, /monitorBctDisplayWindowHwnd = new Map[\s\S]*monitorWorkers\?\.isConnected\) syncMonitorBctNodeLocationLabels\(\);/,
     "a refreshed display binding must repaint existing D? node-list labels without requiring another click");
+  assert.match(monitor, /const bctOpenNodes = \(Array\.isArray\(monitorBctWindowNodesCache\)[\s\S]*?\.filter\(\(node\) => String\(node\?\.instanceState \|\| ""\)\.toUpperCase\(\) === "OPEN"\);/,
+    "desktop projection must re-index every open roster node, not only the active tab");
+  assert.doesNotMatch(monitor, /const bctActiveNodes = [\s\S]{0,180}node\?\.active === true/,
+    "an inactive open node must not wait for a user click before its location can converge");
   assert.match(monitor, /row\.addEventListener\("pointerdown", \(event\) => beginMonitorBctNodePointerDrag/);
   assert.match(monitor, /if \(monitorBctPointerDrag\) \{\s*monitorBctDeferredNodeRender = nodes;\s*return;/,
     "an RCC refresh must defer rather than cancel an active node drag");
