@@ -227,23 +227,23 @@ class ProtectedRccRouteTests(unittest.TestCase):
         self.assertEqual(route["installed_version"], "1.0.69")
         self.assertEqual(
             ri.DOT_TITLE_RENAME_ROOT,
-            Path(r"D:\BCT\data\RCC_DOT_CUSTOM_NAME_V10_20261109"),
+            Path(r"D:\BCT\data\RCC_DOT_CUSTOM_NAME_V11_20261109"),
         )
         self.assertEqual(
             ri.DOT_TITLE_RENAME_STAGE.name,
-            "candidate_1_0_69_custom_name_v10",
+            "candidate_1_0_69_custom_name_v11",
         )
         self.assertEqual(
             ri.DOT_TITLE_RENAME_ROLLBACK.name,
-            "rollback_installed_1_0_69_custom_name_v9",
+            "rollback_installed_1_0_69_custom_name_v10",
         )
         self.assertEqual(
             ri.DOT_TITLE_RENAME_MANIFEST_SHA256,
-            "7f852ad85683234b03d785bb48ec976beb96b06e5d7b6933057afab4f5edd21f",
+            "5f6b8482ab303d53c5e4bc53c3541f2230878ef3f742cefd7f08e0f2121dba8b",
         )
         self.assertEqual(
             ri.DOT_TITLE_RENAME_JOURNAL.name,
-            "rcc-guarded-install-dot-custom-name-v10",
+            "rcc-guarded-install-dot-custom-name-v11",
         )
         self.assertEqual(route["manifest_file"], ri.DOT_TITLE_RENAME_MANIFEST)
         self.assertEqual(route["candidate"], ri.DOT_TITLE_RENAME_STAGE)
