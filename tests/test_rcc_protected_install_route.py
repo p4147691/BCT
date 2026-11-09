@@ -254,6 +254,23 @@ class ProtectedRccRouteTests(unittest.TestCase):
             ri.DOT_TITLE_RENAME_MANIFEST_SHA256,
         )
 
+    def test_composer_rebind_route_upgrades_exact_69_to_70(self):
+        route = DeployFeature._rcc_route_config("rcc-inspect-composer-rebind")
+        self.assertEqual(route["candidate_version"], "1.0.70")
+        self.assertEqual(route["installed_version"], "1.0.69")
+        self.assertEqual(
+            ri.COMPOSER_REBIND_ROOT,
+            Path(r"D:\BCT\data\RCC_COMPOSER_REBIND_20261110"),
+        )
+        self.assertEqual(route["manifest_file"], ri.COMPOSER_REBIND_MANIFEST)
+        self.assertEqual(route["candidate"], ri.COMPOSER_REBIND_STAGE)
+        self.assertEqual(route["backup_source"], ri.COMPOSER_REBIND_ROLLBACK)
+        self.assertEqual(route["journal_root"], ri.COMPOSER_REBIND_JOURNAL)
+        self.assertEqual(
+            route["pinned_manifest_sha256"],
+            ri.COMPOSER_REBIND_MANIFEST_SHA256,
+        )
+
     def test_protected_plan_accepts_canonical_wire_candidate_67(self):
         identities = {
             self.live: (self.extension_id, "1.0.66"),

@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "kind": "RCC_REBUILD_V2_RC",
-  "candidate": "RCC_DOT_TITLE_RENAME_20261109",
+  "candidate": "RCC_COMPOSER_REBIND_20261110",
   "sourceRoot": "modules/rcc/extension",
   "candidateInventory": {
     "fileCount": 58,
@@ -233,8 +233,8 @@
       },
       {
         "path": "manifest.json",
-        "size": 1527,
-        "sha256": "edda06d25f24205cb07e5607277657f9b30f45b20f1653bc322b4ff5bbe6fee8"
+        "size": 1526,
+        "sha256": "21c801fbee54d8e8cc4e81c0bb3d1a12f2bebe5c1b1a697a13a00a5862b6c89e"
       },
       {
         "path": "network/directory.js",
@@ -297,7 +297,7 @@
         "sha256": "b3ad92bc20564a905bffc37f3e524e2c8e8c5ae71c02517a301cedd5cf1341cd"
       }
     ],
-    "aggregateSha256": "c5c13e6aed00d789115b9d7737889bd7c6fb08ffbc75d2cd74edb4ae3f3b5743"
+    "aggregateSha256": "e054f0fae6598c64c2eb0e4ff397740ffa76acba50abe06dd2e78dfb288e1f02"
   },
   "activeLoaderGraph": {
     "background": [
