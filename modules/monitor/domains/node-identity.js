@@ -600,6 +600,8 @@ function monitorBctNodeLocationText(node, desktopPosition) {
 
 //@@FN_START:monitorBctNodeSurfaceText
 function monitorBctNodeSurfaceText(node) {
+  if (node?.codexLocalReference) return "Codex";
+  if (node?.dotKey) return "Dot";
   if (!String(node?.conversationKey || "").trim()) return "New";
   const kind = String(node?.surfaceKind || "UNKNOWN").trim().toUpperCase();
   // The browser product surface is Chat or Work. CODEX_MARKERS describe who
@@ -630,6 +632,7 @@ function monitorBctNodeRoleSummary(node) { return globalThis.MonitorDomainAPIs["
 
 //@@FN_START:monitorBctNodeRoleRank
 function monitorBctNodeRoleRank(node) {
+  if (node?.dotKey && node?.nodeLabel === "O") return -1;
   const tags = Array.isArray(node?.roleTags)
     ? node.roleTags.map((tag) => String(tag).trim().toLowerCase())
     : [];
@@ -1760,6 +1763,8 @@ function renderMonitorBctWindowNodes(nodes) {
     for (const [index, node] of group.nodes.entries()) {
     const row = document.createElement("article");
     row.className = "monitor-bct-node-row";
+    if (node.dotKey && node.nodeLabel === "O") row.classList.add("monitor-bct-orchestrator");
+    if (node.codexLocalReference) row.classList.add("monitor-bct-codex-local");
     row.dataset.tabId = String(node.tabId);
     row.dataset.windowId = String(node.windowId);
     row.dataset.instanceId = String(node.instanceId || "");
@@ -1785,7 +1790,9 @@ function renderMonitorBctWindowNodes(nodes) {
     const number = document.createElement("span");
     number.className = "monitor-bct-node-number";
     number.textContent = node.nodeLabel || "N?";
-    number.title = node.nodeLabel
+    number.title = node.codexLocalReference
+      ? "Codex 비공개 로컬 참조의 조회 전용 C 번호 · 전송 대상 아님"
+      : node.nodeLabel
       ? "BCT 대화망에 등록된 표시 전용 번호"
       : "관측됨 · 대화망 등록 전이라 표시 번호가 없습니다";
 
@@ -1873,7 +1880,7 @@ function renderMonitorBctWindowNodes(nodes) {
       event.preventDefault();
       row.click();
     });
-    if (node.conversationKey) {
+    if (node.conversationKey || node.dotKey || node.codexLocalReference) {
       row.addEventListener("contextmenu", (event) => {
         event.preventDefault();
         monitorBctSelectedNodeKey = monitorBctNodeSelectionKey(node);

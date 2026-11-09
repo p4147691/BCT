@@ -1,0 +1,12 @@
+"use strict";
+const assert = require("node:assert/strict");
+const identity = require("../../rcc/extension/core/identity.js");
+const dotUuid = "00000000-0000-4000-8000-000000000001";
+const context = "00000000000000000000000000000002";
+const dotUrl = "https://chatgpt.com/dots/"+dotUuid+"~"+context;
+assert.equal(identity.conversationKeyFromUrl(dotUrl),"");
+assert.equal(identity.resolveExactConversation([{tabId:1,windowId:10,url:dotUrl}],dotUuid).status,"MISSING");
+assert.throws(()=>identity.conversationUuid(dotUuid+"~"+context),/UUID_INVALID/);
+const manager = "00000000-0000-4000-8000-000000000003";
+assert.equal(identity.resolveExactConversation([{tabId:31,windowId:10,url:"https://chatgpt.com/c/"+manager}],manager).status,"EXACT");
+console.log("PASS existing RCC rejects compound dot identity and does not misroute to its UUID-shaped prefix");

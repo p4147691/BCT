@@ -610,6 +610,65 @@
       "effects": ["node.check"],
       "safety": ["exact-conversation-uuid", "no-automatic-pause-replace-reset", "fresh-state-reread", "unknown-no-resend"],
       "used_by": ["bct.chain_message"]
+    },
+    {
+      "id": "bct.dot_node_info",
+      "kind": "module",
+      "maturity": "isolated",
+      "implementation": [
+        {
+          "path": "src/bct/dot_identity.py",
+          "symbol": "dot_directory / save_dot_info"
+        },
+        {
+          "path": "src/bct/runtime_server.py",
+          "symbol": "dot_node_info_response"
+        }
+      ],
+      "contract": "Opaque compound dot route metadata, global singleton registration, exact revision conflict protection; never a conversation UUID or browser send target. Same route in multiple tabs shares metadata.",
+      "effects": [
+        "dot-metadata-only-sqlite"
+      ],
+      "safety": [
+        "no-conversation-uuid-coercion",
+        "no-browser-effects",
+        "exact-monitor-origin",
+        "revision-conflict",
+        "global-unassigned"
+      ],
+      "used_by": [
+        "Monitor Node Info"
+      ]
+    },
+    {
+      "id": "bct.codex_surface",
+      "kind": "module",
+      "maturity": "isolated",
+      "implementation": [
+        {
+          "path": "src/bct/codex_surface.py",
+          "symbol": "local_codex_reference / register_codex_surfaces / observed_codex_nodes"
+        },
+        {
+          "path": "src/bct/runtime_server.py",
+          "symbol": "codex_surface_register_response"
+        }
+      ],
+      "contract": "Exact observed local/client-new-thread route references, independently persistent C labels, explicit registration POST and read-only BCT projection. Local references do not imply stable Codex task identity or browser routing authority.",
+      "effects": [
+        "codex-display-registry-only-sqlite"
+      ],
+      "safety": [
+        "separate-c-and-n-namespace",
+        "serialized-idempotent-allocation",
+        "uuid-not-coerced",
+        "no-send-or-return",
+        "exact-monitor-origin"
+      ],
+      "used_by": [
+        "Monitor Codex surface display",
+        "BCT codex_nodes projection"
+      ]
     }
   ]
 }

@@ -186,7 +186,7 @@ function loadModule() {
   assert.match(monitor, /const roleDifference = monitorBctNodeRoleRank\(left\) - monitorBctNodeRoleRank\(right\);[\s\S]{0,80}if \(roleDifference\) return roleDifference;/,
     "supervisor and Manager cards must remain before manually ordered worker cards");
   assert.match(monitor, /const nextScopeName = role === "supervisor" \? "" : node\.scopeName/);
-  assert.match(monitor, /if \(!monitorBctShell\?\.updateConversationScope \|\| !node\?\.conversationKey\)/,
+  assert.match(monitor, /if \(!monitorBctShell\?\.updateConversationScope \|\| \(!node\?\.conversationKey && !node\?\.dotKey && !node\?\.codexLocalReference\)\)/,
     "conversation metadata editor must be available independently of exact tab rename identity");
   assert.match(monitor, /titleField\.control\.disabled = !canRenameTitle/,
     "only exact ChatGPT title rename is disabled when tab identity is incomplete");

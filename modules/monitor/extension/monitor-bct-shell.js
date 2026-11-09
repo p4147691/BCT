@@ -5,6 +5,8 @@
 (function installMonitorBctShell(root) {
   const URLS = Object.freeze({
     health: "http://127.0.0.1:18790/health",
+    codexRegister: "http://127.0.0.1:18790/monitor/codex-surface/register",
+    dotInfo: "http://127.0.0.1:18790/monitor/dot-node-info",
     monitorState: "http://127.0.0.1:18790/monitor/state",
     rccCommandCatalog: "http://127.0.0.1:18790/monitor/rcc-command-catalog",
     renameConversation: "http://127.0.0.1:18790/monitor/conversation-title/rename",
@@ -21,6 +23,11 @@
     const windowsApi = options.windowsApi || root.chrome?.windows;
     const randomId = options.randomId || (() => root.crypto?.randomUUID?.());
     const compactReasoningLevel = (value) => ({instant:"I",low:"L",medium:"M",high:"H",xhigh:"E","extra high":"E","extra-high":"E",pro:"P",max:"Max",ultra:"Ultra"})[String(value || "").trim().toLowerCase()] || String(value || "").trim();
+
+    function localCodexReference(value) {
+      const match = String(value || "").match(/^https:\/\/chatgpt\.com\/local\/client-new-thread:([a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12})\/?(?:[?#]|$)/i);
+      return String(match?.[1] || "").toLowerCase();
+    }
 
     async function health() {
       if (typeof fetcher !== "function") throw new Error("BCT_HEALTH_FETCH_UNAVAILABLE");
@@ -48,6 +55,22 @@
       if (state?.service?.status !== "OK" || state?.service?.ready !== true ||
           state?.service?.service !== "bct-core" || !Array.isArray(state?.rcc?.instances)) {
         throw new Error("BCT_MONITOR_CONTRACT_INVALID");
+      }
+      const urls = [...new Set(state.rcc.instances.filter(instance => instance?.state === "OPEN" && instance?.cached !== true).flatMap(instance =>
+        (Array.isArray(instance?.tabs) ? instance.tabs : []).map(tab => String(tab?.url || ""))
+      ).filter(url => {
+        const ref = localCodexReference(url);
+        return ref && !state?.codex_surface_directory?.[ref];
+      }))].slice(0,64);
+      if (urls.length) {
+        // Registration is an explicit metadata POST; the state GET remains read-only.
+        const registered = await fetcher(URLS.codexRegister, {
+          method:"POST",headers:{"Content-Type":"application/json"},cache:"no-store",
+          body:JSON.stringify({urls}),
+        });
+        const result = await registered.json();
+        if (!registered.ok || result.status !== "OK") throw new Error(result.error || "CODEX_REGISTRATION_FAILED");
+        return {...state,codex_surface_directory:result.directory};
       }
       return state;
     }
@@ -84,10 +107,15 @@
           // project an arbitrary browser tab as N?. Only supported ChatGPT hosts
           // may enter the Monitor node list.
           if (!/^https:\/\/(?:chatgpt\.com|chat\.openai\.com)(?:[/?#]|$)/i.test(url)) continue;
+          const dotMatch = url.match(/^https:\/\/(?:chatgpt\.com|chat\.openai\.com)\/dots\/([A-Za-z0-9_-]{1,160}~[A-Za-z0-9_-]{1,160})\/?(?:[?#]|$)/i);
+          const dotKey = dotMatch?.[1] || "";
+          const codexLocalReference = localCodexReference(url);
+          const codexInfo = codexLocalReference ? state?.codex_surface_directory?.[codexLocalReference] || {} : {};
+          const dotInfo = dotKey ? state?.dot_node_info?.[dotKey] || {} : {};
           const conversationMatch = url.match(/\/c\/([a-z0-9-]+)/i);
-          const scope = tab?.conversation_scope && typeof tab.conversation_scope === "object"
+          const scope = dotKey ? dotInfo : codexLocalReference ? {} : (tab?.conversation_scope && typeof tab.conversation_scope === "object"
             ? tab.conversation_scope
-            : {};
+            : {});
           const reasoningRaw = String(tab?.reasoning?.status || "").trim().toUpperCase() === "OBSERVED" ? String(tab?.reasoning?.level || "").trim() : "";
           nodes.push(Object.freeze({
             instanceId,
@@ -101,20 +129,26 @@
             tabIndex,
             title: String(tab?.title || "ChatGPT").trim() || "ChatGPT",
             url,
-            conversationKey: conversationMatch?.[1] || "",
-            nodeLabel: String(tab?.node_label || "").trim(),
+            identityKind: dotKey ? "DOT" : codexLocalReference ? "CODEX_LOCAL_DRAFT" : "CONVERSATION",
+            codexLocalReference,
+            dotKey,
+            dotReference: dotKey.split("~")[0] || "",
+            dotContextReference: dotKey.split("~")[1] || "",
+            dotRevision: Number(dotInfo.revision || 0),
+            conversationKey: (dotKey || codexLocalReference) ? "" : conversationMatch?.[1] || "",
+            nodeLabel: dotKey ? (dotInfo.dot_key ? "O" : "Dot") : codexLocalReference ? String(codexInfo.node_label || "Codex") : String(tab?.node_label || "").trim(),
             scopeId: String(scope?.scope_id || "").trim(),
             scopeName: String(scope?.scope_name || "").trim(),
             roleTags: Object.freeze(Array.isArray(scope?.role_tags)
               ? scope.role_tags.map((value) => String(value || "").trim()).filter(Boolean)
-              : []),
+              : dotKey ? ["Orchestrator"] : []),
             roleTagsSha256: String(scope?.role_tags_sha256 || "").trim().toLowerCase(),
             nodeMemo: String(scope?.node_memo || ""),
             assignedTask: String(scope?.assigned_task || ""),
             reasoningLevel: compactReasoningLevel(reasoningRaw),
             reasoningRaw,
             reasoningSource: String(tab?.reasoning?.source || "").trim(),
-            surfaceKind: String(tab?.surface?.kind || "UNKNOWN").trim().toUpperCase(),
+            surfaceKind: codexLocalReference ? "CODEX_LOCAL_DRAFT" : String(tab?.surface?.kind || "UNKNOWN").trim().toUpperCase(),
             surfaceSource: String(tab?.surface?.source || "").trim(),
             telemetry: tab?.telemetry && typeof tab.telemetry === "object" ? Object.freeze({ ...tab.telemetry }) : Object.freeze({}),
             displayOrder: Number.isSafeInteger(Number(scope?.display_order))
@@ -243,6 +277,21 @@
 
     async function updateConversationScope(node, values = {}) {
       if (typeof fetcher !== "function") throw new Error("BCT_CONVERSATION_SCOPE_FETCH_UNAVAILABLE");
+      if (node?.dotKey) {
+        const response = await fetcher(URLS.dotInfo, {
+          method: "POST", headers: { "Content-Type": "application/json" }, cache: "no-store",
+          body: JSON.stringify({
+            dot_key: node.dotKey, expected_revision: Number(node.dotRevision || 0),
+            display_name: String(values.displayName || node.title || ""),
+            scope_name: String(values.scopeName || ""), role_tags: values.roleTags || ["Orchestrator"],
+            node_memo: String(values.nodeMemo ?? node.nodeMemo ?? ""),
+            assigned_task: String(values.assignedTask ?? node.assignedTask ?? ""),
+          }),
+        });
+        const result = await response.json();
+        if (!response.ok || result.status !== "OK") throw new Error(result.error || "DOT_SAVE_FAILED");
+        return Object.freeze(result.conversation);
+      }
       const conversationKey = String(node?.conversationKey || "").trim();
       const displayName = String(values?.displayName || node?.title || "").trim();
       const scopeName = String(values?.scopeName || "").trim();

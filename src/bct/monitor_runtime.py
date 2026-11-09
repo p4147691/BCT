@@ -6,7 +6,9 @@ from threading import Lock
 from pathlib import Path
 from typing import Any
 
+from bct.codex_surface import codex_directory, observed_codex_nodes
 from bct.current_nodes import classify_current_nodes
+from bct.dot_identity import dot_directory
 from bct.conversation_network import (
     conversation_display_order_directory,
     conversation_scope_directory,
@@ -461,6 +463,9 @@ def build_monitor_state(
         },
         "current_nodes": classify_current_nodes(rcc, observed_at=time.time()),
         "conversation_network_managers": manager_statuses,
+        "dot_node_info": dot_directory(store),
+        "codex_surface_directory": codex_directory(store),
+        "codex_nodes": observed_codex_nodes(store, rcc),
         "rcc": {
             "instances": rcc,
             "payload": _rcc_payload_status(
@@ -531,6 +536,8 @@ def build_monitor_ui_state(
         "service": dict(service_state),
         "current_nodes": classify_current_nodes(rcc, observed_at=time.time()),
         "conversation_network_managers": manager_statuses,
+        "codex_surface_directory": codex_directory(store),
+        "codex_nodes": observed_codex_nodes(store, rcc),
         "rcc": {"instances": rcc},
         "github_run_inbox": store.get_github_run_inbox(limit=12),
     }

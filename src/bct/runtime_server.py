@@ -19,6 +19,8 @@ from bct.core.capabilities import canonical_capability
 from bct.core.models import BCTError, Principal, Work
 from bct.mcp_server import LocalBearerMiddleware, build_mcp
 from bct.monitor_runtime import build_monitor_state, build_monitor_ui_state
+from bct.codex_surface import register_codex_surfaces
+from bct.dot_identity import dot_directory, save_dot_info
 from bct.status_views import status_view
 from bct.core.chat_stream_rcc_watch import ChatStreamRccWatch
 from bct.integrations.rcc import NamedPipeRelayClient
@@ -189,6 +191,35 @@ def run_monitor_conversation_scope_update(
         node_memo=payload.get("node_memo"),
         assigned_task=payload.get("assigned_task"),
     )
+
+
+async def codex_surface_register_response(bct: BCT, request: Request) -> JSONResponse:
+    if not monitor_extension_origin_allowed(request.headers.get("origin", "")):
+        return JSONResponse({"error":"MONITOR_EXTENSION_ORIGIN_INVALID"},status_code=403)
+    try:
+        payload = await request.json()
+        if not isinstance(payload,dict) or set(payload) != {"urls"}:
+            raise ValueError("CODEX_SURFACE_FIELDS_INVALID")
+        directory = await asyncio.to_thread(register_codex_surfaces,bct.store,payload["urls"])
+        return JSONResponse({"status":"OK","directory":directory})
+    except ValueError as exc:
+        return JSONResponse({"error":str(exc)},status_code=400)
+
+
+async def dot_node_info_response(bct: BCT, request: Request) -> JSONResponse:
+    if not monitor_extension_origin_allowed(request.headers.get("origin", "")):
+        return JSONResponse({"error": "MONITOR_EXTENSION_ORIGIN_INVALID"}, status_code=403)
+    try:
+        if request.method == "GET":
+            records = await asyncio.to_thread(dot_directory, bct.store)
+            return JSONResponse({"status": "OK", "dots": records})
+        payload = await request.json()
+        if not isinstance(payload, dict):
+            raise ValueError("DOT_OBJECT_REQUIRED")
+        result = await asyncio.to_thread(save_dot_info, bct.store, payload)
+        return JSONResponse({"status": "OK", "conversation": result})
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
 
 
 def run_monitor_conversation_order_update(
@@ -539,12 +570,13 @@ def main() -> int:
     @mcp.custom_route("/monitor/state", methods=["GET"], include_in_schema=False)
     async def monitor_state(request: Request) -> JSONResponse:
         """Serve the display roster without running Monitor maintenance work."""
-        return JSONResponse(await asyncio.to_thread(
+        snapshot = await asyncio.to_thread(
             build_monitor_ui_state,
             store=bct.store,
             service_state=state,
             data_root=runtime_root.parent / "data",
-        ))
+        )
+        return JSONResponse(snapshot)
 
     @mcp.custom_route("/monitor/current-nodes", methods=["GET"], include_in_schema=False)
     async def monitor_current_nodes(request: Request) -> JSONResponse:
@@ -634,6 +666,14 @@ def main() -> int:
         except (ValueError, BCTError) as exc:
             return JSONResponse({"error": str(exc)}, status_code=400)
         return JSONResponse(result)
+
+    @mcp.custom_route("/monitor/codex-surface/register", methods=["POST"], include_in_schema=False)
+    async def monitor_codex_surface_register(request: Request) -> JSONResponse:
+        return await codex_surface_register_response(bct, request)
+
+    @mcp.custom_route("/monitor/dot-node-info", methods=["GET", "POST"], include_in_schema=False)
+    async def monitor_dot_node_info(request: Request) -> JSONResponse:
+        return await dot_node_info_response(bct, request)
 
     @mcp.custom_route(
         "/monitor/conversation-network/update",
