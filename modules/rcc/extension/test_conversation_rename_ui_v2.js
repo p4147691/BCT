@@ -116,6 +116,7 @@ const dotKey = 'b227a510-d0cb-4466-a2f5-4e401b456dca~6af1261141a8819aa57d9404445
 const dotAnchor = visibleNode({ 'aria-current': 'page' }, '내 dot');
 dotAnchor.href = `https://chatgpt.com/dots/${dotKey}`;
 const dotRow = visibleNode();
+dotRow.querySelectorAll = () => [];
 dotAnchor.closest = (selector) => selector.includes('[data-sidebar-item="true"]') ? dotRow : null;
 dotAnchor.parentElement = dotRow;
 context.location.href = dotAnchor.href;
@@ -130,5 +131,17 @@ context.dotAnchor = dotAnchor;
 context.dotRow = dotRow;
 assert.equal(vm.runInContext('conversationRow(dotAnchor) === dotRow', context), true,
   'Dot context-menu targeting must use the complete sidebar row rather than only its nested link');
+
+const hiddenDotMenu = visibleNode({
+  'aria-label': 'Open conversation options',
+  'aria-haspopup': 'menu',
+});
+hiddenDotMenu.getClientRects = () => [{}];
+hiddenDotMenu.getBoundingClientRect = () => ({ width: 32, height: 32 });
+hiddenDotMenu.querySelector = () => ({});
+dotRow.querySelectorAll = (selector) => selector === 'button' ? [hiddenDotMenu] : [];
+context.hiddenDotMenu = hiddenDotMenu;
+assert.equal(vm.runInContext('rowMenuButton(dotAnchor) === hiddenDotMenu', context), true,
+  'the exact Dot row may use an opacity-hidden menu button before a trusted hover');
 
 console.log('conversation rename UI v2: PASS');

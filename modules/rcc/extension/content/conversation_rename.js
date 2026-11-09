@@ -126,9 +126,30 @@ async function ensureDotAnchor(key) {
 }
 
 function conversationRow(anchor) {
-  return anchor?.closest?.(
+  const semanticRow = anchor?.closest?.(
     '[data-sidebar-item="true"], [data-testid*="history-item"], nav li, aside li, li'
-  ) || anchor?.parentElement || null;
+  );
+  if (semanticRow) return semanticRow;
+  const candidates = conversationRowCandidates(anchor);
+  return candidates.find((node) => node.querySelectorAll?.('button')?.length) ||
+    candidates[0] || null;
+}
+
+function conversationRowCandidates(anchor) {
+  const candidates = [];
+  let node = anchor?.parentElement || null;
+  for (let depth = 0; node && depth < 7; depth += 1, node = node.parentElement) {
+    candidates.push(node);
+    if (/^(?:NAV|ASIDE)$/i.test(String(node.tagName || ''))) break;
+  }
+  return candidates;
+}
+
+function isRenderedRenameControl(node) {
+  // Sidebar action buttons are commonly opacity-hidden until a real :hover.
+  // They remain bounded to the exact target row and are safe to click when
+  // they still have layout boxes; do not widen this to arbitrary page buttons.
+  return Boolean(node?.getClientRects?.().length) && !node.disabled;
 }
 
 function isConversationMenuButton(button) {
@@ -138,20 +159,24 @@ function isConversationMenuButton(button) {
 }
 
 function rowMenuButton(anchor) {
-  const row = conversationRow(anchor);
-  const buttons = Array.from(row?.querySelectorAll?.('button') || [])
-    .filter((button) => isVisible(button) && !button.disabled);
-  const popup = buttons.filter((button) =>
-    /menu/i.test(String(button.getAttribute?.('aria-haspopup') || ''))
-  );
-  if (popup.length === 1) return popup[0];
-  const semantic = buttons.filter(isConversationMenuButton);
-  if (semantic.length === 1) return semantic[0];
-  const compact = buttons.filter((button) => {
-    const rect = button.getBoundingClientRect();
-    return rect.width <= 64 && rect.height <= 64 && Boolean(button.querySelector('svg'));
-  });
-  return semantic[0] || (compact.length === 1 ? compact[0] : null);
+  const rows = [...new Set([conversationRow(anchor), ...conversationRowCandidates(anchor)])]
+    .filter(Boolean);
+  for (const row of rows) {
+    const buttons = Array.from(row.querySelectorAll?.('button') || [])
+      .filter(isRenderedRenameControl);
+    const popup = buttons.filter((button) =>
+      /menu/i.test(String(button.getAttribute?.('aria-haspopup') || ''))
+    );
+    if (popup.length === 1) return popup[0];
+    const semantic = buttons.filter(isConversationMenuButton);
+    if (semantic.length === 1) return semantic[0];
+    const compact = buttons.filter((button) => {
+      const rect = button.getBoundingClientRect();
+      return rect.width <= 64 && rect.height <= 64 && Boolean(button.querySelector('svg'));
+    });
+    if (semantic[0] || compact.length === 1) return semantic[0] || compact[0];
+  }
+  return null;
 }
 
 function currentConversationMenuButton() {
@@ -429,7 +454,7 @@ function currentDotTitleMatches(key, title) {
 
 async function openDotRenameEditor(key) {
   const diagnostic = {
-    version: 1, identity: 'MATCH', menuClick: 'NOT_ATTEMPTED',
+    version: 2, identity: 'MATCH', menuButton: 'NOT_FOUND', menuClick: 'NOT_ATTEMPTED',
     menuVisible: 'NOT_OBSERVED', renameAction: 'NOT_FOUND', editor: 'NOT_CHECKED',
   };
   if (dotKeyFromLocation() !== key) {
@@ -441,6 +466,7 @@ async function openDotRenameEditor(key) {
   dispatchRenameHover(row);
   let menuButton = await waitForRenameUi(() => rowMenuButton(anchor), 1500);
   if (menuButton) {
+    diagnostic.menuButton = 'FOUND';
     diagnostic.menuClick = 'BUTTON_ATTEMPTED';
     activateRenameUiElement(menuButton);
   } else {
