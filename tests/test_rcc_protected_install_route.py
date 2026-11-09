@@ -254,6 +254,26 @@ class ProtectedRccRouteTests(unittest.TestCase):
             )
         self.assertEqual(plan["candidate_files"], 58)
 
+    def test_protected_plan_accepts_dot_title_rename_candidate_69(self):
+        identities = {
+            self.live: (self.extension_id, "1.0.68"),
+            self.source: (self.extension_id, "1.0.69"),
+            self.reference: (self.extension_id, "1.0.68"),
+        }
+        with patch.object(ri, "_identity", side_effect=lambda path: identities[path]), \
+                patch.object(ri, "_exact"):
+            plan = ri._plan(
+                "N73-TEST-DOT-TITLE-RENAME",
+                live=self.live,
+                candidate=self.source,
+                backup_source=self.reference,
+                manifest_file=self.policy_manifest,
+                journal=self.journal / "N73-TEST-DOT-TITLE-RENAME.json",
+                candidate_version="1.0.69",
+                installed_version="1.0.68",
+            )
+        self.assertEqual(plan["candidate_files"], 58)
+
     def test_protected_plan_accepts_command_namespace_candidate_66(self):
         identities = {
             self.live: (self.extension_id, "1.0.65"),
