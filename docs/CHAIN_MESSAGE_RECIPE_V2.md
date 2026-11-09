@@ -122,7 +122,9 @@ A 장애 중 Manager 반환 보존
   │    동일 전송 영수증을 읽음
   ├─ 기존 진행 Watch는 action="bind_recovery_collector"로 전송 없이 보강
   ├─ 기존 A 복구 또는 대화망에서 정식 Manager 승계가 확인된 뒤
-  │    action="resume_manager"로 활성 Watch와 미확인 체크포인트의 A 결속만 변경
+  │    action="resume_manager"로 활성 Watch와 미확인 체크포인트의 A 결속을 변경
+  │    └─ 같은 A는 현재 상태가 정확히 OK일 때만 해당 Manager 전송 fence를 RESUMED로 전환;
+  │       PAUSED Watch·UNKNOWN 영수증·기존 작업은 재실행하지 않음
   └─ A가 각 체크포인트를 읽고 action="ack_recovery"한 뒤 State R에서 다음
        Direction을 판단함. ACK 전에는 복구 완료로 보지 않음
                  ↓

@@ -106,6 +106,59 @@ class NodeRecoveryTests(unittest.TestCase):
         )
         self.ledger.assert_send_allowed(work_id="work", conversation_key=NEW)
 
+    def test_healthy_same_manager_resume_lifts_only_send_fence(self):
+        self.ledger.check(
+            work=self.work, case_id="manager-case", task_id="",
+            conversation_key=OLD,
+            evidence=observe_node(view(disconnected=True), OLD), kind="CHECK",
+        )
+        self.ledger.pause(
+            work=self.work, case_id="manager-case", reason="Manager disconnected",
+        )
+        self.assertRaisesRegex(
+            ValueError, "NODE_RECOVERY_SEND_FENCED",
+            self.ledger.assert_send_allowed,
+            work_id=self.work.work_id, conversation_key=OLD,
+        )
+
+        resumed = self.ledger.resume_healthy_manager(
+            work=self.work, conversation_key=OLD,
+            evidence=observe_node(view(), OLD),
+        )
+        self.assertEqual(["manager-case"], resumed)
+        self.ledger.assert_send_allowed(
+            work_id=self.work.work_id, conversation_key=OLD,
+        )
+        case = self.ledger.get(work=self.work, case_id="manager-case")
+        self.assertEqual("RESUMED", case["state"])
+        self.assertEqual(
+            "FENCE_ONLY_NO_MESSAGE_NO_REPLAY",
+            case["context"]["manager_resume"]["effect"],
+        )
+
+    def test_ambiguous_same_manager_resume_keeps_fence(self):
+        self.ledger.check(
+            work=self.work, case_id="manager-case-ambiguous", task_id="",
+            conversation_key=OLD,
+            evidence=observe_node(view(disconnected=True), OLD), kind="CHECK",
+        )
+        self.ledger.pause(
+            work=self.work, case_id="manager-case-ambiguous",
+            reason="Manager disconnected",
+        )
+        with self.assertRaisesRegex(
+                ValueError, "NODE_RECOVERY_MANAGER_NOT_HEALTHY"):
+            self.ledger.resume_healthy_manager(
+                work=self.work, conversation_key=OLD,
+                evidence=observe_node(view(fresh=False), OLD),
+            )
+        self.assertEqual(
+            "PAUSED",
+            self.ledger.get(
+                work=self.work, case_id="manager-case-ambiguous",
+            )["state"],
+        )
+
     def test_replace_requires_inheritance_watch_before_commit(self):
         configure_conversation_scope(
             self.store, conversation_key=OLD, display_name="old",

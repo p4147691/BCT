@@ -1298,6 +1298,17 @@ def build_mcp(
                             "CHAIN_RECOVERY_MANAGER_SUCCESSION_PROOF_REQUIRED"
                         )
                     succession_proofs.append(proof)
+                resumed_recovery_cases = []
+                if not succession_proofs:
+                    from bct.node_recovery import NodeRecoveryLedger
+                    resumed_recovery_cases = await asyncio.to_thread(
+                        NodeRecoveryLedger(bct.store).resume_healthy_manager,
+                        work=work,
+                        conversation_key=report_target_conversation_key.lower(),
+                        evidence=_current_node_evidence(
+                            report_target_conversation_key.lower()
+                        ),
+                    )
                 binding = await asyncio.to_thread(
                     watch_ledger.resume_manager,
                     work_id=work.work_id,
@@ -1318,6 +1329,7 @@ def build_mcp(
             return {
                 "status": "MANAGER_RESUMED", "binding": binding,
                 "rebound_checkpoints": rebound,
+                "resumed_recovery_cases": resumed_recovery_cases,
                 "next_safe_step": "READ_RECOVERY_INBOX_THEN_ACK_EACH_CHECKPOINT",
                 "does_not": ["send_message", "replay_unknown", "act_as_supervisor"],
             }

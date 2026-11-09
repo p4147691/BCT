@@ -21,6 +21,7 @@ from bct.core.store import Store
 from bct.send_delayed_message import DurableWatchLedger, SendDelayedMessageRunner, Watch
 from bct.features.conversation_network import ConversationNetworkUpdateFeature
 from bct.mcp_server import build_mcp
+from bct.node_recovery import NodeRecoveryLedger
 
 
 def key(letter):
@@ -239,6 +240,32 @@ class DirectionReviewTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("OK", notices["status"])
         self.assertEqual("AUTHOR_RECOVER_NODE_DIRECTION", notices["next_action"])
         self.assertEqual(B, notices["notices"][0]["node_conversation_key"])
+        self.assertEqual([], self.ops.calls)
+
+    async def test_resume_same_healthy_manager_lifts_its_recovery_fence(self):
+        checked = await self.call(
+            "bct_check_node", work_id=self.work.work_id,
+            conversation_key=A, case_id="manager-resume-case",
+        )
+        self.assertEqual("OK", checked["status"])
+        paused = await self.call(
+            "bct_pause_node", work_id=self.work.work_id,
+            case_id="manager-resume-case", reason="Exercise same-A recovery.",
+        )
+        self.assertEqual("PAUSED", paused["pause_node"]["state"])
+
+        resumed = await self.call(
+            "bct_chain_recipe", action="resume_manager",
+            work_id=self.work.work_id,
+            report_target_conversation_key=A,
+        )
+        self.assertEqual("MANAGER_RESUMED", resumed["status"], resumed)
+        self.assertEqual(
+            ["manager-resume-case"], resumed["resumed_recovery_cases"],
+        )
+        NodeRecoveryLedger(self.store).assert_send_allowed(
+            work_id=self.work.work_id, conversation_key=A,
+        )
         self.assertEqual([], self.ops.calls)
 
     async def test_prepare_state_orders_topology_candidates_without_reassigning_roles(self):
