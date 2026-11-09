@@ -225,6 +225,26 @@ class ProtectedRccRouteTests(unittest.TestCase):
         route = DeployFeature._rcc_route_config("rcc-inspect-dot-title-rename")
         self.assertEqual(route["candidate_version"], "1.0.69")
         self.assertEqual(route["installed_version"], "1.0.69")
+        self.assertEqual(
+            ri.DOT_TITLE_RENAME_ROOT,
+            Path(r"D:\BCT\data\RCC_DOT_CUSTOM_NAME_V6_20261109"),
+        )
+        self.assertEqual(
+            ri.DOT_TITLE_RENAME_STAGE.name,
+            "candidate_1_0_69_custom_name_v6",
+        )
+        self.assertEqual(
+            ri.DOT_TITLE_RENAME_ROLLBACK.name,
+            "rollback_installed_1_0_69_custom_name_v5",
+        )
+        self.assertEqual(
+            ri.DOT_TITLE_RENAME_MANIFEST_SHA256,
+            "d8edb6ba69bc3656fc5bd42481e4df1c5c8246336eefe08575122701dc93cc37",
+        )
+        self.assertEqual(
+            ri.DOT_TITLE_RENAME_JOURNAL.name,
+            "rcc-guarded-install-dot-custom-name-v6",
+        )
         self.assertEqual(route["manifest_file"], ri.DOT_TITLE_RENAME_MANIFEST)
         self.assertEqual(route["candidate"], ri.DOT_TITLE_RENAME_STAGE)
         self.assertEqual(route["backup_source"], ri.DOT_TITLE_RENAME_ROLLBACK)
