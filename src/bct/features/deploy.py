@@ -835,6 +835,9 @@ class DeployFeature:
                           "rcc-inspect-canonical-wire",
                           "rcc-install-canonical-wire",
                           "rcc-rollback-canonical-wire",
+                          "rcc-inspect-dot-title-rename",
+                          "rcc-install-dot-title-rename",
+                          "rcc-rollback-dot-title-rename",
                           "rcc-verify-installed", "rcc-verify-installed-pr388",
                           "rcc-verify-installed-rename-actions",
                           "rcc-verify-installed-source-proof",
@@ -845,7 +848,8 @@ class DeployFeature:
                           "rcc-verify-installed-rendered-markdown-identity",
                           "rcc-verify-installed-rename-resilience",
                           "rcc-verify-installed-command-namespace",
-                          "rcc-verify-installed-canonical-wire"}:
+                          "rcc-verify-installed-canonical-wire",
+                          "rcc-verify-installed-dot-title-rename"}:
             return self._prepare_rcc(work, operation, arguments)
         if operation not in {"apply", "reconcile", "reconcile-rollback"}:
             raise PreconditionError("DEPLOYMENT_OPERATION_INVALID")
@@ -939,6 +943,9 @@ class DeployFeature:
             "rcc-inspect-canonical-wire",
             "rcc-install-canonical-wire",
             "rcc-rollback-canonical-wire",
+            "rcc-inspect-dot-title-rename",
+            "rcc-install-dot-title-rename",
+            "rcc-rollback-dot-title-rename",
             "rcc-verify-installed", "rcc-verify-installed-pr388",
             "rcc-verify-installed-rename-actions",
             "rcc-verify-installed-source-proof",
@@ -950,6 +957,7 @@ class DeployFeature:
             "rcc-verify-installed-rename-resilience",
             "rcc-verify-installed-command-namespace",
             "rcc-verify-installed-canonical-wire",
+            "rcc-verify-installed-dot-title-rename",
         }:
             return self._execute_rcc(request)
         if request.arguments.get("operation") == "reconcile":
@@ -975,6 +983,9 @@ class DeployFeature:
         """Choose one immutable release without weakening prior install receipts."""
         from bct import rcc_protected_install as rcc
         routes = (
+            ("-dot-title-rename", rcc.DOT_TITLE_RENAME_MANIFEST_SHA256,
+             rcc.DOT_TITLE_RENAME_STAGE, rcc.DOT_TITLE_RENAME_ROLLBACK,
+             rcc.DOT_TITLE_RENAME_MANIFEST, rcc.DOT_TITLE_RENAME_JOURNAL, "1.0.69", "1.0.68"),
             ("-canonical-wire", rcc.CANONICAL_WIRE_MANIFEST_SHA256,
              rcc.CANONICAL_WIRE_STAGE, rcc.CANONICAL_WIRE_ROLLBACK,
              rcc.CANONICAL_WIRE_MANIFEST, rcc.CANONICAL_WIRE_JOURNAL, "1.0.67", "1.0.66"),
@@ -1053,6 +1064,7 @@ class DeployFeature:
             "rcc-rollback-rename-resilience",
             "rcc-rollback-command-namespace",
             "rcc-rollback-canonical-wire",
+            "rcc-rollback-dot-title-rename",
         }
         is_post_install_verify = operation.startswith("rcc-verify-installed")
         if (is_rollback or is_post_install_verify) and not rcc.OP_ID.fullmatch(original):
@@ -1101,7 +1113,7 @@ class DeployFeature:
             values["manifest_sha256"],
         )
         route = DeployFeature._rcc_route_config(values["operation"])
-        if values["operation"].endswith(("-pr388", "-rename-actions", "-source-proof", "-source-proof-v2", "-semantic-turn", "-submit-activation-fence", "-rendered-prompt-provenance", "-rendered-markdown-identity", "-rename-resilience", "-command-namespace", "-canonical-wire")):
+        if values["operation"].endswith(("-pr388", "-rename-actions", "-source-proof", "-source-proof-v2", "-semantic-turn", "-submit-activation-fence", "-rendered-prompt-provenance", "-rendered-markdown-identity", "-rename-resilience", "-command-namespace", "-canonical-wire", "-dot-title-rename")):
             from hashlib import sha256
             release_path = route["manifest_file"]
             if (not release_path.is_file() or sha256(release_path.read_bytes()).hexdigest()
@@ -1137,7 +1149,7 @@ class DeployFeature:
                  "original_install_operation_id": original_id},
                 output=result,
             )
-        if values["operation"] in {"rcc-rollback", "rcc-rollback-pr388", "rcc-rollback-rename-actions", "rcc-rollback-source-proof", "rcc-rollback-source-proof-v2", "rcc-rollback-semantic-turn", "rcc-rollback-submit-activation-fence", "rcc-rollback-rendered-prompt-provenance", "rcc-rollback-rendered-markdown-identity", "rcc-rollback-rename-resilience", "rcc-rollback-command-namespace", "rcc-rollback-canonical-wire"}:
+        if values["operation"] in {"rcc-rollback", "rcc-rollback-pr388", "rcc-rollback-rename-actions", "rcc-rollback-source-proof", "rcc-rollback-source-proof-v2", "rcc-rollback-semantic-turn", "rcc-rollback-submit-activation-fence", "rcc-rollback-rendered-prompt-provenance", "rcc-rollback-rendered-markdown-identity", "rcc-rollback-rename-resilience", "rcc-rollback-command-namespace", "rcc-rollback-canonical-wire", "rcc-rollback-dot-title-rename"}:
             original_id = values["install_operation_id"]
             receipt = route["journal_root"] / (original_id + ".json")
             if not receipt.is_file():
@@ -1163,7 +1175,7 @@ class DeployFeature:
         if (plan["installed_aggregate"], plan["candidate_aggregate"],
                 plan["manifest_sha256"]) != expected:
             raise PreconditionError("RCC_INSTALL_EXPECTATIONS_CHANGED")
-        if values["operation"] in {"rcc-inspect", "rcc-inspect-pr388", "rcc-inspect-rename-actions", "rcc-inspect-source-proof", "rcc-inspect-source-proof-v2", "rcc-inspect-semantic-turn", "rcc-inspect-submit-activation-fence", "rcc-inspect-rendered-prompt-provenance", "rcc-inspect-rendered-markdown-identity", "rcc-inspect-rename-resilience", "rcc-inspect-command-namespace", "rcc-inspect-canonical-wire"}:
+        if values["operation"] in {"rcc-inspect", "rcc-inspect-pr388", "rcc-inspect-rename-actions", "rcc-inspect-source-proof", "rcc-inspect-source-proof-v2", "rcc-inspect-semantic-turn", "rcc-inspect-submit-activation-fence", "rcc-inspect-rendered-prompt-provenance", "rcc-inspect-rendered-markdown-identity", "rcc-inspect-rename-resilience", "rcc-inspect-command-namespace", "rcc-inspect-canonical-wire", "rcc-inspect-dot-title-rename"}:
             return FeatureResult(
                 Outcome.APPLIED, {"read_only": True, "reload": "NOT_PERFORMED",
                                  "live_accepted": False},

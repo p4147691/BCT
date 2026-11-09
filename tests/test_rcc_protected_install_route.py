@@ -221,6 +221,19 @@ class ProtectedRccRouteTests(unittest.TestCase):
             ri.CANONICAL_WIRE_MANIFEST_SHA256,
         )
 
+    def test_dot_title_rename_route_upgrades_exact_68_to_69(self):
+        route = DeployFeature._rcc_route_config("rcc-inspect-dot-title-rename")
+        self.assertEqual(route["candidate_version"], "1.0.69")
+        self.assertEqual(route["installed_version"], "1.0.68")
+        self.assertEqual(route["manifest_file"], ri.DOT_TITLE_RENAME_MANIFEST)
+        self.assertEqual(route["candidate"], ri.DOT_TITLE_RENAME_STAGE)
+        self.assertEqual(route["backup_source"], ri.DOT_TITLE_RENAME_ROLLBACK)
+        self.assertEqual(route["journal_root"], ri.DOT_TITLE_RENAME_JOURNAL)
+        self.assertEqual(
+            route["pinned_manifest_sha256"],
+            ri.DOT_TITLE_RENAME_MANIFEST_SHA256,
+        )
+
     def test_protected_plan_accepts_canonical_wire_candidate_67(self):
         identities = {
             self.live: (self.extension_id, "1.0.66"),
