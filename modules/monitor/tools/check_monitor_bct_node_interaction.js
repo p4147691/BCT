@@ -305,6 +305,14 @@ function loadModule() {
     "Dot purple must carry the same dense gradient weight and neutral resting border as other command roles");
   assert.match(css, /\.monitor-bct-node-number\s*\{[^}]*width:30px;[^}]*font-size:11px;[^}]*white-space:nowrap;/,
     "three-character DOT and N99 node badges must fit without intruding into the card title column");
+  assert.match(css, /\.monitor-bct-node-number\s*\{[^}]*border:1px solid rgba\(210,220,232,\.36\)[^}]*background:rgba\(210,220,232,\.10\)[^}]*color:#fff/,
+    "ordinary node badges use a neutral border and the shared white number text");
+  assert.match(css, /\.monitor-bct-node-row\.is-manager \.monitor-bct-node-number\s*\{[^}]*color:#fff;[^}]*border-color:#e3b13f;[^}]*background:rgba\(196,124,8,\.26\)/,
+    "Manager number badges match the amber card family without tinting the number text");
+  assert.match(css, /\.monitor-bct-node-row\.is-supervisor \.monitor-bct-node-number\s*\{[^}]*color:#fff;[^}]*border-color:#55a9ff;[^}]*background:rgba\(20,87,205,\.26\)/,
+    "Supervisor number badges match the blue card family without tinting the number text");
+  assert.match(css, /\.monitor-bct-orchestrator \.monitor-bct-node-number\s*\{[^}]*color:#fff;[^}]*border-color:#c46df0;[^}]*background:rgba\(153,59,213,\.24\)/,
+    "DOT number badges match the purple card family while keeping white text");
   assert.match(css, /\.monitor-bct-node-row\.is-selected\s*\{[^}]*outline:2px solid rgba\(255,181,71,\.98\)!important/,
     "exact tab selection must use a separate strong outline rather than the role border");
   assert.match(css, /monitor-bct-node-target-highlighted[\s\S]{0,480}outline:3px solid rgba\(255,181,71,\.98\)!important/,
