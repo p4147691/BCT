@@ -576,7 +576,6 @@ def main() -> int:
             service_state=state,
             data_root=runtime_root.parent / "data",
         )
-        snapshot["dot_node_info"] = await asyncio.to_thread(dot_directory, bct.store)
         return JSONResponse(snapshot)
 
     @mcp.custom_route("/monitor/current-nodes", methods=["GET"], include_in_schema=False)
