@@ -94,6 +94,43 @@ function createHarness(reply = { ok: true, operationId: 'rename-op-1', savedTitl
   assert.equal(dotReplay.replayed, true);
   assert.equal(dotHarness.sent.length, 1, 'Dot terminal replay must not repeat UI effect');
 
+  const dotNoopHarness = createHarness(
+    { ok: false, effectState: 'UNKNOWN', error: 'must-not-dispatch' },
+    { ...tab, url: `https://chatgpt.com/dots/${dotKey}`, title: 'same dot - ChatGPT' },
+  );
+  const dotNoopRequest = {
+    operationId: 'dot-noop-op-1', dotKey, tabId: 42,
+    sessionId: 'session-1', title: 'same dot',
+  };
+  const dotNoop = await dotNoopHarness.context.renameDot(dotNoopRequest, 'dot-noop-request-1');
+  assert.equal(dotNoop.ok, true);
+  assert.equal(dotNoop.noUiEffect, true);
+  assert.equal(dotNoopHarness.sent.length, 0, 'same-title Dot rename must not open the UI');
+
+  const dotUnknownHarness = createHarness(
+    { ok: false, effectState: 'UNKNOWN', error: 'DOT_RENAME_UI_NOT_VERIFIED' },
+    { ...tab, url: `https://chatgpt.com/dots/${dotKey}`, title: 'old dot' },
+  );
+  const dotUnknownRequest = {
+    operationId: 'dot-unknown-op-1', dotKey, tabId: 42,
+    sessionId: 'session-1', title: 'resolved dot',
+  };
+  const dotUnknown = await dotUnknownHarness.context.renameDot(
+    dotUnknownRequest, 'dot-unknown-request-1'
+  );
+  assert.equal(dotUnknown.state, 'UNKNOWN');
+  assert.equal(dotUnknownHarness.sent.length, 1);
+  dotUnknownHarness.context.browserGateway.getExactTab = async () => ({
+    ...tab, url: `https://chatgpt.com/dots/${dotKey}`, title: 'resolved dot',
+  });
+  const dotReconciled = await dotUnknownHarness.context.renameDot(
+    dotUnknownRequest, 'dot-unknown-request-1'
+  );
+  assert.equal(dotReconciled.ok, true);
+  assert.equal(dotReconciled.reconciled, true);
+  assert.equal(dotUnknownHarness.sent.length, 1, 'reconciliation must not repeat the UI effect');
+  assert.equal(dotUnknownHarness.local.renameReceiptsV1['dot-unknown-op-1'].terminal, true);
+
   const mismatchedDot = createHarness(
     { ok: true, operationId: 'dot-rename-op-2', savedTitle: 'wrong' },
     { ...tab, url: `https://chatgpt.com/dots/other~context` },

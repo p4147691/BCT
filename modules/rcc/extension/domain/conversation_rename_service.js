@@ -57,6 +57,19 @@ async function exactDotRenameTab(tabId, dotKey) {
   return tab;
 }
 
+function observedChatTitle(tab) {
+  return String(tab?.title || '').trim()
+    .replace(/\s*(?:[-–—|·]\s*)?ChatGPT\s*$/i, '').trim();
+}
+
+function dotRenameSatisfiedResult({ operationId, title, tabId, dotKey, sessionId, reconciled = false }) {
+  return {
+    ok: true, state: 'APPLIED', effectState: 'APPLIED', ambiguous: false,
+    operationId, savedTitle: title, tabId, dotKey, sessionId,
+    noUiEffect: true, reconciled,
+  };
+}
+
 async function runConversationRename(message, requestId) {
   const operationId = String(message.operationId || requestId || '').trim();
   const conversationKey = String(message.conversationKey || '').trim();
@@ -210,11 +223,30 @@ async function runDotRename(message, requestId) {
       return renameResultError('DOT_RENAME_OPERATION_ID_REUSE_MISMATCH');
     }
     if (existing.terminal === true && existing.result) return { ...existing.result, replayed: true };
+    // Reconcile the same unresolved set-title operation without dispatching the
+    // UI effect again.  If the exact Dot tab already exposes the requested
+    // title, the desired state is satisfied regardless of whether ChatGPT
+    // treated an earlier same-title Save as a disabled/no-op action.
+    const observed = await exactDotRenameTab(tabId, dotKey).catch(() => null);
+    if (observed && observedChatTitle(observed) === title) {
+      const result = dotRenameSatisfiedResult({
+        operationId, title, tabId, dotKey, sessionId, reconciled: true,
+      });
+      try {
+        await writeRenameReceipt(operationId, {
+          ...existing, terminal: true, state: 'APPLIED', result, updatedAt: Date.now(),
+        });
+      } catch (_) {
+        return renameResultError('DOT_RENAME_TERMINAL_RECEIPT_UNKNOWN', 'UNKNOWN');
+      }
+      return result;
+    }
     return renameResultError('DOT_RENAME_PRIOR_EFFECT_UNRESOLVED', 'UNKNOWN');
   }
 
+  let exactTab;
   try {
-    await exactDotRenameTab(tabId, dotKey);
+    exactTab = await exactDotRenameTab(tabId, dotKey);
   } catch (error) {
     return renameResultError(error?.message || error);
   }
@@ -226,6 +258,21 @@ async function runDotRename(message, requestId) {
     await writeRenameReceipt(operationId, prepared);
   } catch (_) {
     return renameResultError('DOT_RENAME_RECEIPT_PREPARE_FAILED');
+  }
+
+  // ChatGPT can disable Save when the title is unchanged.  Treat exact
+  // desired-state equality as an applied idempotent no-op instead of opening
+  // the editor and later misclassifying the operation as UNKNOWN.
+  if (observedChatTitle(exactTab) === title) {
+    const result = dotRenameSatisfiedResult({ operationId, title, tabId, dotKey, sessionId });
+    try {
+      await writeRenameReceipt(operationId, {
+        ...prepared, terminal: true, state: 'APPLIED', result, updatedAt: Date.now(),
+      });
+    } catch (_) {
+      return renameResultError('DOT_RENAME_TERMINAL_RECEIPT_UNKNOWN', 'UNKNOWN');
+    }
+    return result;
   }
 
   let reply;
