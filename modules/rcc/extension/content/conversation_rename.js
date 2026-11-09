@@ -620,6 +620,12 @@ async function submitRenameEditor(input, scopeHint = null) {
   // handler while the visible Save button is still disabled.
   const save = await waitForRenameUi(() => enabledRenameSaveControl(scope), 5000);
   if (save) {
+    // HTMLElement.click() does not move focus like a real pointer click.  The
+    // current Dot name editor commits its controlled draft on blur, so focus
+    // the exact enabled Save control first and let React process that boundary
+    // before invoking the site's own click handler.
+    save.focus?.({ preventScroll: true });
+    await renameSleep(50);
     activateRenameUiElement(save);
     return 'SAVE_BUTTON';
   }

@@ -2,6 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 
+;(async () => {
 const source = fs.readFileSync(`${__dirname}/content/conversation_rename.js`, 'utf8');
 
 function visibleNode(attributes = {}, textContent = '') {
@@ -162,6 +163,20 @@ assert.equal(vm.runInContext('enabledRenameSaveControl(saveScope)', context), nu
 saveButton.disabled = false;
 assert.equal(vm.runInContext('enabledRenameSaveControl(saveScope) === saveButton', context), true,
   'the exact enabled Korean Save control must be preferred after React updates');
+let saveFocused = false;
+let saveClicked = false;
+saveButton.focus = () => { saveFocused = true; };
+saveButton.dispatchEvent = () => {};
+saveButton.scrollIntoView = () => {};
+saveButton.click = () => {
+  assert.equal(saveFocused, true, 'Save must receive focus so the controlled Dot draft blurs first');
+  saveClicked = true;
+};
+context.renameSleep = async () => {};
+context.saveInput = { closest: () => null, parentElement: saveScope };
+context.saveScope = saveScope;
+await vm.runInContext('submitRenameEditor(saveInput, saveScope)', context);
+assert.equal(saveClicked, true, 'the exact enabled Save control must be clicked after focus commit');
 
 const trackedInput = new context.HTMLInputElement();
 trackedInput.value = '내닷';
@@ -272,3 +287,7 @@ assert.equal(vm.runInContext('visibleDotCustomizationDialog() === unlabelledCust
   'a role-less Dot customizer must be recovered from the exact name and its bounded Save control');
 
 console.log('conversation rename UI v2: PASS');
+})().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
