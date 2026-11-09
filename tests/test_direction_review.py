@@ -768,12 +768,25 @@ class DirectionReviewTests(unittest.IsolatedAsyncioTestCase):
         result = await self.call("bct_chain_recipe", work_id=self.work.work_id,
             source_kind="MANAGER_RETURN", source_task_id="returned-plan", source_generation=1)
         self.assertEqual("RECIPE_READY", result["status"], result)
+        self.assertEqual("BOUND", result["return_chain_link"]["status"])
+        self.assertEqual("return-direction", result["return_chain_link"]["parent_direction_id"])
         card = result["state"]["return_execute_plan_check"]
         self.assertEqual("RECORDED", card["status"])
         self.assertEqual("return-direction", card["chain"]["direction_id"])
         self.assertEqual("return-plan-id", card["plan"]["plan_id"])
         self.assertEqual(2, card["return_check"]["completed_steps"])
         self.assertEqual([], card["return_check"]["issues"])
+
+        wrong_parent = await self.call(
+            "bct_chain_recipe", action="save", work_id=self.work.work_id,
+            source_kind="MANAGER_RETURN", source_task_id="returned-plan", source_generation=1,
+            entry_context_id=result["entry_context_id"], parent_direction_id="wrong-parent",
+            direction_id="return-to-supervisor", decision="NEW_TASK",
+            direction_text="Have the declared targets review the returned evidence.",
+            assessment=assessment(),
+        )
+        self.assertEqual("INVALID_REQUEST", wrong_parent["status"], wrong_parent)
+        self.assertEqual("CHAIN_RETURN_PARENT_DIRECTION_MISMATCH", wrong_parent["reason"])
 
         saved = await self.call(
             "bct_chain_recipe", action="save", work_id=self.work.work_id,
@@ -784,6 +797,9 @@ class DirectionReviewTests(unittest.IsolatedAsyncioTestCase):
             assessment=assessment(),
         )
         self.assertEqual("OK", saved["status"], saved)
+        self.assertEqual("return-direction", saved["chain_direction"]["chain_branch"]["parent_direction_id"])
+        self.assertEqual("MANAGER_RETURN", saved["chain_direction"]["chain_branch"]["parent_step_id"])
+        self.assertEqual("RESUME", saved["chain_direction"]["chain_branch"]["kind"])
         legacy_route = await self.call(
             "bct_prepare_supervisor_chain", work_id=self.work.work_id,
             direction_id="return-to-supervisor",
