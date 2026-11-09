@@ -94,7 +94,7 @@ async function executeDotRenameInMainWorld(tabId, operationId, dotKey, title) {
         node?.getAttribute?.('data-testid'), node?.textContent,
       ].filter(Boolean).join(' '));
       const sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
-      const wait = async (find, timeoutMs = 5000) => {
+      const wait = async (find, timeoutMs = 20000) => {
         const deadline = Date.now() + timeoutMs;
         while (Date.now() < deadline) {
           const value = find();
@@ -120,6 +120,7 @@ async function executeDotRenameInMainWorld(tabId, operationId, dotKey, title) {
           normalize(child.textContent) === value));
       const saveButton = (scope) => Array.from(scope?.querySelectorAll?.('button') || [])
         .find((button) => visible(button) && !button.disabled &&
+          button.getAttribute('aria-disabled') !== 'true' &&
           (/^(?:save|저장|confirm|확인)$/i.test(semantic(button)) || button.type === 'submit')) || null;
       const customizer = (currentTitle) => {
         const hasTitle = (scope) => exactTitleLeaves(scope, currentTitle).length > 0;
@@ -220,7 +221,7 @@ async function executeDotRenameInMainWorld(tabId, operationId, dotKey, title) {
           bubbles: true, inputType: 'insertText', data: request.title,
         }));
         input.dispatchEvent(new Event('change', { bubbles: true }));
-        await sleep(100);
+        await sleep(250);
         let innerScope = input.closest?.('[role="dialog"], [aria-modal="true"], [data-radix-dialog-content]')
           || input.closest?.('form') || input.parentElement;
         for (let depth = 0; innerScope && depth < 10 && !saveButton(innerScope); depth += 1) {
@@ -231,16 +232,20 @@ async function executeDotRenameInMainWorld(tabId, operationId, dotKey, title) {
         diagnostic.innerSave = 'ATTEMPTED';
         effectStarted = true;
         innerSave.focus?.({ preventScroll: true });
-        await sleep(50);
+        await sleep(250);
         innerSave.click();
-        const staged = await wait(() => (!document.contains(input) || !visible(input)) && visible(outer));
+        const staged = await wait(() => {
+          if (document.contains(input) && visible(input)) return false;
+          return exactTitleLeaves(document, request.title).length > 0;
+        }, 30000);
         if (!staged) return fail('DOT_RENAME_INNER_SAVE_NOT_VERIFIED', 'UNKNOWN');
         diagnostic.innerSave = 'OBSERVED';
-        const outerSave = await wait(() => saveButton(outer));
+        outer = await wait(() => customizer(request.title), 20000) || outer;
+        const outerSave = await wait(() => saveButton(outer), 20000);
         if (!outerSave) return fail('DOT_RENAME_OUTER_SAVE_NOT_READY', 'UNKNOWN');
         diagnostic.outerSave = 'ATTEMPTED';
         outerSave.focus?.({ preventScroll: true });
-        await sleep(50);
+        await sleep(250);
         outerSave.click();
         const accepted = await wait(() => {
           if (dotKeyAt() !== request.dotKey) return false;
@@ -251,7 +256,7 @@ async function executeDotRenameInMainWorld(tabId, operationId, dotKey, title) {
                 normalize(anchor.textContent) === request.title;
             } catch (_) { return false; }
           });
-        }, 8000);
+        }, 30000);
         if (!accepted) return fail('DOT_RENAME_UI_NOT_VERIFIED', 'UNKNOWN');
         return { ok: true, effectState: 'APPLIED', operationId: request.operationId,
           savedTitle: request.title, route: 'PROFILE_CUSTOMIZER', world: 'MAIN' };

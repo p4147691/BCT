@@ -92,12 +92,12 @@ CANONICAL_WIRE_ROLLBACK = CANONICAL_WIRE_ROOT / "rollback_installed_1_0_66"
 CANONICAL_WIRE_MANIFEST = CANONICAL_WIRE_ROOT / "release_manifest_canonical_wire_immutable.json"
 CANONICAL_WIRE_MANIFEST_SHA256 = "b49520dcef5061503e67f1b1e74742a7a914899b4621b64ae8e30b7b54326f58"
 CANONICAL_WIRE_JOURNAL = Path(r"D:\BCT\runtime\backups\rcc-guarded-install-canonical-wire")
-DOT_TITLE_RENAME_ROOT = Path(r"D:\BCT\data\RCC_DOT_CUSTOM_NAME_V11_20261109")
-DOT_TITLE_RENAME_STAGE = DOT_TITLE_RENAME_ROOT / "candidate_1_0_69_custom_name_v11"
+DOT_TITLE_RENAME_ROOT = Path(r"D:\BCT\data\RCC_DOT_CUSTOM_NAME_V14_20261109")
+DOT_TITLE_RENAME_STAGE = DOT_TITLE_RENAME_ROOT / "candidate_1_0_69_custom_name_v14"
 DOT_TITLE_RENAME_ROLLBACK = DOT_TITLE_RENAME_ROOT / "rollback_installed_1_0_69_custom_name_v10"
-DOT_TITLE_RENAME_MANIFEST = DOT_TITLE_RENAME_ROOT / "release_manifest_dot_custom_name_v11_immutable.json"
-DOT_TITLE_RENAME_MANIFEST_SHA256 = "5f6b8482ab303d53c5e4bc53c3541f2230878ef3f742cefd7f08e0f2121dba8b"
-DOT_TITLE_RENAME_JOURNAL = Path(r"D:\BCT\runtime\backups\rcc-guarded-install-dot-custom-name-v11")
+DOT_TITLE_RENAME_MANIFEST = DOT_TITLE_RENAME_ROOT / "release_manifest_dot_custom_name_v14_immutable.json"
+DOT_TITLE_RENAME_MANIFEST_SHA256 = "79f479c43296f1fe72ab8cf15cd82717a293417cc4129213297cf9ab6f23d8bd"
+DOT_TITLE_RENAME_JOURNAL = Path(r"D:\BCT\runtime\backups\rcc-guarded-install-dot-custom-name-v14")
 EXTENSION_ID = "ocbidbaplechjjdacmokhnfbdmgjkphf"
 OP_ID = re.compile(r"[A-Za-z0-9_.-]{1,80}\Z")
 
