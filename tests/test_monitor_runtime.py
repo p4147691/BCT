@@ -205,7 +205,9 @@ class MonitorRuntimeTests(unittest.TestCase):
                 self.assertEqual("PROBE_TIMEOUT", _rcc_states(["instance-a"])[0]["state"])
                 self.assertEqual([1.0], calls)
                 self.assertLessEqual(
-                    _RCC_HEALTH["instance-a"]["retry_at"] - time.monotonic(), 5.0)
+                    _RCC_HEALTH["instance-a"]["retry_at"] - time.monotonic(),
+                    _RCC_TIMEOUT_RETRY_SECONDS + 1e-6,
+                )
                 cache = _rcc_states(["instance-a"])[0]
                 self.assertEqual("PROBE_TIMEOUT", cache["state"])
                 self.assertTrue(cache["cached"])
