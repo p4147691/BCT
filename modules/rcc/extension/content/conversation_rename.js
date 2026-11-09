@@ -698,9 +698,18 @@ async function openDotRenameEditor(key) {
     diagnostic.identity = 'MISMATCH';
     throw renameUiError('DOT_RENAME_TARGET_STALE', 'NOT_APPLIED', diagnostic);
   }
+  // Prefer ChatGPT's dedicated Dot-row Rename action.  It opens the bounded
+  // name-only editor shown by the site's own context menu and avoids routing
+  // a title-only change through the broader theme/customization draft.
+  let exactSidebarAnchor = null;
+  try {
+    exactSidebarAnchor = await ensureDotAnchor(key);
+  } catch (_) {
+    exactSidebarAnchor = null;
+  }
   let customizeDialog = visibleDotCustomizationDialog();
   const profileTitle = customizeDialog ? null : dotProfileTitleControl();
-  if (customizeDialog || profileTitle) {
+  if (!exactSidebarAnchor && (customizeDialog || profileTitle)) {
     if (!customizeDialog) {
       diagnostic.menuClick = 'PROFILE_TITLE_ATTEMPTED';
       activateRenameUiElement(profileTitle);
@@ -734,7 +743,7 @@ async function openDotRenameEditor(key) {
     }
     throw renameUiError('DOT_PROFILE_RENAME_INPUT_NOT_FOUND', 'NOT_APPLIED', diagnostic);
   }
-  const anchor = await ensureDotAnchor(key);
+  const anchor = exactSidebarAnchor || await ensureDotAnchor(key);
   const row = conversationRow(anchor) || anchor;
   dispatchRenameHover(row);
   let menuButton = await waitForRenameUi(() => rowMenuButton(anchor), 1500);
