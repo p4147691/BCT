@@ -171,4 +171,12 @@ context.profileTitle = profileTitle;
 assert.equal(vm.runInContext('dotProfileTitleControl() === profileTitle', context), true,
   'the exact current Dot profile title control above Active must be preferred');
 
+const profileTitleLeaf = visibleNode({}, '내 dot');
+profileTitleLeaf.closest = () => null;
+profileTitleLeaf.children = [];
+document.querySelectorAll = (selector) => selector === 'main *' ? [profileTitleLeaf] : [];
+context.profileTitleLeaf = profileTitleLeaf;
+assert.equal(vm.runInContext('dotProfileTitleControl() === profileTitleLeaf', context), true,
+  'a unique exact plain-text Dot profile title must bubble to its profile click handler');
+
 console.log('conversation rename UI v2: PASS');

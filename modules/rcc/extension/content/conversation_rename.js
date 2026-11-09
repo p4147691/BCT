@@ -128,7 +128,17 @@ function dotProfileTitleControl() {
   )).filter((node) => isVisible(node) && !node.disabled &&
     !node.closest?.('nav, [data-testid*="sidebar"]'));
   const exact = controls.filter((node) => renameSemanticText(node) === title);
-  return exact.length === 1 ? exact[0] : null;
+  if (exact.length === 1) return exact[0];
+  // Some ChatGPT builds attach the click handler to an unlabelled profile
+  // container while rendering the title as a plain heading/span.  Clicking
+  // the unique exact title leaf still bubbles through that handler.
+  const leaves = Array.from(document.querySelectorAll('main *'))
+    .filter((node) => isVisible(node) && !node.closest?.('nav, [data-testid*="sidebar"]'))
+    .filter((node) => normalizedUiText(node.textContent) === title)
+    .filter((node) => !Array.from(node.children || []).some((child) =>
+      normalizedUiText(child.textContent) === title
+    ));
+  return leaves.length === 1 ? leaves[0] : null;
 }
 
 function activateRenameUiElement(element) {
