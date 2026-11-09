@@ -946,7 +946,6 @@ body.desktop-window-monitor-active { background-image:none!important; background
 .monitor-bct-node-number { display:grid; place-items:center; width:27px; height:27px; border:1px solid rgba(117,184,255,.42); border-radius:7px; background:rgba(117,184,255,.13); color:#f2f8ff; font:900 13px/1 "Segoe UI","Malgun Gothic",sans-serif; }
 .monitor-bct-node-body { min-width:0; display:block; }
 .monitor-bct-node-title { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#f7f9fc; font:700 12px/1.25 "Segoe UI","Malgun Gothic",sans-serif; }
-.monitor-bct-node-role { display:inline-block; margin:2px 0 1px; color:#e2b4ff; font:900 9px/1 "Segoe UI","Malgun Gothic",sans-serif; letter-spacing:.08em; }
 .monitor-bct-node-presence { display:block; width:7px; height:7px; border-radius:50%; background:#62d99a; box-shadow:0 0 0 2px rgba(98,217,154,.11); }
 .monitor-bct-node-presence.is-busy { background:#ffc45c; box-shadow:0 0 0 2px rgba(255,196,92,.12); }
 .monitor-bct-node-empty { padding:15px 12px; border:1px dashed rgba(255,255,255,.13); border-radius:9px; color:rgba(225,234,245,.68); text-align:center; font:600 11px/1.45 "Segoe UI","Malgun Gothic",sans-serif; }

@@ -7455,7 +7455,7 @@ function renderMonitorBctWindowNodes(nodes) {
       : "클릭: 연결 창 표시 · 더블클릭: 해당 데스크톱으로 이동";
     const number = document.createElement("span");
     number.className = "monitor-bct-node-number";
-    number.textContent = node.nodeLabel || "N?";
+    number.textContent = node.dotKey ? "DOT" : node.nodeLabel || "N?";
     number.title = node.codexLocalReference
       ? "Codex 비공개 로컬 참조의 조회 전용 C 번호 · 전송 대상 아님"
       : node.nodeLabel
@@ -7468,13 +7468,6 @@ function renderMonitorBctWindowNodes(nodes) {
     title.className = "monitor-bct-node-title";
     title.textContent = node.title;
     body.append(title);
-    const role = monitorBctNodeRoleSummary(node);
-    if (role) {
-      const roleBadge = document.createElement("span");
-      roleBadge.className = "monitor-bct-node-role";
-      roleBadge.textContent = role;
-      body.append(roleBadge);
-    }
     const location = document.createElement("small");
     location.className = "monitor-bct-node-location";
     const detail = monitorBctNodeDetail(node, desktopPosition, nativeLocation);

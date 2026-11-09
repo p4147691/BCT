@@ -121,6 +121,10 @@ function loadModule() {
     "the exact focus receipt must carry a Dot or confirmed local-reference identity without coercing either to a conversation UUID");
   assert.match(monitor, /function monitorBctNodeRoleRank\(node\) \{\s*if \(node\?\.dotKey\) return -1/,
     "Dot remains first in the unassigned node list before supervisor and Manager cards");
+  assert.match(monitor, /number\.textContent = node\.dotKey \? "DOT" : node\.nodeLabel \|\| "N\?";/,
+    "Dot uses DOT only in the compact node-number badge");
+  assert.doesNotMatch(monitor, /monitor-bct-node-role/,
+    "Dot must not add a role line that makes roster cards taller");
   assert.match(monitor, /Number\(right\.key === "__unassigned__"\) - Number\(left\.key === "__unassigned__"\)/,
     "the unassigned group, including Dot, must remain the first group in the node roster");
   assert.match(monitor, /const detail = monitorBctNodeDetail\(node, desktopPosition, nativeLocation\);\s*location\.textContent = detail\.text;/,
