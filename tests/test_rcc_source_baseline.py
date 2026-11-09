@@ -19,7 +19,7 @@ class RccSourceBaselineTests(unittest.TestCase):
         release = json.loads((
             self.root / "modules" / "rcc" / "release" / "rcc_v2_rc.json"
         ).read_text(encoding="utf-8-sig"))
-        self.assertEqual("RCC_DOT_TITLE_RENAME_20261109", release["candidate"])
+        self.assertEqual("RCC_COMPOSER_REBIND_20261110", release["candidate"])
         self.assertEqual(
             "ec256e89fdaf8ebd6bae5f6892ae3f108d660c1b235e9aa74a0fb371dbbe3ada",
             release["rollbackBaseline"]["aggregateSha256"],
@@ -60,8 +60,8 @@ class RccSourceBaselineTests(unittest.TestCase):
     def test_committed_manifest_preserves_bct_install_identity(self):
         manifest = json.loads((self.extension / "manifest.json").read_text(encoding="utf-8-sig"))
         self.assertEqual("BCT RCC", manifest["name"])
-        self.assertEqual("1.0.69", manifest["version"])
-        self.assertEqual("1.0.69 Dot Title Rename", manifest["version_name"])
+        self.assertEqual("1.0.70", manifest["version"])
+        self.assertEqual("1.0.70 Composer Rebind", manifest["version_name"])
         self.assertEqual("BCT RCC", manifest["action"]["default_title"])
         self.assertNotIn("webRequest", manifest["permissions"])
         public_key = base64.b64decode(manifest["key"], validate=True)
