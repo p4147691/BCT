@@ -77,10 +77,9 @@ jobs:
       # does not force another push merely to discover a second failure.
       fail-fast: false
       matrix:
-        # Six is the measured balance point: it lowers the estimated slowest
-        # shard from about 8 minutes (four shards) to about 5.5 minutes
-        # without paying the startup overhead of seven or eight Windows jobs.
-        shard: [0, 1, 2, 3, 4, 5]
+        # Twelve was faster and less variable than nine in three sequential,
+        # alternating measurements on the exact merged main revision.
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -89,5 +88,5 @@ jobs:
           cache: pip
           cache-dependency-path: pyproject.toml
       - run: python -m pip install -e .
-      - name: Run BCT core shard ${{ matrix.shard }} of 6
-        run: python scripts/ci_test_shard.py --start-directory tests --shard-index ${{ matrix.shard }} --shard-count 6 --durations 20 --duration-input scripts/ci_test_duration_seed.json
+      - name: Run BCT core shard ${{ matrix.shard }} of 12
+        run: python scripts/ci_test_shard.py --start-directory tests --shard-index ${{ matrix.shard }} --shard-count 12 --durations 20 --duration-input scripts/ci_test_duration_seed.json

@@ -122,6 +122,13 @@ class CIScopeTests(unittest.TestCase):
         )
         self.assertIn("--scan-root .", workflow)
 
+    def test_main_workflow_runs_a_complete_twelve_shard_matrix(self):
+        workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]", workflow)
+        self.assertIn("--shard-count 12", workflow)
+
 class CIShardTests(unittest.TestCase):
     def test_every_discovered_module_is_assigned_once_and_deterministically(self):
         modules = sharding.discover_modules(ROOT / "tests")
