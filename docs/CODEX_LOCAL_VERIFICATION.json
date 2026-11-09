@@ -1,8 +1,8 @@
 {
   "base_sha": "91a56c4886180e3220aa8d7a26b2257d786bbffd",
-  "candidate_head_sha": "d88e31893efa7c88716d324ced296a00bc4ab909",
+  "candidate_head_sha": "93ef9081979147ed40c09e63e4253a2f7e36db63",
   "integration_merge_sha": "85ad66a9005604ad23b46536f999416476efb2f2",
-  "candidate_state": "MONITOR_DOT_BADGE_AND_COLOR_LIVE_VALIDATED_LOCAL_MAIN",
+  "candidate_state": "MONITOR_DOT_SPA_ROUTE_REFRESH_CANDIDATE_LOCAL_CHECKED_NOT_LIVE",
   "verification_environment": "PYTHONPATH=src",
   "codex_tests_passed": 7,
   "conversation_network_regression_tests_passed": 22,
@@ -36,6 +36,12 @@
     "scope": "Fit three-character DOT and N99-style labels inside the roster badge and raise Dot purple to the Supervisor/Manager role-gradient density.",
     "checks": ["check_monitor_bct_node_interaction.js: PASS", "check_monitor_node_token_visual_contract.js: PASS", "check_monitor_bct_shell.js: PASS", "check_monitor_structure.py: PASS", "git diff --check: PASS"],
     "live_monitor_validation": "Published to the guarded installed Monitor payload as version 2.0.190; official Request-MonitorDeploymentCheck observed matching reload ACK and runtime telemetry."
+  },
+  "monitor_dot_spa_route_refresh": {
+    "candidate_code_sha": "93ef9081979147ed40c09e63e4253a2f7e36db63",
+    "scope": "Refresh the exact observed ChatGPT tab after a same-tab History API route change so a temporary N? projection returns to Dot without reopening Monitor.",
+    "checks": ["check_monitor_bct_node_interaction.js: PASS", "check_monitor_bct_shell.js: PASS", "google-bootstrap.js syntax: PASS", "background.js syntax: PASS", "check_monitor_structure.py: PASS", "git diff --check: PASS"],
+    "live_monitor_validation": "NOT_YET_DEPLOYED"
   },
   "checks": ["post-integration focused suite: 74 PASS", "build_monitor_bundle.py: PASS", "build_monitor_js_index.py: PASS", "analyze_monitor_dependencies.py --write: PASS", "build_component_library.py --write --reviewed: PASS", "test_codex_surface.py: 7 PASS", "test_conversation_network.py: 22 PASS", "check_monitor_codex_surface.js: PASS", "check_monitor_dot_browser.py --codex: PASS_READ_ONLY", "check_monitor_dot_http_e2e.py: PASS_TEST_ORIGIN_ADAPTER", "check_monitor_structure.py: PASS", "compileall: PASS", "git diff --check: PASS", "build_component_library.py: PASS"],
   "live_changes": true,
