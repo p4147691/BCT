@@ -158,8 +158,8 @@
       },
       {
         "path": "domain/conversation_rename_service.js",
-        "size": 22911,
-        "sha256": "9f3d7f31507a3c3fd1a8a5108bd318be129292ed18e895e77cef2a531b41437b"
+        "size": 25015,
+        "sha256": "c2776cd244eaff1a6b0d3bc7bf18b88f8ed653ab3ed52372c35b127af87d0df9"
       },
       {
         "path": "domain/delivery_ledger_service.js",
@@ -297,7 +297,7 @@
         "sha256": "b3ad92bc20564a905bffc37f3e524e2c8e8c5ae71c02517a301cedd5cf1341cd"
       }
     ],
-    "aggregateSha256": "e53807299d0a281fc8d80835e153ee7301ba74e3e9b0a10d344aef2f6aac2a23"
+    "aggregateSha256": "4ac96f061637c9e57afb21bc422921e37c78fd4fe057dfbd576eb60a82e9258b"
   },
   "activeLoaderGraph": {
     "background": [
