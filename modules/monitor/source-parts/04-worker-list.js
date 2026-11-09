@@ -224,6 +224,12 @@ let monitorBctBrowserWindows = new Map();
 let monitorBctLastDisplayResolution = null;
 let monitorBctWindowNodeRefreshBusy = false;
 let monitorBctWindowNodeRefreshPending = false;
+// This checks one small Core-owned revision marker.  A full RCC/desktop roster
+// read still happens only when that marker changes.
+const MONITOR_BCT_ROSTER_WATCH_INTERVAL_MS = 750;
+let monitorBctRosterWatchTimer = 0;
+let monitorBctRosterWatchBusy = false;
+let monitorBctRosterRevision = "";
 // A reload can observe cached RCC rows while Chrome/RCC complete their own
 // restart. Revalidate only during this bounded warm-up; this is not a poll.
 const MONITOR_BCT_STARTUP_REVALIDATION_DELAYS_MS = Object.freeze([250, 800, 1800, 3200]);

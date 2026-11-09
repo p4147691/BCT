@@ -8,6 +8,7 @@
     codexRegister: "http://127.0.0.1:18790/monitor/codex-surface/register",
     dotInfo: "http://127.0.0.1:18790/monitor/dot-node-info",
     monitorState: "http://127.0.0.1:18790/monitor/state",
+    rosterRevision: "http://127.0.0.1:18790/monitor/roster-revision",
     rccCommandCatalog: "http://127.0.0.1:18790/monitor/rcc-command-catalog",
     renameConversation: "http://127.0.0.1:18790/monitor/conversation-title/rename",
     renameDot: "http://127.0.0.1:18790/monitor/dot-title/rename",
@@ -74,6 +75,18 @@
         return {...state,codex_surface_directory:result.directory};
       }
       return state;
+    }
+
+    async function rosterRevision() {
+      if (typeof fetcher !== "function") throw new Error("BCT_MONITOR_FETCH_UNAVAILABLE");
+      const response = await fetcher(URLS.rosterRevision, { cache: "no-store" });
+      if (!response?.ok) throw new Error(`BCT_MONITOR_ROSTER_REVISION_HTTP_${Number(response?.status || 0)}`);
+      const state = await response.json();
+      if (Number(state?.schema) !== 1 || state?.source !== "READ_ONLY_MONITOR_ROSTER_REVISION" ||
+          !/^[a-f0-9]{64}$/i.test(String(state?.revision || ""))) {
+        throw new Error("BCT_MONITOR_ROSTER_REVISION_CONTRACT_INVALID");
+      }
+      return Object.freeze({ revision: String(state.revision).toLowerCase() });
     }
 
     async function rccCommandCatalog() {
@@ -474,6 +487,7 @@
     return Object.freeze({
       health,
       monitorState,
+      rosterRevision,
       rccCommandCatalog,
       windowNodes,
       managerStatuses,

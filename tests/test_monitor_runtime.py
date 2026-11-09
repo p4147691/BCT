@@ -7,12 +7,31 @@ from unittest.mock import patch
 
 from bct.core.models import Principal, Work
 from bct.core.store import Store
-from bct.monitor_runtime import _rcc_states, build_monitor_state, build_monitor_ui_state
+from bct.monitor_runtime import _rcc_states, build_monitor_state, build_monitor_ui_state, monitor_roster_revision
 from bct.conversation_network import configure_conversation_scope, upsert_conversation
 from bct.integrations.rcc import RelayUnavailable, RelayEffectUnknown
 
 
 class MonitorRuntimeTests(unittest.TestCase):
+    def test_roster_revision_changes_for_chain_scope_metadata(self):
+        conversation = "6ad733b6-95d4-83ee-b4ba-49a671229d77"
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "state.sqlite")
+            before = monitor_roster_revision(store)
+            configure_conversation_scope(
+                store,
+                conversation_key=conversation,
+                display_name="Manager node",
+                scope_name="chain topology",
+                role_tags=["Manager"],
+                assigned_task="delegate work",
+                now=1234.5,
+            )
+            after = monitor_roster_revision(store)
+            self.assertEqual("READ_ONLY_MONITOR_ROSTER_REVISION", before["source"])
+            self.assertRegex(before["revision"], r"^[a-f0-9]{64}$")
+            self.assertNotEqual(before["revision"], after["revision"])
+
     def test_ui_snapshot_is_read_only_and_uses_existing_labels_only(self):
         conversation = "6ad733b6-95d4-83ee-b4ba-49a671229d77"
         with tempfile.TemporaryDirectory() as directory:

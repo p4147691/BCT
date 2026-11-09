@@ -6537,6 +6537,12 @@ let monitorBctBrowserWindows = new Map();
 let monitorBctLastDisplayResolution = null;
 let monitorBctWindowNodeRefreshBusy = false;
 let monitorBctWindowNodeRefreshPending = false;
+// This checks one small Core-owned revision marker.  A full RCC/desktop roster
+// read still happens only when that marker changes.
+const MONITOR_BCT_ROSTER_WATCH_INTERVAL_MS = 750;
+let monitorBctRosterWatchTimer = 0;
+let monitorBctRosterWatchBusy = false;
+let monitorBctRosterRevision = "";
 // A reload can observe cached RCC rows while Chrome/RCC complete their own
 // restart. Revalidate only during this bounded warm-up; this is not a poll.
 const MONITOR_BCT_STARTUP_REVALIDATION_DELAYS_MS = Object.freeze([250, 800, 1800, 3200]);
@@ -8174,6 +8180,35 @@ function scheduleMonitorBctNodeStartupRevalidation() {
   }, delay);
 }
 
+async function checkMonitorBctRosterRevision() {
+  if (monitorBctRosterWatchBusy || !monitorBctShell?.rosterRevision) return;
+  monitorBctRosterWatchBusy = true;
+  try {
+    const next = await monitorBctShell.rosterRevision();
+    const revision = String(next?.revision || "").trim().toLowerCase();
+    if (!revision) return;
+    const previous = monitorBctRosterRevision;
+    monitorBctRosterRevision = revision;
+    // The initial marker is also followed by a roster read.  That closes the
+    // startup race where a Chain Recipe writes after the first snapshot but
+    // before this watcher establishes its baseline.
+    if (!previous || previous !== revision) void refreshMonitorBctWindowNodes();
+  } catch (_) {
+    // This detector is advisory. Existing Chrome/RCC events and manual refresh
+    // remain usable if Core is restarting or an older Core is still installed.
+  } finally {
+    monitorBctRosterWatchBusy = false;
+  }
+}
+
+function startMonitorBctRosterWatch() {
+  if (!MONITOR_ACTIVE_STARTUP_ENABLED || monitorBctRosterWatchTimer || !monitorBctShell?.rosterRevision) return;
+  void checkMonitorBctRosterRevision();
+  monitorBctRosterWatchTimer = globalThis.setInterval(() => {
+    void checkMonitorBctRosterRevision();
+  }, MONITOR_BCT_ROSTER_WATCH_INTERVAL_MS);
+}
+
 async function refreshMonitorBctWindowNodes() {
   if (!MONITOR_BCT_NODE_SUMMARY_ENABLED || !monitorBctShell) return;
   if (monitorBctWindowNodeRefreshBusy) {
@@ -8282,6 +8317,7 @@ monitorBctNodesRefresh?.addEventListener("click", () => {
 
 void refreshMonitorBctStatus();
 void refreshMonitorBctWindowNodes();
+startMonitorBctRosterWatch();
 
 async function refreshMonitorEndpointRegistry() {
   const refreshUrl = new URL("/browser/endpoints/refresh", ORCHESTRATOR_ROLE_ADMIN_URL).toString();

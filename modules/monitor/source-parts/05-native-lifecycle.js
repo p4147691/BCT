@@ -49,6 +49,10 @@ const MONITOR_BCT_DROP_EDGE_Y_PX = 10;
 
 /*@@MONITOR_FUNCTION:scheduleMonitorBctNodeStartupRevalidation@@*/
 
+/*@@MONITOR_FUNCTION:checkMonitorBctRosterRevision@@*/
+
+/*@@MONITOR_FUNCTION:startMonitorBctRosterWatch@@*/
+
 /*@@MONITOR_FUNCTION:refreshMonitorBctWindowNodes@@*/
 
 /*@@MONITOR_FUNCTION:renderMonitorGithubInbox@@*/
@@ -62,6 +66,7 @@ monitorBctNodesRefresh?.addEventListener("click", () => {
 
 void refreshMonitorBctStatus();
 void refreshMonitorBctWindowNodes();
+startMonitorBctRosterWatch();
 
 /*@@MONITOR_FUNCTION:refreshMonitorEndpointRegistry@@*/
 
