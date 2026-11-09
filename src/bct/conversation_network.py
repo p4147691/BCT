@@ -704,8 +704,8 @@ def configure_conversation_scope(
         if node_memo is not None or assigned_task is not None:
             db.execute(
                 "UPDATE conversation_network_conversations SET "
-                "node_memo=COALESCE(?,node_memo),assigned_task=COALESCE(?,assigned_task) "
-                "WHERE conversation_key=?", (node_memo, assigned_task, key),
+                "node_memo=COALESCE(?,node_memo),assigned_task=COALESCE(?,assigned_task),updated_at=? "
+                "WHERE conversation_key=?", (node_memo, assigned_task, when, key),
             )
         project_id = ""
         if scope:

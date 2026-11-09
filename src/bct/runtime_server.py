@@ -18,7 +18,7 @@ from bct import BCT
 from bct.core.capabilities import canonical_capability
 from bct.core.models import BCTError, Principal, Work
 from bct.mcp_server import LocalBearerMiddleware, build_mcp
-from bct.monitor_runtime import build_monitor_state, build_monitor_ui_state
+from bct.monitor_runtime import build_monitor_state, build_monitor_ui_state, monitor_roster_revision
 from bct.codex_surface import register_codex_surfaces
 from bct.dot_identity import dot_directory, dot_key, save_dot_info
 from bct.status_views import status_view
@@ -615,6 +615,12 @@ def main() -> int:
             data_root=runtime_root.parent / "data",
         )
         return JSONResponse(snapshot)
+
+    @mcp.custom_route("/monitor/roster-revision", methods=["GET"], include_in_schema=False)
+    async def monitor_roster_revision_state(request: Request) -> JSONResponse:
+        """Return only the durable roster marker used by an open Monitor."""
+        snapshot = await asyncio.to_thread(monitor_roster_revision, bct.store)
+        return JSONResponse(snapshot, headers={"Cache-Control": "no-store"})
 
     @mcp.custom_route("/monitor/current-nodes", methods=["GET"], include_in_schema=False)
     async def monitor_current_nodes(request: Request) -> JSONResponse:
