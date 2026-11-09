@@ -6537,8 +6537,9 @@ let monitorBctBrowserWindows = new Map();
 let monitorBctLastDisplayResolution = null;
 let monitorBctWindowNodeRefreshBusy = false;
 let monitorBctWindowNodeRefreshPending = false;
-// This checks one small Core-owned revision marker.  A full RCC/desktop roster
-// read still happens only when that marker changes.
+// This checks one small Core-owned revision marker for every durable value that
+// can change the Monitor display. A full RCC/desktop roster read still happens
+// only when that marker changes.
 const MONITOR_BCT_ROSTER_WATCH_INTERVAL_MS = 750;
 let monitorBctRosterWatchTimer = 0;
 let monitorBctRosterWatchBusy = false;
@@ -8189,9 +8190,9 @@ async function checkMonitorBctRosterRevision() {
     if (!revision) return;
     const previous = monitorBctRosterRevision;
     monitorBctRosterRevision = revision;
-    // The initial marker is also followed by a roster read.  That closes the
-    // startup race where a Chain Recipe writes after the first snapshot but
-    // before this watcher establishes its baseline.
+    // The initial marker is also followed by a roster read. That closes the
+    // startup race where any Core-owned display write lands after the first
+    // snapshot but before this watcher establishes its baseline.
     if (!previous || previous !== revision) void refreshMonitorBctWindowNodes();
   } catch (_) {
     // This detector is advisory. Existing Chrome/RCC events and manual refresh

@@ -618,7 +618,7 @@ def main() -> int:
 
     @mcp.custom_route("/monitor/roster-revision", methods=["GET"], include_in_schema=False)
     async def monitor_roster_revision_state(request: Request) -> JSONResponse:
-        """Return only the durable roster marker used by an open Monitor."""
+        """Return only the durable display marker used by an open Monitor."""
         snapshot = await asyncio.to_thread(monitor_roster_revision, bct.store)
         return JSONResponse(snapshot, headers={"Cache-Control": "no-store"})
 

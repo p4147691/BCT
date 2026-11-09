@@ -22,49 +22,79 @@ from bct.trace_timing import recent_stages
 
 
 def monitor_roster_revision(store: Any) -> dict[str, Any]:
-    """Return a cheap revision marker for the Monitor's live roster.
+    """Return a cheap revision marker for durable Monitor display data.
 
     This is intentionally narrower than ``build_monitor_ui_state``: it never
     contacts RCC, allocates labels, or wakes any notification.  It lets an
-    already-open Monitor notice a Chain Recipe's durable conversation-network
-    write and then perform the existing full roster read only when needed.
+    already-open Monitor notice any Core-owned change that can alter its
+    display, then perform the existing full roster read only when needed.
     """
     # Counts and timestamps alone can miss two same-second edits that preserve
-    # row counts.  These are only small, local conversation-network tables, so
-    # hash their display-relevant rows instead.  This is still materially
-    # cheaper and safer than rebuilding the full Monitor state: no RCC calls,
-    # no Node tab inspection, and no label allocation.
+    # row counts.  These are small, local tables whose values are projected by
+    # ``build_monitor_ui_state``. Hash their display-relevant rows instead.
+    # This is still materially cheaper and safer than rebuilding the full
+    # Monitor state: no RCC calls, no Node tab inspection, and no label
+    # allocation.
     queries = (
         (
-            "projects",
+            "conversation_network_projects",
             "SELECT project_id, display_name, active, updated_at "
             "FROM conversation_network_projects ORDER BY project_id",
         ),
         (
-            "conversations",
+            "conversation_network_conversations",
             "SELECT conversation_key, display_name, unassigned_role_tags, node_memo, assigned_task, "
             "display_order, updated_at FROM conversation_network_conversations "
             "ORDER BY conversation_key",
         ),
         (
-            "memberships",
+            "conversation_network_memberships",
             "SELECT project_id, conversation_key, activity, updated_at "
             "FROM conversation_network_memberships ORDER BY project_id, conversation_key",
         ),
         (
-            "membership_tags",
+            "conversation_network_membership_tags",
             "SELECT project_id, conversation_key, tag, created_at "
             "FROM conversation_network_membership_tags ORDER BY project_id, conversation_key, tag",
         ),
         (
-            "node_labels",
+            "conversation_network_node_labels",
             "SELECT conversation_key, node_number, assigned_at "
             "FROM conversation_network_node_labels ORDER BY conversation_key",
+        ),
+        (
+            "dot_node_info",
+            "SELECT dot_key, metadata, revision FROM dot_node_info ORDER BY dot_key",
+        ),
+        (
+            "codex_surface_nodes",
+            "SELECT reference, number FROM codex_surface_nodes ORDER BY reference",
+        ),
+        (
+            "github_run_inbox",
+            "SELECT subscription_id, repository, run_id, head_sha, workflow, context_json, url, state, "
+            "conclusion, error_summary, next_step, trigger, created_at, updated_at, terminal_at "
+            "FROM github_run_inbox ORDER BY subscription_id",
+        ),
+        (
+            "github_run_inbox_recipients",
+            "SELECT subscription_id, work_id, node_id, conversation_uuid, notify_user, notify_manager, "
+            "unread, delivery_state, next_step FROM github_run_inbox_recipients "
+            "ORDER BY subscription_id, work_id, node_id",
         ),
     )
     values: list[tuple[str, list[tuple[Any, ...]]]] = []
     with store._readonly() as db:
         for name, query in queries:
+            # Dot and local-Codex tables are intentionally created only when
+            # their respective feature is first used. An empty directory and a
+            # not-yet-created table render identically, so preserve that state
+            # without making the passive monitor endpoint initialize anything.
+            if db.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)
+            ).fetchone() is None:
+                values.append((name, []))
+                continue
             rows = db.execute(query).fetchall()
             values.append((name, [tuple(row) for row in rows]))
     digest = hashlib.sha256(repr(values).encode("utf-8")).hexdigest()

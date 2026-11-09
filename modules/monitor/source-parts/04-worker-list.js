@@ -224,8 +224,9 @@ let monitorBctBrowserWindows = new Map();
 let monitorBctLastDisplayResolution = null;
 let monitorBctWindowNodeRefreshBusy = false;
 let monitorBctWindowNodeRefreshPending = false;
-// This checks one small Core-owned revision marker.  A full RCC/desktop roster
-// read still happens only when that marker changes.
+// This checks one small Core-owned revision marker for every durable value that
+// can change the Monitor display. A full RCC/desktop roster read still happens
+// only when that marker changes.
 const MONITOR_BCT_ROSTER_WATCH_INTERVAL_MS = 750;
 let monitorBctRosterWatchTimer = 0;
 let monitorBctRosterWatchBusy = false;

@@ -9,6 +9,8 @@ from bct.core.models import Principal, Work
 from bct.core.store import Store
 from bct.monitor_runtime import _rcc_states, build_monitor_state, build_monitor_ui_state, monitor_roster_revision
 from bct.conversation_network import configure_conversation_scope, upsert_conversation
+from bct.codex_surface import register_codex_surfaces
+from bct.dot_identity import save_dot_info
 from bct.integrations.rcc import RelayUnavailable, RelayEffectUnknown
 
 
@@ -31,6 +33,38 @@ class MonitorRuntimeTests(unittest.TestCase):
             self.assertEqual("READ_ONLY_MONITOR_ROSTER_REVISION", before["source"])
             self.assertRegex(before["revision"], r"^[a-f0-9]{64}$")
             self.assertNotEqual(before["revision"], after["revision"])
+
+    def test_roster_revision_changes_for_all_durable_monitor_display_sources(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            store = Store(root / "state.sqlite")
+
+            before = monitor_roster_revision(store)["revision"]
+            save_dot_info(store, {
+                "dot_key": "monitor~dot", "display_name": "Monitor Dot",
+                "scope_name": "", "node_memo": "watch", "assigned_task": "observe",
+                "role_tags": [], "expected_revision": 0,
+            })
+            after_dot = monitor_roster_revision(store)["revision"]
+            self.assertNotEqual(before, after_dot)
+
+            register_codex_surfaces(store, [
+                "https://chatgpt.com/local/client-new-thread:6ad733b6-95d4-83ee-b4ba-49a671229d77",
+            ])
+            after_codex = monitor_roster_revision(store)["revision"]
+            self.assertNotEqual(after_dot, after_codex)
+
+            store.create_work(Work(
+                "monitor-inbox-work", "monitor inbox", (str(root),), frozenset({"read"}), "owner",
+            ))
+            store.register_github_run_inbox(
+                subscription_id="monitor-inbox", repository="owner/repo", run_id=1,
+                head_sha="a" * 40, workflow="CI", context={}, work_id="monitor-inbox-work",
+                node_id="node-1", conversation_uuid=None, notify_user=True,
+                notify_manager=False, next_step="inspect",
+            )
+            after_inbox = monitor_roster_revision(store)["revision"]
+            self.assertNotEqual(after_codex, after_inbox)
 
     def test_ui_snapshot_is_read_only_and_uses_existing_labels_only(self):
         conversation = "6ad733b6-95d4-83ee-b4ba-49a671229d77"

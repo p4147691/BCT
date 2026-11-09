@@ -1297,9 +1297,9 @@ async function checkMonitorBctRosterRevision() {
     if (!revision) return;
     const previous = monitorBctRosterRevision;
     monitorBctRosterRevision = revision;
-    // The initial marker is also followed by a roster read.  That closes the
-    // startup race where a Chain Recipe writes after the first snapshot but
-    // before this watcher establishes its baseline.
+    // The initial marker is also followed by a roster read. That closes the
+    // startup race where any Core-owned display write lands after the first
+    // snapshot but before this watcher establishes its baseline.
     if (!previous || previous !== revision) void refreshMonitorBctWindowNodes();
   } catch (_) {
     // This detector is advisory. Existing Chrome/RCC events and manual refresh
