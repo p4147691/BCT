@@ -151,4 +151,24 @@ context.homeControl = homeControl;
 assert.equal(vm.runInContext('sidebarHoverRevealControl() === homeControl', context), true,
   'the compact Korean ChatGPT shell must reveal the Dot flyout from the exact Home control');
 
+const saveButton = visibleNode({}, '저장');
+saveButton.disabled = true;
+const saveScope = visibleNode();
+saveScope.querySelectorAll = () => [saveButton];
+context.saveButton = saveButton;
+context.saveScope = saveScope;
+assert.equal(vm.runInContext('enabledRenameSaveControl(saveScope)', context), null,
+  'the rename path must not submit through a still-disabled Save button');
+saveButton.disabled = false;
+assert.equal(vm.runInContext('enabledRenameSaveControl(saveScope) === saveButton', context), true,
+  'the exact enabled Korean Save control must be preferred after React updates');
+
+const profileTitle = visibleNode({}, '내 dot');
+profileTitle.closest = () => null;
+document.title = '내 dot';
+document.querySelectorAll = (selector) => selector.includes('main button') ? [profileTitle] : [];
+context.profileTitle = profileTitle;
+assert.equal(vm.runInContext('dotProfileTitleControl() === profileTitle', context), true,
+  'the exact current Dot profile title control above Active must be preferred');
+
 console.log('conversation rename UI v2: PASS');

@@ -111,6 +111,26 @@ function sidebarHoverRevealControl() {
   return rootLinks.length === 1 ? rootLinks[0] : null;
 }
 
+function currentDotDisplayTitle() {
+  return normalizedUiText(String(document.title || '')
+    .replace(/\s*(?:[-–—|·]\s*)?ChatGPT\s*$/i, ''));
+}
+
+function dotProfileTitleControl() {
+  const title = currentDotDisplayTitle();
+  if (!title) return null;
+  // The current Dot profile card exposes its title above the Active status.
+  // Prefer that bounded main-content control; the compact sidebar remains a
+  // separate fallback because its flyout markup changes more frequently.
+  const controls = Array.from(document.querySelectorAll(
+    'main button, main [role="button"], main [tabindex="0"], '
+    + '[data-testid*="dot"] button, [data-testid*="dot"] [role="button"]'
+  )).filter((node) => isVisible(node) && !node.disabled &&
+    !node.closest?.('nav, [data-testid*="sidebar"]'));
+  const exact = controls.filter((node) => renameSemanticText(node) === title);
+  return exact.length === 1 ? exact[0] : null;
+}
+
 function activateRenameUiElement(element) {
   element.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
   const common = { bubbles: true, cancelable: true, composed: true, view: window, button: 0 };
@@ -348,6 +368,17 @@ function findRenameEditor(anchor) {
   return all.length === 1 ? all[0] : null;
 }
 
+function findDotProfileRenameEditor() {
+  const dialog = Array.from(document.querySelectorAll('[role="dialog"]')).find(isVisible);
+  if (!dialog) return null;
+  const editors = renameEditors().filter((node) => dialog.contains(node));
+  const named = editors.filter((node) =>
+    /name|title|이름|제목/i.test(renameSemanticText(node))
+  );
+  if (named.length === 1) return named[0];
+  return editors.length === 1 ? editors[0] : null;
+}
+
 async function openConversationRenameEditor(key) {
   // Diagnostic values are fixed stage/status flags, never DOM contents.
   const diagnostic = {
@@ -422,6 +453,36 @@ function setRenameEditorValue(input, title) {
   input.dispatchEvent(new Event('change', { bubbles: true }));
 }
 
+function enabledRenameSaveControl(scope) {
+  const buttons = Array.from(scope?.querySelectorAll?.('button') || []);
+  return buttons.find((button) => {
+    if (!isVisible(button) || button.disabled) return false;
+    const text = renameSemanticText(button);
+    return /^(save|저장|confirm|확인)$/i.test(text) || button.type === 'submit';
+  }) || null;
+}
+
+async function submitRenameEditor(input) {
+  const scope = input.closest?.('[role="dialog"]') || input.closest?.('form') || input.parentElement;
+  const form = input.closest?.('form');
+  // React enables the dialog's Save button on a later render after the input
+  // event.  Submitting the form immediately can bypass the actual onClick
+  // handler while the visible Save button is still disabled.
+  const save = await waitForRenameUi(() => enabledRenameSaveControl(scope), 1500);
+  if (save) {
+    activateRenameUiElement(save);
+    return 'SAVE_BUTTON';
+  }
+  if (form?.requestSubmit) {
+    form.requestSubmit();
+    return 'FORM_SUBMIT';
+  }
+  input.dispatchEvent(new KeyboardEvent('keydown', {
+    key: 'Enter', code: 'Enter', bubbles: true, cancelable: true,
+  }));
+  return 'ENTER';
+}
+
 function currentTitleMatches(key, title) {
   const documentTitle = normalizedUiText(String(document.title || '')
     .replace(/\s*(?:[-–—|·]\s*)?ChatGPT\s*$/i, ''));
@@ -441,24 +502,13 @@ async function renameConversationUi(message) {
 
   const { input } = await openConversationRenameEditor(key);
   setRenameEditorValue(input, title);
-  const scope = input.closest?.('[role="dialog"]') || input.closest?.('form') || input.parentElement;
-  const form = input.closest?.('form');
-  const save = Array.from(scope?.querySelectorAll?.('button') || []).find((button) => {
-    if (!isVisible(button) || button.disabled) return false;
-    const text = renameSemanticText(button);
-    return /^(save|저장|confirm|확인)$/i.test(text) || button.type === 'submit';
-  });
   if (currentConversationKey() !== key) throw renameUiError('RENAME_TARGET_STALE');
   await renameSleep(80);
 
   let effectStarted = false;
   try {
     effectStarted = true;
-    if (form?.requestSubmit) form.requestSubmit(save?.type === 'submit' ? save : undefined);
-    else if (save) activateRenameUiElement(save);
-    else input.dispatchEvent(new KeyboardEvent('keydown', {
-      key: 'Enter', code: 'Enter', bubbles: true, cancelable: true,
-    }));
+    await submitRenameEditor(input);
 
     const accepted = await waitForRenameUi(() =>
       (!document.contains(input) || !isVisible(input)) && currentTitleMatches(key, title), 8000
@@ -490,6 +540,18 @@ async function openDotRenameEditor(key) {
   if (dotKeyFromLocation() !== key) {
     diagnostic.identity = 'MISMATCH';
     throw renameUiError('DOT_RENAME_TARGET_STALE', 'NOT_APPLIED', diagnostic);
+  }
+  const profileTitle = dotProfileTitleControl();
+  if (profileTitle) {
+    diagnostic.menuClick = 'PROFILE_TITLE_ATTEMPTED';
+    activateRenameUiElement(profileTitle);
+    const profileInput = await waitForRenameUi(() => findDotProfileRenameEditor(), 5000);
+    if (profileInput) {
+      diagnostic.renameAction = 'PROFILE_TITLE';
+      diagnostic.editor = 'FOUND';
+      return { input: profileInput, diagnostic };
+    }
+    throw renameUiError('DOT_PROFILE_RENAME_INPUT_NOT_FOUND', 'NOT_APPLIED', diagnostic);
   }
   const anchor = await ensureDotAnchor(key);
   const row = conversationRow(anchor) || anchor;
@@ -542,23 +604,12 @@ async function renameDotUi(message) {
   if (!operationId || !title || title.length > 100) throw renameUiError('DOT_RENAME_INPUT_INVALID');
   const { input } = await openDotRenameEditor(key);
   setRenameEditorValue(input, title);
-  const scope = input.closest?.('[role="dialog"]') || input.closest?.('form') || input.parentElement;
-  const form = input.closest?.('form');
-  const save = Array.from(scope?.querySelectorAll?.('button') || []).find((button) => {
-    if (!isVisible(button) || button.disabled) return false;
-    const text = renameSemanticText(button);
-    return /^(save|저장|confirm|확인)$/i.test(text) || button.type === 'submit';
-  });
   if (dotKeyFromLocation() !== key) throw renameUiError('DOT_RENAME_TARGET_STALE');
   await renameSleep(80);
   let effectStarted = false;
   try {
     effectStarted = true;
-    if (form?.requestSubmit) form.requestSubmit(save?.type === 'submit' ? save : undefined);
-    else if (save) activateRenameUiElement(save);
-    else input.dispatchEvent(new KeyboardEvent('keydown', {
-      key: 'Enter', code: 'Enter', bubbles: true, cancelable: true,
-    }));
+    await submitRenameEditor(input);
     const accepted = await waitForRenameUi(() =>
       (!document.contains(input) || !isVisible(input)) && currentDotTitleMatches(key, title), 8000
     );
