@@ -24,7 +24,10 @@ Chat·Work·Codex에서 같은 BCT 연결을 쓰면 같은 설명서와 도구 �
   완료·위험·정체·판단 필요이면 `NEXT TASK — MANAGER: 결과와 반환 지시` 중 하나를 남긴다.
   고정 횟수만으로 왕복하지 않는다. 응답 감시는 BCT 백그라운드가 담당하므로 A가 붙잡혀 기다리지 않는다.
 - BA/CA를 받은 A: 정확한 반환 Task/generation으로 Chain Message의 prepare에 다시 들어가
-  현재 상태와 방향을 재검토한다. 필요한 병합·배포·E2E는 Supervisor에게 별도 지시한다.
+  현재 상태와 방향을 재검토한다. 반환이 선언된 Direction에서 온 경우 prepare 결과의
+  `return_chain_link`가 원래 Direction·Task·generation을 보여 주며, 같은 entry_context로
+  save하면 다음 Direction은 그 부모에 자동 연결된다. 다른 부모로 바꾸어 저장할 수 없다.
+  필요한 병합·배포·E2E는 Supervisor에게 별도 지시한다.
 - B/C가 관찰·진단·수정·검증의 추가 작업을 제안할 때는 `bct_chain_branch(action="request")`에
   현재 Root Work, 부모 Direction/단계, Task/generation, 이유와 정확한 영수증 참조를 남긴다.
   이는 **자식 지시나 전송을 만들지 않는 보고**다. A만 Chain Recipe를 처음부터 다시 들어가
@@ -111,6 +114,8 @@ B/C/X/S가 자기 범위의 구체적인 계획을 세움
 계속할 경우 A가 bct_chain_message(action="prepare",
  source_kind="MANAGER_RETURN", source_task_id=..., source_generation=...) 재호출
 현재 현실부터 다시 읽고 다음 방향을 판단
+  └─ 선언된 Direction에서 온 정확한 반환이면 다음 save는 원래 Direction에
+     `MANAGER_RETURN` 연결을 자동 기록한다. 읽기는 반복해도 전송·생성은 반복하지 않는다.
 ```
 
 ### 추가 분기와 원래 체인 복귀

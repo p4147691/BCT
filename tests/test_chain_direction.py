@@ -452,7 +452,9 @@ class ChainDirectionPublicTests(unittest.IsolatedAsyncioTestCase):
             mcp = build_mcp(SimpleNamespace(operations=ops, store=store), compact_catalogue=True,
                             status_provider=lambda: {"monitor": {}})
 
-            def return_to_manager(task_id: str, response_sha: str, text: str) -> None:
+            def return_to_manager(
+                task_id: str, response_sha: str, text: str, *, chain_direction_id: str = "",
+            ) -> None:
                 delayed.prearm_task(
                     task_id=task_id, work_id=work.work_id, principal_id="bct-mcp-local",
                     assignment_epoch=1, instance_id="worker-instance",
@@ -463,6 +465,8 @@ class ChainDirectionPublicTests(unittest.IsolatedAsyncioTestCase):
                         "responseTurnKey": "old-" + task_id, "responseSha256": "a" * 64,
                         "latestUserTurnKey": "source-" + task_id, "latestUserSha256": "b" * 64,
                     }, registration_receipt="prearm-" + task_id,
+                    execution_path="DIRECTION_DECLARED" if chain_direction_id else "",
+                    chain_direction_id=chain_direction_id,
                 )
                 watch = Watch(task_id, 1, "worker-uuid", f"task:{task_id}:1", "prearm-" + task_id)
                 outcome = SendDelayedMessageRunner(
@@ -477,8 +481,24 @@ class ChainDirectionPublicTests(unittest.IsolatedAsyncioTestCase):
                 ).poll_once(watch, manager_conversation_key="manager-uuid")
                 self.assertEqual("RETURNED_TO_MANAGER", outcome.status)
 
+            # A1 → B1 is already a declared Chain Direction.  B1's exact
+            # return must make A2 a linked continuation, not a new root.
+            directions = ChainDirectionLedger(store)
+            directions.save(
+                direction_id="direction-one", work_id=work.work_id, source_kind="USER",
+                decision="NEW_TASK", direction_text="Do the first bounded task, then return to A.",
+            )
+            directions.plan_chain(
+                direction_id="direction-one", work_id=work.work_id,
+                task_id="task-one", operation_id="chain-one",
+            )
+            directions.mark_chain_started(
+                direction_id="direction-one", work_id=work.work_id,
+                task_id="task-one", operation_id="chain-one",
+            )
+
             # B1 → A2: exact BA return.
-            return_to_manager("task-one", "c" * 64, "First B report.")
+            return_to_manager("task-one", "c" * 64, "First B report.", chain_direction_id="direction-one")
             direction = await save_direction_via_recipe(mcp, {
                 "work_id": work.work_id, "direction_id": "direction-two",
                 "source_kind": "MANAGER_RETURN", "source_task_id": "task-one",
@@ -486,6 +506,8 @@ class ChainDirectionPublicTests(unittest.IsolatedAsyncioTestCase):
                 "direction_text": "Do the second bounded task, then return to A.",
             })
             self.assertEqual("NEW_TASK", direction["chain_direction"]["decision"])
+            self.assertEqual("direction-one", direction["chain_direction"]["chain_branch"]["parent_direction_id"])
+            self.assertEqual("RESUME", direction["chain_direction"]["chain_branch"]["kind"])
 
             # A2 → B2: a new Chain Message starts immediately.  The fake executor
             # records the prearm/send pair in place of a real browser delivery.
@@ -540,7 +562,9 @@ class ChainDirectionPublicTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(b_plan_text, read_plan["chain_execution_plan"]["plan_text"])
 
             # B2 → A3: the final BA return; A3 closes instead of creating B3.
-            return_to_manager("task-two", "d" * 64, "Second B report.")
+            return_to_manager(
+                "task-two", "d" * 64, "Second B report.", chain_direction_id="direction-two",
+            )
             completed = await save_direction_via_recipe(mcp, {
                 "work_id": work.work_id, "direction_id": "direction-complete",
                 "source_kind": "MANAGER_RETURN", "source_task_id": "task-two",
@@ -549,3 +573,5 @@ class ChainDirectionPublicTests(unittest.IsolatedAsyncioTestCase):
             })
             self.assertEqual("COMPLETE", completed["chain_direction"]["decision"])
             self.assertEqual("NOT_PLANNED", completed["chain_direction"]["chain_state"])
+            self.assertEqual("direction-two", completed["chain_direction"]["chain_branch"]["parent_direction_id"])
+            self.assertEqual("RESUME", completed["chain_direction"]["chain_branch"]["kind"])

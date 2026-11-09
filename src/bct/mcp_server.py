@@ -242,6 +242,80 @@ def build_mcp(
             "source_result_sha256": result_sha,
         }
 
+    def manager_return_chain_link_recipe(
+        *, source_kind: str, work: Work | None, source_return: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        """Describe the exact parent link carried by one Manager return.
+
+        A Manager return is already bound to its source Task/generation by
+        Input R.  When that Task was sent through a declared Direction, retain
+        that Direction as the parent of the next Manager-authored Direction.
+        This is relationship evidence, not a decision about what A sends next.
+        """
+        if source_kind != "MANAGER_RETURN":
+            return {"status": "NOT_APPLICABLE"}
+        binding = (source_return or {}).get("binding") or {}
+        parent_direction_id = str(binding.get("chain_direction_id") or "")
+        if not parent_direction_id:
+            return {
+                "status": "NOT_DECLARED",
+                "reason": "The exact return has no declared Chain Direction to link.",
+            }
+        if not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", parent_direction_id):
+            return {
+                "status": "INVALID_REQUEST",
+                "reason": "CHAIN_RETURN_PARENT_DIRECTION_INVALID",
+            }
+        if work is None or binding.get("work_id") != work.work_id:
+            return {
+                "status": "INVALID_REQUEST",
+                "reason": "CHAIN_RETURN_PARENT_WORK_MISMATCH",
+            }
+        return {
+            "status": "BOUND",
+            "parent_direction_id": parent_direction_id,
+            "parent_work_id": work.work_id,
+            "parent_step_id": "MANAGER_RETURN",
+            "default_branch_kind": "RESUME",
+            "reason": "The next Direction is linked to the exact Task/generation return observed by Input R.",
+        }
+
+    def manager_return_save_context(
+        *, return_chain_link: dict[str, Any], parent_direction_id: str,
+        parent_step_id: str, branch_kind: str, branch_reason: str,
+        branch_request_id: str,
+    ) -> dict[str, Any]:
+        """Resolve one save's parent fields without letting a return drift."""
+        if return_chain_link.get("status") != "BOUND" or branch_request_id:
+            return {
+                "status": "OK", "parent_direction_id": parent_direction_id,
+                "parent_step_id": parent_step_id, "branch_kind": branch_kind,
+                "branch_reason": branch_reason,
+            }
+        expected_parent = str(return_chain_link["parent_direction_id"])
+        expected_step = str(return_chain_link["parent_step_id"])
+        if parent_direction_id and parent_direction_id != expected_parent:
+            return {
+                "status": "INVALID_REQUEST",
+                "reason": "CHAIN_RETURN_PARENT_DIRECTION_MISMATCH",
+                "expected_parent_direction_id": expected_parent,
+            }
+        if parent_step_id and parent_step_id != expected_step:
+            return {
+                "status": "INVALID_REQUEST",
+                "reason": "CHAIN_RETURN_PARENT_STEP_MISMATCH",
+                "expected_parent_step_id": expected_step,
+            }
+        return {
+            "status": "OK",
+            "parent_direction_id": expected_parent,
+            "parent_step_id": expected_step,
+            # PRIMARY describes a new root.  A bound Manager return is always
+            # a continuation unless A explicitly classifies its next child.
+            "branch_kind": "RESUME" if branch_kind == "PRIMARY" else branch_kind,
+            "branch_reason": branch_reason or str(return_chain_link["reason"]),
+        }
+
     def compare_current_and_stored_networks_recipe(
         *, nodes: dict[str, Any], stored_scopes: list[dict[str, object]],
         stored_nodes: dict[str, dict[str, object]],
@@ -690,7 +764,7 @@ def build_mcp(
 
     def chain_recipe_entry_context_id(
         *, confirmed_input: dict[str, Any], state: dict[str, Any],
-        report_target_conversation_key: str,
+        report_target_conversation_key: str, return_chain_link: dict[str, Any],
     ) -> str:
         """Return a non-durable identity for one Manager-visible recipe entry.
 
@@ -708,6 +782,7 @@ def build_mcp(
             "source_generation": confirmed_input.get("source_generation", 0),
             "source_result_sha256": confirmed_input.get("source_result_sha256", ""),
             "report_target_conversation_key": report_target_conversation_key,
+            "return_chain_link": return_chain_link,
             "chain_work_context": state.get("chain_work_context", {}),
         }
         encoded = json.dumps(
@@ -735,6 +810,11 @@ def build_mcp(
         )
         if state["status"] != "OK":
             return state
+        return_chain_link = manager_return_chain_link_recipe(
+            source_kind=source_kind, work=confirmed["work"], source_return=confirmed["source_return"],
+        )
+        if return_chain_link["status"] == "INVALID_REQUEST":
+            return return_chain_link
         return {
             "status": "PREPARED",
             "recipe": {"name": "prepare_direction_recipe", "kind": "partial_recipe"},
@@ -744,9 +824,11 @@ def build_mcp(
             ],
             "confirmed_input": confirmed,
             "state": state,
+            "return_chain_link": return_chain_link,
             "entry_context_id": chain_recipe_entry_context_id(
                 confirmed_input=confirmed, state=state,
                 report_target_conversation_key=report_target_conversation_key,
+                return_chain_link=return_chain_link,
             ),
         }
 
@@ -1137,14 +1219,22 @@ def build_mcp(
                     "state": prepared["state"],
                     "does_not": ["save_direction", "send_message", "create_operation"],
                 }
+            resolved_parent = manager_return_save_context(
+                return_chain_link=prepared["return_chain_link"],
+                parent_direction_id=parent_direction_id, parent_step_id=parent_step_id,
+                branch_kind=branch_kind, branch_reason=branch_reason,
+                branch_request_id=branch_request_id,
+            )
+            if resolved_parent["status"] != "OK":
+                return resolved_parent
             saved = await save_direction_recipe(
                 work=confirmed_input["work"], direction_id=direction_id, source_kind=source_kind,
                 source_task_id=source_task_id, source_generation=source_generation,
                 source_result_sha256=str(confirmed_input["source_result_sha256"]),
                 decision=decision, direction_text=direction_text, assessment=assessment,
-                source_text=source_text, parent_direction_id=parent_direction_id,
-                parent_step_id=parent_step_id, branch_kind=branch_kind,
-                branch_reason=branch_reason, branch_request_id=branch_request_id,
+                source_text=source_text, parent_direction_id=resolved_parent["parent_direction_id"],
+                parent_step_id=resolved_parent["parent_step_id"], branch_kind=resolved_parent["branch_kind"],
+                branch_reason=resolved_parent["branch_reason"], branch_request_id=branch_request_id,
             )
             if saved.get("status") != "OK":
                 return saved
@@ -1327,6 +1417,7 @@ def build_mcp(
                               else ("WORK_BOUND" if work is not None else "UNCONNECTED"),
             },
             "state": state,
+            "return_chain_link": prepared["return_chain_link"],
             "entry_context_id": prepared["entry_context_id"],
             "direction": direction,
             "read_only": True,
