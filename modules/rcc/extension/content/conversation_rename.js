@@ -453,14 +453,31 @@ function dotCustomizationNameControl(dialog) {
   return leaves.length === 1 ? leaves[0] : null;
 }
 
-function findDotProfileRenameEditor(dialog = visibleDotCustomizationDialog()) {
-  if (!dialog) return null;
-  const editors = renameEditors().filter((node) => dialog.contains(node));
-  const named = editors.filter((node) =>
-    /name|title|이름|제목/i.test(renameSemanticText(node))
+function findDotProfileRenameEditor(dialog = visibleDotCustomizationDialog(), previousEditors = null) {
+  const allEditors = renameEditors();
+  const freshEditors = previousEditors instanceof Set
+    ? allEditors.filter((node) => !previousEditors.has(node)) : allEditors;
+  // The Dot name editor is currently rendered as a sibling portal of the
+  // customizer in some ChatGPT builds.  Prefer a newly-created editor after
+  // clicking the exact current name; do not require it to be a descendant of
+  // the outer customizer.
+  const candidates = previousEditors instanceof Set
+    ? freshEditors : (dialog ? allEditors.filter((node) => dialog.contains(node)) : allEditors);
+  const editorScopeText = (node) => {
+    let scope = node;
+    for (let depth = 0; scope && depth < 8; depth += 1, scope = scope.parentElement) {
+      const text = renameSemanticText(scope);
+      if (/(?:dot|닷).*(?:name|title|이름|제목)|(?:name|title|이름|제목).*(?:dot|닷)/i.test(text)) {
+        return text;
+      }
+    }
+    return '';
+  };
+  const named = candidates.filter((node) =>
+    /name|title|이름|제목/i.test(renameSemanticText(node)) || Boolean(editorScopeText(node))
   );
   if (named.length === 1) return named[0];
-  return editors.length === 1 ? editors[0] : null;
+  return previousEditors instanceof Set && candidates.length === 1 ? candidates[0] : null;
 }
 
 async function openConversationRenameEditor(key) {
@@ -524,6 +541,20 @@ async function openConversationRenameEditor(key) {
 function setRenameEditorValue(input, title) {
   input.focus();
   if (input instanceof HTMLInputElement || input instanceof HTMLTextAreaElement) {
+    input.select?.();
+    // execCommand follows the same browser editing path as keyboard input and
+    // therefore updates React's controlled-input state on current ChatGPT.
+    // Retain the native setter as the standards-compatible fallback.
+    let inserted = false;
+    try {
+      inserted = document.execCommand?.('insertText', false, title) === true;
+    } catch (_) {
+      inserted = false;
+    }
+    if (inserted && input.value === title) {
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+      return 'EDIT_COMMAND';
+    }
     const proto = input instanceof HTMLTextAreaElement
       ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
     const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
@@ -535,6 +566,7 @@ function setRenameEditorValue(input, title) {
     bubbles: true, inputType: 'insertText', data: title,
   }));
   input.dispatchEvent(new Event('change', { bubbles: true }));
+  return 'NATIVE_SETTER';
 }
 
 function enabledRenameSaveControl(scope) {
@@ -559,6 +591,13 @@ function renameSubmitScope(input, scopeHint = null) {
     if (hasSave(scope)) return scope;
   }
   if (scopeHint && scopeHint.contains?.(input) && hasSave(scopeHint)) return scopeHint;
+  // Radix/React may portal the inner Dot name editor and its action row as
+  // siblings.  Accept a page-wide save scope only when exactly one visible
+  // enabled semantic Save control exists; ambiguity remains a hard stop.
+  const globalSaves = Array.from(document.querySelectorAll('button'))
+    .filter((button) => isVisible(button) && !button.disabled)
+    .filter((button) => /^(save|저장|confirm|확인)$/i.test(renameSemanticText(button)));
+  if (globalSaves.length === 1) return globalSaves[0].parentElement || document.body;
   return input.closest?.('form') || input.parentElement;
 }
 
@@ -568,7 +607,7 @@ async function submitRenameEditor(input, scopeHint = null) {
   // React enables the dialog's Save button on a later render after the input
   // event.  Submitting the form immediately can bypass the actual onClick
   // handler while the visible Save button is still disabled.
-  const save = await waitForRenameUi(() => enabledRenameSaveControl(scope), 1500);
+  const save = await waitForRenameUi(() => enabledRenameSaveControl(scope), 5000);
   if (save) {
     activateRenameUiElement(save);
     return 'SAVE_BUTTON';
@@ -665,9 +704,10 @@ async function openDotRenameEditor(key) {
         throw renameUiError('DOT_RENAME_TARGET_STALE', 'NOT_APPLIED', diagnostic);
       }
       diagnostic.customizeName = 'ATTEMPTED';
+      const previousEditors = new Set(renameEditors());
       activateRenameUiElement(nameControl);
       profileInput = await waitForRenameUi(
-        () => findDotProfileRenameEditor(customizeDialog), 5000
+        () => findDotProfileRenameEditor(customizeDialog, previousEditors), 5000
       );
     }
     if (profileInput) {
@@ -728,19 +768,23 @@ async function renameDotUi(message) {
   if (!key || dotKeyFromLocation() !== key) throw renameUiError('DOT_RENAME_TARGET_STALE');
   if (!operationId || !title || title.length > 100) throw renameUiError('DOT_RENAME_INPUT_INVALID');
   const { input, scope } = await openDotRenameEditor(key);
-  setRenameEditorValue(input, title);
+  const inputMethod = setRenameEditorValue(input, title);
+  if (input.value !== undefined && normalizedUiText(input.value) !== title) {
+    throw renameUiError('DOT_RENAME_INPUT_VALUE_NOT_APPLIED', 'NOT_APPLIED');
+  }
   if (dotKeyFromLocation() !== key) throw renameUiError('DOT_RENAME_TARGET_STALE');
   await renameSleep(80);
   let effectStarted = false;
   try {
     effectStarted = true;
-    await submitRenameEditor(input, scope);
+    const submitMethod = await submitRenameEditor(input, scope);
     const accepted = await waitForRenameUi(() =>
       (!document.contains(input) || !isVisible(input)) && currentDotTitleMatches(key, title), 8000
     );
     if (!accepted) throw renameUiError('DOT_RENAME_UI_NOT_VERIFIED', 'UNKNOWN');
     if (dotKeyFromLocation() !== key) throw renameUiError('DOT_RENAME_TARGET_STALE_AFTER_SAVE', 'UNKNOWN');
-    return { ok: true, effectState: 'APPLIED', operationId, savedTitle: title };
+    return { ok: true, effectState: 'APPLIED', operationId, savedTitle: title,
+      inputMethod, submitMethod };
   } catch (error) {
     if (error?.effectState) throw error;
     throw renameUiError(error?.message || error, effectStarted ? 'UNKNOWN' : 'NOT_APPLIED');

@@ -20,7 +20,8 @@ const publicTab = gateway.publicTab({
 });
 
 assert.deepEqual(publicTab, {
-  tabId: 1, windowId: 2, index: 3, title: 'ChatGPT', url: 'https://chatgpt.com/c/example',
+  tabId: 1, windowId: 2, index: 3, groupId: -1,
+  title: 'ChatGPT', url: 'https://chatgpt.com/c/example',
 });
 assert.equal(Object.hasOwn(publicTab, 'id'), false,
   'the RCC public state must not leak the raw Chrome field spelling');

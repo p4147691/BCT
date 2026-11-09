@@ -173,6 +173,37 @@ context.rolelessRenamePanel = rolelessRenamePanel;
 assert.equal(vm.runInContext('renameSubmitScope(rolelessRenameInput) === rolelessRenamePanel', context), true,
   'a role-less Dot name dialog must submit through its nearest semantic Save scope');
 
+const priorEditor = visibleNode({ 'aria-label': '검색' });
+const portalledNameInput = visibleNode({ 'aria-label': '이름' });
+const portalledNamePanel = visibleNode({}, 'dot 이름 변경');
+portalledNameInput.parentElement = portalledNamePanel;
+portalledNameInput.closest = () => null;
+const detachedCustomizer = visibleNode();
+detachedCustomizer.contains = () => false;
+document.querySelectorAll = (selector) => selector.includes('input:not([type])')
+  ? [priorEditor, portalledNameInput] : [];
+context.priorEditor = priorEditor;
+context.portalledNameInput = portalledNameInput;
+context.detachedCustomizer = detachedCustomizer;
+assert.equal(vm.runInContext(
+  'findDotProfileRenameEditor(detachedCustomizer, new Set([priorEditor])) === portalledNameInput',
+  context
+), true, 'the newly opened Dot name editor may be a sibling portal of the customizer');
+
+const portalSave = visibleNode({}, '저장');
+const portalActions = visibleNode();
+portalActions.querySelectorAll = (selector) => selector === 'button' ? [portalSave] : [];
+portalSave.parentElement = portalActions;
+const detachedInput = visibleNode({ 'aria-label': '이름' });
+detachedInput.closest = () => null;
+detachedInput.parentElement = visibleNode();
+detachedInput.parentElement.querySelectorAll = () => [];
+document.querySelectorAll = (selector) => selector === 'button' ? [portalSave] : [];
+context.detachedInput = detachedInput;
+context.portalActions = portalActions;
+assert.equal(vm.runInContext('renameSubmitScope(detachedInput) === portalActions', context), true,
+  'a unique enabled Save action may be a sibling portal of the Dot name editor');
+
 const profileTitle = visibleNode({}, '내 dot');
 profileTitle.closest = () => null;
 document.title = '내 dot';
