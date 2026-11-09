@@ -205,8 +205,16 @@ async function executeDotRenameInMainWorld(tabId, operationId, dotKey, title) {
         const controls = Array.from(outer.querySelectorAll?.(
           'button, [role="button"], [tabindex="0"]'
         ) || []).filter((node) => visible(node) && !node.disabled && semantic(node) === currentTitle);
+        const nameLeaf = nameLeaves.length === 1 ? nameLeaves[0] : null;
+        let hitTarget = null;
+        if (nameLeaf) {
+          const rect = nameLeaf.getBoundingClientRect();
+          const hit = document.elementFromPoint(rect.left + rect.width / 2,
+            rect.top + rect.height / 2);
+          if (hit && outer.contains(hit)) hitTarget = hit;
+        }
         const nameControl = controls.length === 1 ? controls[0]
-          : (nameLeaves.length === 1 ? nameLeaves[0] : null);
+          : (hitTarget || nameLeaf);
         if (!nameControl) return fail('DOT_CUSTOMIZATION_NAME_CONTROL_NOT_FOUND');
         diagnostic.nameControl = 'FOUND';
         const previousEditors = new Set(editors());

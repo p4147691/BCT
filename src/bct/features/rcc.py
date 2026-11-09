@@ -3222,6 +3222,8 @@ class BrowserFeature:
                 "version", "identity", "menuButton", "menuClick",
                 "menuVisible", "renameAction", "editor",
                 "customizeDialog", "customizeName",
+                "world", "route", "profile", "customizer", "nameControl",
+                "innerSave", "outerSave",
             }
             rename_diagnostic = {
                 str(key): str(value)[:48]
