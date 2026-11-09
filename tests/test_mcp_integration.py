@@ -493,6 +493,13 @@ class MCPIntegrationTests(unittest.TestCase):
         self.assertNotIn("counts", monitor_state)
         self.assertIn("instances", monitor_state["rcc"])
 
+        roster_revision = httpx.get(f"http://127.0.0.1:{self.port}/monitor/roster-revision", timeout=3)
+        self.assertEqual(200, roster_revision.status_code)
+        roster_revision_view = roster_revision.json()
+        self.assertEqual(1, roster_revision_view["schema"])
+        self.assertEqual("READ_ONLY_MONITOR_ROSTER_REVISION", roster_revision_view["source"])
+        self.assertRegex(roster_revision_view["revision"], r"^[a-f0-9]{64}$")
+
         current_nodes = httpx.get(f"http://127.0.0.1:{self.port}/monitor/current-nodes", timeout=3)
         self.assertEqual(200, current_nodes.status_code)
         current_node_view = current_nodes.json()

@@ -1287,6 +1287,39 @@ function scheduleMonitorBctNodeStartupRevalidation() {
 }
 //@@FN_END:scheduleMonitorBctNodeStartupRevalidation
 
+//@@FN_START:checkMonitorBctRosterRevision
+async function checkMonitorBctRosterRevision() {
+  if (monitorBctRosterWatchBusy || !monitorBctShell?.rosterRevision) return;
+  monitorBctRosterWatchBusy = true;
+  try {
+    const next = await monitorBctShell.rosterRevision();
+    const revision = String(next?.revision || "").trim().toLowerCase();
+    if (!revision) return;
+    const previous = monitorBctRosterRevision;
+    monitorBctRosterRevision = revision;
+    // The initial marker is also followed by a roster read.  That closes the
+    // startup race where a Chain Recipe writes after the first snapshot but
+    // before this watcher establishes its baseline.
+    if (!previous || previous !== revision) void refreshMonitorBctWindowNodes();
+  } catch (_) {
+    // This detector is advisory. Existing Chrome/RCC events and manual refresh
+    // remain usable if Core is restarting or an older Core is still installed.
+  } finally {
+    monitorBctRosterWatchBusy = false;
+  }
+}
+//@@FN_END:checkMonitorBctRosterRevision
+
+//@@FN_START:startMonitorBctRosterWatch
+function startMonitorBctRosterWatch() {
+  if (!MONITOR_ACTIVE_STARTUP_ENABLED || monitorBctRosterWatchTimer || !monitorBctShell?.rosterRevision) return;
+  void checkMonitorBctRosterRevision();
+  monitorBctRosterWatchTimer = globalThis.setInterval(() => {
+    void checkMonitorBctRosterRevision();
+  }, MONITOR_BCT_ROSTER_WATCH_INTERVAL_MS);
+}
+//@@FN_END:startMonitorBctRosterWatch
+
 //@@FN_START:refreshMonitorBctWindowNodes
 async function refreshMonitorBctWindowNodes() {
   if (!MONITOR_BCT_NODE_SUMMARY_ENABLED || !monitorBctShell) return;

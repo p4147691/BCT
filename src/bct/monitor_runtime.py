@@ -21,6 +21,60 @@ from bct.service_runtime import read_json
 from bct.trace_timing import recent_stages
 
 
+def monitor_roster_revision(store: Any) -> dict[str, Any]:
+    """Return a cheap revision marker for the Monitor's live roster.
+
+    This is intentionally narrower than ``build_monitor_ui_state``: it never
+    contacts RCC, allocates labels, or wakes any notification.  It lets an
+    already-open Monitor notice a Chain Recipe's durable conversation-network
+    write and then perform the existing full roster read only when needed.
+    """
+    # Counts and timestamps alone can miss two same-second edits that preserve
+    # row counts.  These are only small, local conversation-network tables, so
+    # hash their display-relevant rows instead.  This is still materially
+    # cheaper and safer than rebuilding the full Monitor state: no RCC calls,
+    # no Node tab inspection, and no label allocation.
+    queries = (
+        (
+            "projects",
+            "SELECT project_id, display_name, active, updated_at "
+            "FROM conversation_network_projects ORDER BY project_id",
+        ),
+        (
+            "conversations",
+            "SELECT conversation_key, display_name, unassigned_role_tags, node_memo, assigned_task, "
+            "display_order, updated_at FROM conversation_network_conversations "
+            "ORDER BY conversation_key",
+        ),
+        (
+            "memberships",
+            "SELECT project_id, conversation_key, activity, updated_at "
+            "FROM conversation_network_memberships ORDER BY project_id, conversation_key",
+        ),
+        (
+            "membership_tags",
+            "SELECT project_id, conversation_key, tag, created_at "
+            "FROM conversation_network_membership_tags ORDER BY project_id, conversation_key, tag",
+        ),
+        (
+            "node_labels",
+            "SELECT conversation_key, node_number, assigned_at "
+            "FROM conversation_network_node_labels ORDER BY conversation_key",
+        ),
+    )
+    values: list[tuple[str, list[tuple[Any, ...]]]] = []
+    with store._readonly() as db:
+        for name, query in queries:
+            rows = db.execute(query).fetchall()
+            values.append((name, [tuple(row) for row in rows]))
+    digest = hashlib.sha256(repr(values).encode("utf-8")).hexdigest()
+    return {
+        "schema": 1,
+        "source": "READ_ONLY_MONITOR_ROSTER_REVISION",
+        "revision": digest,
+    }
+
+
 def _session_states(root: Path) -> list[dict[str, Any]]:
     if not root.is_dir():
         return []
