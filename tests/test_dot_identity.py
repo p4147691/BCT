@@ -37,6 +37,28 @@ class DotIdentityTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     save_dot_info(store, {**values, "expected_revision":0})
 
+    def test_ui_projection_includes_saved_dot_info_without_registering(self):
+        from unittest.mock import patch
+        from bct.monitor_runtime import build_monitor_ui_state
+        with tempfile.TemporaryDirectory() as root:
+            store = Store(Path(root) / "state.sqlite")
+            with patch("bct.monitor_runtime.discover_instance_ids", return_value=[]), \
+                 patch("bct.monitor_runtime._rcc_states", return_value=[]):
+                before = build_monitor_ui_state(
+                    store=store, service_state={}, data_root=Path(root),
+                )
+                self.assertEqual({}, before["dot_node_info"])
+                payload = {
+                    "dot_key": "opaque-dot~opaque-context",
+                    "display_name": "Dot",
+                    "expected_revision": 0,
+                }
+                save_dot_info(store, payload)
+                after = build_monitor_ui_state(
+                    store=store, service_state={}, data_root=Path(root),
+                )
+                self.assertEqual("O", after["dot_node_info"][payload["dot_key"]]["node_label"])
+
 
 class DotHttpIntegrationTests(unittest.TestCase):
     def test_http_roundtrip_origin_revision_and_reload(self):

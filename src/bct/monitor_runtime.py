@@ -536,6 +536,7 @@ def build_monitor_ui_state(
         "service": dict(service_state),
         "current_nodes": classify_current_nodes(rcc, observed_at=time.time()),
         "conversation_network_managers": manager_statuses,
+        "dot_node_info": dot_directory(store),
         "codex_surface_directory": codex_directory(store),
         "codex_nodes": observed_codex_nodes(store, rcc),
         "rcc": {"instances": rcc},
