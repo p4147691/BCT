@@ -23,7 +23,7 @@ def prepare_task_message_instruction(
         if not isinstance(value, str) or not value.strip():
             raise ValueError(f"TASK_MESSAGE_{name.upper()}_REQUIRED")
     # Zero means "continue while there is real progress".  It is the normal
-    # policy for an ordinary Chain Message; a positive value is an explicit
+    # policy for an ordinary Chain Recipe delivery; a positive value is an explicit
     # user/Manager budget, not a hidden completion condition.
     if type(max_rounds) is not int or not 0 <= max_rounds <= 12:
         raise ValueError("TASK_MESSAGE_MAX_ROUNDS_INVALID")

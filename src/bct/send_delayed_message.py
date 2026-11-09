@@ -866,7 +866,7 @@ class DurableWatchLedger:
         A terminal Worker response is already durable evidence at this point,
         so leaving the row WATCHING would falsely describe it as unfinished.
         Do not guess a destination and do not send anything.  The Manager can
-        review the bound response and author a new Chain Message explicitly.
+        review the bound response and author a new Chain Recipe direction explicitly.
         """
         if reason != "NEXT_INSTRUCTION_UNAVAILABLE":
             raise ValueError("DELAYED_MANAGER_DECISION_REASON_INVALID")

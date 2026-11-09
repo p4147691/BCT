@@ -1,7 +1,7 @@
-"""Durable target-authored execution plans for a delivered Chain Message.
+"""Durable target-authored execution plans for a delivered Chain Recipe direction.
 
 The plan is deliberately created only after its source Chain Direction has
-started an exact Chain Message. BCT records the exact relationship and text
+started an exact delivery. BCT records the exact relationship and text
 hash. A later SELF continuation may carry that one saved plan back to the
 same target; BCT still never authors the plan or decides the next action.
 """

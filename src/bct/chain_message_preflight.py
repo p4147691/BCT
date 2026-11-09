@@ -1,4 +1,4 @@
-"""Read-only Chain Message caller preflight and optional output-format instruction.
+"""Read-only Chain Recipe caller preflight and optional output-format instruction.
 
 This component neither expands a Work nor sends, prearms, or decides a NEXT TASK
 route. Exact RCC identity and durable Operation receipt gates remain elsewhere.
@@ -18,7 +18,7 @@ OUTPUT_CONTRACTS = frozenset({OUTPUT_CONTRACT_NONE, OUTPUT_CONTRACT_EXPLICIT})
 # This is a request to the worker, NOT a synthesized continuation decision.
 # A response without a complete explicit marker must still end in Manager review.
 EXPLICIT_NEXT_TASK_SUFFIX = (
-    "[BCT Chain Message continuation output contract — requested by the caller]\n"
+    "[BCT Chain Recipe continuation output contract — requested by the caller]\n"
     "Finish with exactly one explicit continuation directive on your final line:\n"
     "NEXT TASK — SELF: <specific next action you independently chose>, or\n"
     "NEXT TASK — MANAGER: <specific review/acceptance action for A>.\n"
@@ -59,7 +59,7 @@ def execute_plan_progress_suffix(*, work_id: str, direction_id: str, task_id: st
 
 
 def check_chain_work(work: Any, *, principal_id: str) -> dict[str, Any]:
-    """Observe Work state for Chain Message; this never authorizes or blocks a send."""
+    """Observe Work state for Chain Recipe; this never authorizes or blocks a send."""
     if str(getattr(work, "owner_principal_id", "")) != principal_id:
         return {
             "status": "OBSERVED",

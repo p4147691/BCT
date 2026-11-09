@@ -2293,13 +2293,13 @@ def build_mcp(
         name="bct_task_message",
         description=(
             "EXPLICIT REQUEST ONLY: Optional technical envelope for one already-planned Manager-to-Worker "
-            "instruction. It composes exact Chain Message send/watch with explicit "
+            "instruction. It composes exact Chain Recipe delivery/watch with explicit "
             "SELF/MANAGER continuation, but it does not replace A's user direction "
             "or overall plan recorded inside Chain Recipe. The normal "
             "max_rounds=0 policy has no fixed limit: Worker continues only while real "
             "progress and a safe next step exist, then returns to Manager on BA. A positive "
             "max_rounds is an explicit budget. This is a 1:1 message recipe, not the overall "
-            "Chain Message lifecycle, multi-worker orchestration, or automatic Manager election."
+            "Chain Recipe lifecycle, multi-worker orchestration, or automatic Manager election."
         ),
         structured_output=True,
     )
@@ -2426,7 +2426,7 @@ def build_mcp(
         description=(
             "EXPLICIT REQUEST ONLY: send one exact message to an existing ChatGPT conversation or to a "
             "BCT-created chat target. This is an exact-message transport component, "
-            "not the default route for ordinary work, A's user-direction, or whole Chain Message recipe. It preserves the "
+            "not the default route for ordinary work, A's user-direction, or the whole Chain Recipe. It preserves the "
             "existing exact identity, receipt, and UNKNOWN-no-replay contract; "
             "internally it uses the browser capability."
         ),
@@ -2868,7 +2868,7 @@ def build_mcp(
         name="bct_set_execute_plan",
         description=(
             "Save the receiving target's concrete execution plan after an exact A Direction has already "
-            "been delivered by Chain Message. A's direction supplies the goal and "
+            "been delivered by Chain Recipe. A's direction supplies the goal and "
             "boundaries; the target's plan supplies the files, tools, checks, and safe next "
             "steps. BCT stores it but never writes or executes it."
         ),

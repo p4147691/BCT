@@ -609,7 +609,7 @@ def transfer_conversation_state(
 ) -> dict[str, object]:
     """Atomically move advisory scope, roles and task context to a successor.
 
-    This is used only after a replacement Chain Message is durably watching.
+    This is used only after a replacement Chain Recipe delivery is durably watching.
     It does not send a message or grant permission.  Manager and global
     supervisor uniqueness are checked in the same transaction, so there is no
     intermediate two-Manager/two-supervisor state.
