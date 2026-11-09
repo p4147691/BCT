@@ -40,13 +40,18 @@ class FaviconMonitorHttpProjectionTests(unittest.TestCase):
             status_keywords,
         )
 
-    def test_node_label_notifier_is_in_core_runtime_release(self):
+    def test_monitor_identity_dependencies_are_in_core_runtime_release(self):
         import tomllib
         profile_path = Path(__file__).resolve().parents[1] / "bct.toml"
         policy = tomllib.loads(profile_path.read_text(encoding="utf-8"))
         release_files = policy["deployment"]["profiles"]["bct_runtime_v1"]["files"]
-        self.assertIn("src/bct/node_label_notifications.py", release_files)
-        self.assertTrue((profile_path.parent / "src/bct/node_label_notifications.py").is_file())
+        for relative in (
+            "src/bct/node_label_notifications.py",
+            "src/bct/dot_identity.py",
+            "src/bct/codex_surface.py",
+        ):
+            self.assertIn(relative, release_files)
+            self.assertTrue((profile_path.parent / relative).is_file())
 
     def test_source_paths_are_regular_constants(self):
         source = (Path(__file__).resolve().parents[1]

@@ -159,6 +159,8 @@ files = [
   "src/bct/status_views.py",
   "src/bct/trace_timing.py",
   "src/bct/monitor_runtime.py",
+  "src/bct/dot_identity.py",
+  "src/bct/codex_surface.py",
   "src/bct/current_nodes.py",
   "src/bct/node_label_notifications.py",
   "src/bct/rcc_protected_install.py",
