@@ -539,45 +539,29 @@ async function openConversationRenameEditor(key) {
 }
 
 function setRenameEditorValue(input, title) {
-  const previousValue = input.value !== undefined
-    ? String(input.value || '') : String(input.textContent || '');
   input.focus();
-  let method = 'NATIVE_SETTER';
   if (input instanceof HTMLInputElement || input instanceof HTMLTextAreaElement) {
     input.select?.();
-    // execCommand follows the same browser editing path as keyboard input and
-    // therefore updates React's controlled-input state on current ChatGPT.
-    // Retain the native setter as the standards-compatible fallback.
-    let inserted = false;
-    try {
-      inserted = document.execCommand?.('insertText', false, title) === true;
-    } catch (_) {
-      inserted = false;
-    }
-    if (inserted && input.value === title) {
-      method = 'EDIT_COMMAND';
-    } else {
-      const proto = input instanceof HTMLTextAreaElement
-        ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
-      const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
-      if (setter) setter.call(input, title); else input.value = title;
-    }
-    // React keeps an internal value tracker.  Both execCommand and a native
-    // prototype setter can update the DOM before React's delegated input
-    // handler runs, making the handler treat the event as unchanged. Restore
-    // the tracker to the pre-edit value so the real input event below crosses
-    // the same controlled-input boundary as user typing.
-    try {
-      input._valueTracker?.setValue?.(previousValue);
-    } catch (_) {}
+    // Call the native prototype setter directly.  Calling execCommand first can
+    // advance React's main-world value tracker before this isolated-world
+    // content script dispatches its input event, causing React to discard the
+    // edit as unchanged.  The prototype setter leaves the tracker at the old
+    // value, which is the established controlled-input boundary.
+    const proto = input instanceof HTMLTextAreaElement
+      ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+    const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+    if (setter) setter.call(input, title); else input.value = title;
   } else {
     input.textContent = title;
   }
+  input.dispatchEvent(new InputEvent('beforeinput', {
+    bubbles: true, cancelable: true, inputType: 'insertText', data: title,
+  }));
   input.dispatchEvent(new InputEvent('input', {
     bubbles: true, inputType: 'insertText', data: title,
   }));
   input.dispatchEvent(new Event('change', { bubbles: true }));
-  return method;
+  return 'NATIVE_SETTER';
 }
 
 function enabledRenameSaveControl(scope) {
@@ -690,26 +674,23 @@ function currentDotTitleMatches(key, title) {
 
 async function openDotRenameEditor(key) {
   const diagnostic = {
-    version: 4, identity: 'MATCH', menuButton: 'NOT_FOUND', menuClick: 'NOT_ATTEMPTED',
+    version: 5, identity: 'MATCH', route: 'NOT_SELECTED',
+    menuButton: 'NOT_FOUND', menuClick: 'NOT_ATTEMPTED',
     menuVisible: 'NOT_OBSERVED', renameAction: 'NOT_FOUND', editor: 'NOT_CHECKED',
     customizeDialog: 'NOT_OBSERVED', customizeName: 'NOT_ATTEMPTED',
+    innerSave: 'NOT_ATTEMPTED', outerSave: 'NOT_ATTEMPTED',
   };
   if (dotKeyFromLocation() !== key) {
     diagnostic.identity = 'MISMATCH';
     throw renameUiError('DOT_RENAME_TARGET_STALE', 'NOT_APPLIED', diagnostic);
   }
-  // Prefer ChatGPT's dedicated Dot-row Rename action.  It opens the bounded
-  // name-only editor shown by the site's own context menu and avoids routing
-  // a title-only change through the broader theme/customization draft.
-  let exactSidebarAnchor = null;
-  try {
-    exactSidebarAnchor = await ensureDotAnchor(key);
-  } catch (_) {
-    exactSidebarAnchor = null;
-  }
+  // Prefer the exact current-name control above Active/활성.  This is the
+  // stable profile route exposed by the current Dot page.  It does not depend
+  // on manufacturing a CSS :hover state for the compact Home flyout.
   let customizeDialog = visibleDotCustomizationDialog();
   const profileTitle = customizeDialog ? null : dotProfileTitleControl();
-  if (!exactSidebarAnchor && (customizeDialog || profileTitle)) {
+  if (customizeDialog || profileTitle) {
+    diagnostic.route = 'PROFILE_CUSTOMIZER';
     if (!customizeDialog) {
       diagnostic.menuClick = 'PROFILE_TITLE_ATTEMPTED';
       activateRenameUiElement(profileTitle);
@@ -739,11 +720,15 @@ async function openDotRenameEditor(key) {
     if (profileInput) {
       diagnostic.renameAction = 'CUSTOMIZATION_NAME';
       diagnostic.editor = 'FOUND';
-      return { input: profileInput, scope: customizeDialog, diagnostic };
+      return { input: profileInput, scope: customizeDialog,
+        route: 'PROFILE_CUSTOMIZER', diagnostic };
     }
     throw renameUiError('DOT_PROFILE_RENAME_INPUT_NOT_FOUND', 'NOT_APPLIED', diagnostic);
   }
-  const anchor = exactSidebarAnchor || await ensureDotAnchor(key);
+  // Retain the exact full-reference row route only as a fallback for Dot
+  // builds that do not expose the profile control.
+  diagnostic.route = 'SIDEBAR_ROW';
+  const anchor = await ensureDotAnchor(key);
   const row = conversationRow(anchor) || anchor;
   dispatchRenameHover(row);
   let menuButton = await waitForRenameUi(() => rowMenuButton(anchor), 1500);
@@ -784,7 +769,32 @@ async function openDotRenameEditor(key) {
   }
   diagnostic.editor = 'FOUND';
   return { input, scope: input.closest?.('[role="dialog"]') || input.closest?.('form') || null,
-    diagnostic };
+    route: 'SIDEBAR_ROW', diagnostic };
+}
+
+async function submitDotRenameEditor(input, scope, route, diagnostic) {
+  const firstSubmit = await submitRenameEditor(input, scope);
+  if (route !== 'PROFILE_CUSTOMIZER') return firstSubmit;
+
+  // The profile path is a nested draft: the small "Dot name" dialog commits
+  // into the outer customizer, and the outer customizer Save persists it.
+  diagnostic.innerSave = 'ATTEMPTED';
+  const staged = await waitForRenameUi(() =>
+    (!document.contains(input) || !isVisible(input)) && isVisible(scope), 5000
+  );
+  if (!staged) {
+    throw renameUiError('DOT_RENAME_INNER_SAVE_NOT_VERIFIED', 'UNKNOWN', diagnostic);
+  }
+  diagnostic.innerSave = 'OBSERVED';
+  const outerSave = await waitForRenameUi(() => enabledRenameSaveControl(scope), 5000);
+  if (!outerSave) {
+    throw renameUiError('DOT_RENAME_OUTER_SAVE_NOT_READY', 'UNKNOWN', diagnostic);
+  }
+  diagnostic.outerSave = 'ATTEMPTED';
+  outerSave.focus?.({ preventScroll: true });
+  await renameSleep(50);
+  activateRenameUiElement(outerSave);
+  return `${firstSubmit}+CUSTOMIZER_SAVE`;
 }
 
 async function renameDotUi(message) {
@@ -793,26 +803,33 @@ async function renameDotUi(message) {
   const title = normalizedUiText(message.title);
   if (!key || dotKeyFromLocation() !== key) throw renameUiError('DOT_RENAME_TARGET_STALE');
   if (!operationId || !title || title.length > 100) throw renameUiError('DOT_RENAME_INPUT_INVALID');
-  const { input, scope } = await openDotRenameEditor(key);
+  const { input, scope, route, diagnostic } = await openDotRenameEditor(key);
   const inputMethod = setRenameEditorValue(input, title);
   if (input.value !== undefined && normalizedUiText(input.value) !== title) {
-    throw renameUiError('DOT_RENAME_INPUT_VALUE_NOT_APPLIED', 'NOT_APPLIED');
+    throw renameUiError('DOT_RENAME_INPUT_VALUE_NOT_APPLIED', 'NOT_APPLIED', diagnostic);
   }
-  if (dotKeyFromLocation() !== key) throw renameUiError('DOT_RENAME_TARGET_STALE');
+  if (dotKeyFromLocation() !== key) {
+    throw renameUiError('DOT_RENAME_TARGET_STALE', 'NOT_APPLIED', diagnostic);
+  }
   await renameSleep(80);
   let effectStarted = false;
   try {
     effectStarted = true;
-    const submitMethod = await submitRenameEditor(input, scope);
+    const submitMethod = await submitDotRenameEditor(input, scope, route, diagnostic);
     const accepted = await waitForRenameUi(() =>
       (!document.contains(input) || !isVisible(input)) && currentDotTitleMatches(key, title), 8000
     );
-    if (!accepted) throw renameUiError('DOT_RENAME_UI_NOT_VERIFIED', 'UNKNOWN');
-    if (dotKeyFromLocation() !== key) throw renameUiError('DOT_RENAME_TARGET_STALE_AFTER_SAVE', 'UNKNOWN');
+    if (!accepted) {
+      throw renameUiError('DOT_RENAME_UI_NOT_VERIFIED', 'UNKNOWN', diagnostic);
+    }
+    if (dotKeyFromLocation() !== key) {
+      throw renameUiError('DOT_RENAME_TARGET_STALE_AFTER_SAVE', 'UNKNOWN', diagnostic);
+    }
     return { ok: true, effectState: 'APPLIED', operationId, savedTitle: title,
-      inputMethod, submitMethod };
+      inputMethod, submitMethod, route };
   } catch (error) {
     if (error?.effectState) throw error;
-    throw renameUiError(error?.message || error, effectStarted ? 'UNKNOWN' : 'NOT_APPLIED');
+    throw renameUiError(error?.message || error,
+      effectStarted ? 'UNKNOWN' : 'NOT_APPLIED', diagnostic);
   }
 }

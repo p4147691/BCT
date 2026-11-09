@@ -183,20 +183,12 @@ trackedInput.value = '내닷';
 trackedInput.focus = () => {};
 trackedInput.select = () => {};
 const trackedEvents = [];
-let trackedPrevious = null;
-trackedInput._valueTracker = { setValue: (value) => { trackedPrevious = value; } };
 trackedInput.dispatchEvent = (event) => { trackedEvents.push(event.constructor.name); };
-document.execCommand = (_command, _showUi, value) => {
-  trackedInput.value = value;
-  return true;
-};
 context.trackedInput = trackedInput;
-assert.equal(vm.runInContext("setRenameEditorValue(trackedInput, '내닷 확인3')", context), 'EDIT_COMMAND',
-  'the Dot name editor should retain the browser editing path');
-assert.equal(trackedPrevious, '내닷',
-  'the React value tracker must be restored to the pre-edit value before input dispatch');
-assert.deepEqual(trackedEvents, ['InputEvent', 'Event'],
-  'the controlled Dot input must receive input and change after execCommand');
+assert.equal(vm.runInContext("setRenameEditorValue(trackedInput, '내닷 확인3')", context), 'NATIVE_SETTER',
+  'the Dot name editor must cross the React boundary with the native setter');
+assert.deepEqual(trackedEvents, ['InputEvent', 'InputEvent', 'Event'],
+  'the controlled Dot input must receive beforeinput, input and change');
 
 const rolelessRenameInput = visibleNode({ 'aria-label': '이름' });
 rolelessRenameInput.closest = () => null;
@@ -285,6 +277,42 @@ document.querySelectorAll = (selector) => selector === '*' ? [unlabelledNameLeaf
 context.unlabelledCustomizer = unlabelledCustomizer;
 assert.equal(vm.runInContext('visibleDotCustomizationDialog() === unlabelledCustomizer', context), true,
   'a role-less Dot customizer must be recovered from the exact name and its bounded Save control');
+
+let outerSaveFocused = false;
+let outerSaveClicked = false;
+const outerSave = visibleNode({}, '저장');
+outerSave.focus = () => { outerSaveFocused = true; };
+outerSave.dispatchEvent = () => {};
+outerSave.scrollIntoView = () => {};
+outerSave.click = () => {
+  assert.equal(outerSaveFocused, true, 'the outer customizer Save must receive focus first');
+  outerSaveClicked = true;
+};
+const outerCustomizer = visibleNode();
+outerCustomizer.querySelectorAll = (selector) => selector === 'button' ? [outerSave] : [];
+const nestedInput = visibleNode({ 'aria-label': '이름' });
+nestedInput.closest = () => null;
+nestedInput.parentElement = saveScope;
+let nestedPresent = true;
+document.contains = (node) => node === nestedInput && nestedPresent;
+context.isVisible = (node) => node === nestedInput ? nestedPresent : Boolean(node?.getClientRects?.().length);
+context.nestedInput = nestedInput;
+context.outerCustomizer = outerCustomizer;
+context.twoStageDiagnostic = { innerSave: 'NOT_ATTEMPTED', outerSave: 'NOT_ATTEMPTED' };
+const originalSubmit = context.submitRenameEditor;
+context.submitRenameEditor = async () => {
+  nestedPresent = false;
+  return 'SAVE_BUTTON';
+};
+assert.equal(await vm.runInContext(
+  "submitDotRenameEditor(nestedInput, outerCustomizer, 'PROFILE_CUSTOMIZER', twoStageDiagnostic)",
+  context
+), 'SAVE_BUTTON+CUSTOMIZER_SAVE',
+'the profile path must persist both the inner name draft and the outer customizer');
+assert.equal(outerSaveClicked, true, 'the outer customizer Save must be clicked');
+assert.equal(context.twoStageDiagnostic.innerSave, 'OBSERVED');
+assert.equal(context.twoStageDiagnostic.outerSave, 'ATTEMPTED');
+context.submitRenameEditor = originalSubmit;
 
 console.log('conversation rename UI v2: PASS');
 })().catch((error) => {
