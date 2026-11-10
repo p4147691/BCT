@@ -18,6 +18,37 @@ from .status_views import status_view
 _UUID = re.compile(r"[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}\Z")
 
 
+def _exact_successor_attachment(snapshot: dict, conversation_key: str) -> dict | None:
+    """Require one real OPEN RCC instance/session/tab for the observed UUID."""
+    rcc = status_view(snapshot, "rcc").get("rcc") or {}
+    matches = []
+    for instance in rcc.get("instances", []):
+        if (not isinstance(instance, dict) or instance.get("state") != "OPEN"
+                or instance.get("cached") is True):
+            continue
+        instance_id = str(instance.get("instance_id") or "")
+        session_id = str(instance.get("session_id") or "")
+        if not instance_id or not re.fullmatch("[a-f0-9]{32}", session_id):
+            continue
+        for tab in instance.get("tabs", []):
+            if (not isinstance(tab, dict)
+                    or str(tab.get("conversation_key") or "").lower() != conversation_key
+                    or type(tab.get("tab_id")) is not int
+                    or tab["tab_id"] <= 0
+                    or type(tab.get("window_id")) is not int
+                    or tab["window_id"] <= 0
+                    or tab.get("presence") != "OPEN"):
+                continue
+            connection = tab.get("connection")
+            if isinstance(connection, dict) and connection.get("disconnected") is True:
+                continue
+            matches.append({
+                "instance_id": instance_id, "session_id": session_id,
+                "tab_id": tab["tab_id"], "window_id": tab["window_id"],
+            })
+    return matches[0] if len(matches) == 1 else None
+
+
 class AutomaticPreparedReplacement:
     """Crash-resumable, exact-identity finalization of an existing replacement."""
 
@@ -109,54 +140,6 @@ class AutomaticPreparedReplacement:
             ).fetchone()
             return row is not None
 
-    def _supervisor_dependencies(self, item: dict) -> bool:
-        """Never move global S while its other Work references remain bound.
-
-        A global Supervisor can belong to several independent Work networks.
-        Generic NodeRecovery.commit_replace moves advisory Node Info only;
-        it cannot silently claim to have rebound all Watch/return routes.
-        """
-        old = str(item["conversation_key"])
-        with self.store._readonly() as db:
-            row = db.execute(
-                "SELECT unassigned_role_tags FROM conversation_network_conversations "
-                "WHERE conversation_key=?", (old,),
-            ).fetchone()
-            tags = []
-            if row:
-                try:
-                    tags = json.loads(row["unassigned_role_tags"] or "[]")
-                except (TypeError, ValueError):
-                    pass
-            if not any(str(tag).casefold() == "supervisor" for tag in tags):
-                tags = [str(r["tag"]) for r in db.execute(
-                    "SELECT tag FROM conversation_network_membership_tags "
-                    "WHERE conversation_key=?", (old,),
-                ).fetchall()]
-            if not any(tag.casefold() == "supervisor" for tag in tags):
-                return False
-            linked = db.execute(
-                "SELECT 1 FROM delayed_send_watches "
-                "WHERE json_extract(context_json,'$.supervisor_conversation_key')=? "
-                "AND state IN ('WATCHING','RESERVED','PAUSED',"
-                "'MANAGER_RECOVERY_PENDING','DISPATCHING','UNKNOWN') LIMIT 1",
-                (old,),
-            ).fetchone()
-            if linked:
-                return True
-            exists = db.execute(
-                "SELECT 1 FROM sqlite_master WHERE type='table' "
-                "AND name='chain_manager_return_checkpoints'",
-            ).fetchone()
-            if not exists:
-                return False
-            linked = db.execute(
-                "SELECT 1 FROM chain_manager_return_checkpoints "
-                "WHERE supervisor_conversation_key=? AND acknowledged_at=0 "
-                "LIMIT 1", (old,),
-            ).fetchone()
-            return linked is not None
-
     def _uncertain_original(self, item: dict) -> bool:
         with self.store._readonly() as db:
             row = db.execute(
@@ -180,7 +163,8 @@ class AutomaticPreparedReplacement:
         if not selected:
             return {"status": "IDLE", "examined": 0, "pending": 0, "events": []}
         try:
-            node_view = status_view(self.status_provider(), "node")
+            snapshot = self.status_provider()
+            node_view = status_view(snapshot, "node")
             current = node_view.get("current_nodes") or {}
             if (node_view.get("status") != "OK"
                     or (current.get("observation") or {}).get("state") != "FRESH"):
@@ -208,15 +192,17 @@ class AutomaticPreparedReplacement:
                 if new_evidence["result"] != "OK":
                     events.append({"case_id": item["case_id"], "status": "AWAIT_SUCCESSOR"})
                     continue
+                attachment = _exact_successor_attachment(snapshot, successor)
+                if attachment is None:
+                    events.append({"case_id": item["case_id"],
+                                   "status": "AWAIT_EXACT_RCC_BINDING"})
+                    continue
+                new_evidence["verified_rcc_attachment"] = attachment
                 if self._manager_original(item):
                     events.append({"case_id": item["case_id"], "status": "MANAGER_EPOCH_REBIND_REQUIRED"})
                     continue
                 if self._uncertain_original(item):
                     events.append({"case_id": item["case_id"], "status": "UNKNOWN_RECONCILIATION_REQUIRED"})
-                    continue
-                if self._supervisor_dependencies(item):
-                    events.append({"case_id": item["case_id"],
-                                   "status": "SUPERVISOR_GLOBAL_REBIND_REQUIRED"})
                     continue
                 if not self._inheritance_confirmed(item):
                     events.append({"case_id": item["case_id"], "status": "AWAIT_INHERITANCE_PROOF"})

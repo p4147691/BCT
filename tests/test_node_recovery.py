@@ -177,9 +177,16 @@ class NodeRecoveryTests(unittest.TestCase):
                  '{"work_id":"work","principal_id":"principal","assignment_epoch":1,'
                  '"observed_response_sha":"' + "a" * 64 + '"}'),
             )
+        # A global S role transfer now also requires the real RCC recipient,
+        # not just a confirmed Node Info row for the UUID.
+        exact = observe_node(view(NEW), NEW)
+        exact["verified_rcc_attachment"] = {
+            "instance_id": "verified-rcc-instance", "session_id": "a" * 32,
+            "tab_id": 13, "window_id": 12,
+        }
         committed = self.ledger.commit_replace(
             work=self.work, case_id="case-manager-decision",
-            successor_evidence=observe_node(view(NEW), NEW),
+            successor_evidence=exact,
         )
         self.assertEqual("REPLACED", committed["state"])
 

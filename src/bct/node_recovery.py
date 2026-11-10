@@ -447,6 +447,112 @@ class NodeRecoveryLedger:
             # role uniqueness failure therefore leaves the predecessor PAUSED
             # and does not partially promote the successor.
             from .conversation_network import _transfer_conversation_state
+            old_key = str(row["conversation_key"])
+            new_key = str(row["replacement_conversation_key"])
+            roles = [str(r["tag"]).casefold() for r in db.execute(
+                "SELECT tag FROM conversation_network_membership_tags "
+                "WHERE conversation_key=?", (old_key,),
+            )]
+            unassigned = db.execute(
+                "SELECT unassigned_role_tags FROM conversation_network_conversations "
+                "WHERE conversation_key=?", (old_key,),
+            ).fetchone()
+            if unassigned is not None:
+                try:
+                    roles.extend(str(t).casefold() for t in
+                                 json.loads(unassigned["unassigned_role_tags"] or "[]"))
+                except (TypeError, ValueError):
+                    pass
+            is_supervisor = "supervisor" in roles
+            # A global S can have watches from unrelated Work. Every binding
+            # must move in the SAME transaction as the role transfer, and
+            # ambiguous external sends cannot be silently retargeted.
+            if is_supervisor:
+                attachment = successor_evidence.get("verified_rcc_attachment")
+                if (not isinstance(attachment, dict)
+                        or not str(attachment.get("instance_id") or "")
+                        or not str(attachment.get("session_id") or "")):
+                    raise ValueError("NODE_SUPERVISOR_EXACT_RCC_BINDING_REQUIRED")
+                pending = db.execute(
+                    "SELECT 1 FROM delayed_send_watches "
+                    "WHERE json_extract(context_json,'$.supervisor_conversation_key')=? "
+                    "AND state IN ('UNKNOWN','DISPATCHING') LIMIT 1",
+                    (old_key,),
+                ).fetchone()
+                if pending:
+                    raise ValueError("NODE_SUPERVISOR_UNCERTAIN_WATCH_RECONCILIATION_REQUIRED")
+                table = db.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' "
+                    "AND name='chain_manager_return_checkpoints'",
+                ).fetchone()
+                if table is not None:
+                    inflight = db.execute(
+                        "SELECT 1 FROM chain_manager_return_checkpoints "
+                        "WHERE supervisor_conversation_key=? AND acknowledged_at=0 "
+                        "AND (delivery_state IN ('UNKNOWN','DELIVERING') "
+                        "OR (destination_conversation_key=? AND delivery_state='PENDING')) "
+                        "LIMIT 1", (old_key, old_key),
+                    ).fetchone()
+                    if inflight:
+                        raise ValueError("NODE_SUPERVISOR_UNCERTAIN_RETURN_RECONCILIATION_REQUIRED")
+                open_watches = list(db.execute(
+                    "SELECT task_id,generation,context_json FROM delayed_send_watches "
+                    "WHERE json_extract(context_json,'$.supervisor_conversation_key')=? "
+                    "AND state IN ('WATCHING','RESERVED','PAUSED',"
+                    "'MANAGER_RECOVERY_PENDING') ORDER BY task_id,generation",
+                    (old_key,),
+                ).fetchall())
+                changed_contexts = []
+                for watcher in open_watches:
+                    ctx = json.loads(watcher["context_json"] or "{}")
+                    history = ctx.get("supervisor_recovery_history")
+                    if not isinstance(history, list):
+                        history = []
+                    history.append({
+                        "from_supervisor_conversation_key": old_key,
+                        "to_supervisor_conversation_key": new_key,
+                        "recovery_case_id": case_id,
+                        "old_supervisor_instance_id":
+                            str(ctx.get("supervisor_instance_id") or ""),
+                    })
+                    ctx["supervisor_recovery_history"] = history[-8:]
+                    ctx["supervisor_conversation_key"] = new_key
+                    ctx["supervisor_instance_id"] = str(attachment["instance_id"])
+                    changed_contexts.append((
+                        _canonical(ctx), watcher["task_id"], watcher["generation"],
+                    ))
+                for context, task, generation in changed_contexts:
+                    db.execute(
+                        "UPDATE delayed_send_watches SET context_json=? "
+                        "WHERE task_id=? AND generation=?",
+                        (context, task, generation),
+                    )
+                # The original Supervisor recipient is immutable provenance.
+                # The active routing alias is a separate field, updated for
+                # every unacknowledged Work in this SAME role/Watch transaction.
+                if table is not None:
+                    existing_columns = {
+                        str(column["name"]) for column in db.execute(
+                            "PRAGMA table_info(chain_manager_return_checkpoints)"
+                        )
+                    }
+                    if "active_supervisor_conversation_key" not in existing_columns:
+                        db.execute(
+                            "ALTER TABLE chain_manager_return_checkpoints "
+                            "ADD COLUMN active_supervisor_conversation_key "
+                            "TEXT NOT NULL DEFAULT ''"
+                        )
+                        db.execute(
+                            "UPDATE chain_manager_return_checkpoints SET "
+                            "active_supervisor_conversation_key=supervisor_conversation_key"
+                        )
+                    db.execute(
+                        "UPDATE chain_manager_return_checkpoints SET "
+                        "active_supervisor_conversation_key=?,updated_at=? "
+                        "WHERE acknowledged_at=0 "
+                        "AND active_supervisor_conversation_key=?",
+                        (new_key, when, old_key),
+                    )
             transferred = _transfer_conversation_state(
                 db,
                 predecessor=str(row["conversation_key"]),

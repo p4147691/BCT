@@ -57,6 +57,20 @@ class ChainManagerRecoveryLedger:
                 )
                 """
             )
+            columns = {str(r["name"]) for r in db.execute(
+                "PRAGMA table_info(chain_manager_return_checkpoints)"
+            )}
+            if "active_supervisor_conversation_key" not in columns:
+                db.execute(
+                    "ALTER TABLE chain_manager_return_checkpoints "
+                    "ADD COLUMN active_supervisor_conversation_key TEXT NOT NULL DEFAULT ''"
+                )
+                # Historical recipient is immutable provenance. New active
+                # routing starts at that recipient and may later be rebound.
+                db.execute(
+                    "UPDATE chain_manager_return_checkpoints "
+                    "SET active_supervisor_conversation_key=supervisor_conversation_key"
+                )
 
     def _table_exists(self) -> bool:
         with self.store._readonly() as db:
@@ -97,6 +111,12 @@ class ChainManagerRecoveryLedger:
                     ") VALUES(?,?,?,?,?,?,?,?,?,?,?,?, ?,?)",
                     (*values[:6], manager_conversation_key, *values[6:],
                      "PENDING", now, now),
+                )
+                db.execute(
+                    "UPDATE chain_manager_return_checkpoints "
+                    "SET active_supervisor_conversation_key=? "
+                    "WHERE task_id=? AND generation=?",
+                    (supervisor_conversation_key, task_id, generation),
                 )
             else:
                 immutable = tuple(existing[key] for key in (

@@ -10,6 +10,7 @@ from bct.automatic_prepared_replacement import AutomaticPreparedReplacement
 from bct.conversation_network import (
     configure_conversation_scope, conversation_scope_directory,
 )
+from bct.chain_manager_recovery import ChainManagerRecoveryLedger
 from bct.core.models import Work
 from bct.core.store import Store
 from bct.node_recovery import NodeRecoveryLedger, observe_node
@@ -66,7 +67,14 @@ class PreparedReplaceTests(unittest.TestCase):
                 "observation": {"state": "STALE" if self.stale else "FRESH"},
                 "items": statuses,
             },
-            "rcc": {"instances": []},
+            "rcc": {"instances": [{
+                "instance_id": "rcc-new-instance", "session_id": "a" * 32,
+                "state": "OPEN", "cached": False,
+                "tabs": ([{
+                    "conversation_key": NEW, "tab_id": 13, "window_id": 12,
+                    "presence": "OPEN", "connection": {"disconnected": False},
+                }] if not self.offline_new else []),
+            }]},
         }}
 
     def inherit(self, *, state="MANAGER_DECISION_REQUIRED", evidence=True):
@@ -181,25 +189,178 @@ class PreparedReplaceTests(unittest.TestCase):
             scope_name="", role_tags=["supervisor"], assigned_task="CI",
         )
         self.inherit()
+        self.store.create_work(Work(
+            "work-2", "another Work supervised by the same S",
+            self.work.roots, frozenset({"browser"}), "principal",
+        ))
+        with self.store.transaction() as db:
+            for task, work_id in (("related-watch", "work"),
+                                  ("another-active-work", "work-2")):
+                db.execute(
+                    "INSERT INTO delayed_send_watches"
+                    "(task_id,generation,conversation_key,response_turn_id,"
+                    "source_send_receipt,state,context_json) "
+                    "VALUES(?,1,?,'turn','send','WATCHING',?)",
+                    (task, NEW, json.dumps({
+                        "work_id": work_id, "supervisor_conversation_key": OLD,
+                        "supervisor_instance_id": "rcc-old-instance",
+                        "manager_conversation_key": NEW,
+                    })),
+                )
+        returns = ChainManagerRecoveryLedger(self.store)
+        for task, wid in (("related-watch", "work"),
+                          ("another-active-work", "work-2")):
+            returns.record_pending(
+                task_id=task, generation=1, work_id=wid,
+                direction_id="global-S-direction",
+                worker_conversation_key=NEW,
+                manager_conversation_key=NEW,
+                supervisor_conversation_key=OLD,
+                response_turn_key="turn-" + task,
+                response_sha256="a" * 64,
+                return_payload="Saved original Worker result",
+            )
+        outcome = self.coordinator.run_once()["events"][0]
+        self.assertEqual("REPLACED", outcome["status"])
+        self.assertEqual("REPLACED", self.ledger.get(
+            work=self.work, case_id="case-replacement",
+        )["state"])
+        with self.store._readonly() as db:
+            contexts = [
+                json.loads(x["context_json"]) for x in db.execute(
+                    "SELECT context_json FROM delayed_send_watches "
+                    "WHERE task_id IN ('related-watch','another-active-work') "
+                    "ORDER BY task_id"
+                )
+            ]
+        self.assertEqual({"work", "work-2"}, {x["work_id"] for x in contexts})
+        self.assertTrue(all(x["supervisor_conversation_key"] == NEW for x in contexts))
+        self.assertTrue(all(x["supervisor_instance_id"] == "rcc-new-instance"
+                            for x in contexts))
+        self.assertTrue(all(x["supervisor_recovery_history"][0][
+            "from_supervisor_conversation_key"] == OLD for x in contexts))
+        with self.store._readonly() as db:
+            checkpoints = db.execute(
+                "SELECT work_id,supervisor_conversation_key,"
+                "active_supervisor_conversation_key FROM "
+                "chain_manager_return_checkpoints ORDER BY work_id",
+            ).fetchall()
+        self.assertEqual({"work", "work-2"}, {
+            str(row["work_id"]) for row in checkpoints
+        })
+        self.assertTrue(all(
+            row["supervisor_conversation_key"] == OLD
+            and row["active_supervisor_conversation_key"] == NEW
+            for row in checkpoints
+        ))
+        original = conversation_scope_directory(self.store, conversation_keys=[OLD, NEW])
+        self.assertEqual([], original[OLD]["role_tags"])
+        self.assertEqual(["supervisor"], original[NEW]["role_tags"])
+
+    def test_missing_or_duplicate_rcc_successor_binding_does_not_replace(self):
+        self.inherit()
+        original = self.coordinator.status_provider
+        snapshot = original()
+        snapshot["monitor"]["rcc"]["instances"][0]["tabs"] = []
+        self.coordinator.status_provider = lambda: snapshot
+        self.assertEqual("AWAIT_EXACT_RCC_BINDING",
+                         self.coordinator.run_once()["events"][0]["status"])
+        self.assertEqual("REPLACEMENT_PREPARED", self.ledger.get(
+            work=self.work, case_id="case-replacement",
+        )["state"])
+        snapshot = original()
+        duplicate = dict(snapshot["monitor"]["rcc"]["instances"][0]["tabs"][0])
+        snapshot["monitor"]["rcc"]["instances"][0]["tabs"].append(duplicate)
+        self.coordinator.status_provider = lambda: snapshot
+        self.assertEqual("AWAIT_EXACT_RCC_BINDING",
+                         self.coordinator.run_once()["events"][0]["status"])
+
+    def test_global_supervisor_unknown_work_watch_blocks_all_state_transfer(self):
+        configure_conversation_scope(
+            self.store, conversation_key=OLD, display_name="Global S",
+            scope_name="", role_tags=["supervisor"], assigned_task="CI",
+        )
+        self.inherit()
+        with self.store.transaction() as db:
+            for task, state in (("safe-watch", "WATCHING"), ("uncertain", "UNKNOWN")):
+                db.execute(
+                    "INSERT INTO delayed_send_watches"
+                    "(task_id,generation,conversation_key,response_turn_id,"
+                    "source_send_receipt,state,context_json) "
+                    "VALUES(?,1,?,'turn','send',?,?)",
+                    (task, NEW, state, json.dumps({
+                        "work_id": "work",
+                        "supervisor_conversation_key": OLD,
+                        "manager_conversation_key": NEW,
+                    })),
+                )
+        event = self.coordinator.run_once()["events"][0]
+        self.assertEqual("RECONCILE_REQUIRED", event["status"])
+        self.assertIn("UNCERTAIN_WATCH", event["reason"])
+        original = conversation_scope_directory(self.store, conversation_keys=[OLD, NEW])
+        self.assertEqual(["supervisor"], original[OLD]["role_tags"])
+        self.assertEqual([], original[NEW]["role_tags"])
+        with self.store._readonly() as db:
+            safe = db.execute(
+                "SELECT context_json FROM delayed_send_watches WHERE task_id='safe-watch'"
+            ).fetchone()
+        self.assertEqual(OLD, json.loads(safe["context_json"])["supervisor_conversation_key"])
+        self.assertEqual("REPLACEMENT_PREPARED", self.ledger.get(
+            work=self.work, case_id="case-replacement",
+        )["state"])
+
+    def test_inflight_supervisor_return_fences_all_work_rebinding(self):
+        configure_conversation_scope(
+            self.store, conversation_key=OLD, display_name="Global S",
+            scope_name="", role_tags=["supervisor"],
+        )
+        self.inherit()
         with self.store.transaction() as db:
             db.execute(
                 "INSERT INTO delayed_send_watches"
                 "(task_id,generation,conversation_key,response_turn_id,"
                 "source_send_receipt,state,context_json) "
-                "VALUES('another-active-work',1,?,'turn','send','WATCHING',?)",
+                "VALUES('active',1,?,'turn','send','WATCHING',?)",
                 (NEW, json.dumps({
-                    "work_id": "work", "supervisor_conversation_key": OLD,
+                    "work_id": "work",
+                    "supervisor_conversation_key": OLD,
                     "manager_conversation_key": NEW,
                 })),
             )
-        outcome = self.coordinator.run_once()["events"][0]
-        self.assertEqual("SUPERVISOR_GLOBAL_REBIND_REQUIRED", outcome["status"])
+        ledger = ChainManagerRecoveryLedger(self.store)
+        ledger.record_pending(
+            task_id="active", generation=1, work_id="work",
+            direction_id="global-S-direction",
+            worker_conversation_key=NEW, manager_conversation_key=NEW,
+            supervisor_conversation_key=OLD,
+            response_turn_key="turn", response_sha256="a" * 64,
+            return_payload="Original result",
+        )
+        with self.store.transaction() as db:
+            db.execute(
+                "UPDATE chain_manager_return_checkpoints "
+                "SET delivery_state='UNKNOWN',destination_conversation_key=? "
+                "WHERE task_id='active'", (OLD,),
+            )
+        event = self.coordinator.run_once()["events"][0]
+        self.assertEqual("RECONCILE_REQUIRED", event["status"])
+        self.assertIn("UNCERTAIN_RETURN", event["reason"])
+        with self.store._readonly() as db:
+            watch = db.execute(
+                "SELECT context_json FROM delayed_send_watches "
+                "WHERE task_id='active'",
+            ).fetchone()
+            checkpoint = db.execute(
+                "SELECT supervisor_conversation_key,"
+                "active_supervisor_conversation_key "
+                "FROM chain_manager_return_checkpoints WHERE task_id='active'",
+            ).fetchone()
+        self.assertEqual(OLD, json.loads(watch["context_json"])[
+            "supervisor_conversation_key"])
+        self.assertEqual(OLD, checkpoint["active_supervisor_conversation_key"])
         self.assertEqual("REPLACEMENT_PREPARED", self.ledger.get(
             work=self.work, case_id="case-replacement",
         )["state"])
-        original = conversation_scope_directory(self.store, conversation_keys=[OLD, NEW])
-        self.assertEqual(["supervisor"], original[OLD]["role_tags"])
-        self.assertEqual([], original[NEW]["role_tags"])
 
     def test_prepared_manager_without_any_active_watch_is_still_fenced(self):
         configure_conversation_scope(

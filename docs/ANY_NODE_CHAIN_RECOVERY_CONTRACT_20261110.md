@@ -89,10 +89,19 @@ original-task Watch holds the automatic role transfer for reconciliation.
 If the original node comes back, no replacement occurs. Worker and S
 replacement use the existing role/scope transfer, do not create a backup S,
 and resume the prepared replacement without asking the user for IDs or a
-second approval. If global S still has active Watch/return bindings across
-other Work, this narrow stage reports SUPERVISOR_GLOBAL_REBIND_REQUIRED and
-preserves the prepared case/role. Global S role transfer must not silently
-strand other networks; full cross-Work atomic rebinding remains separate.
+second approval. A global S can have active Watch and pending Worker-return
+relations in multiple Work networks. The replacement Core now rebinds all
+exact active Supervisor Watch destinations and active-return routing aliases
+across those networks in the SAME SQLite transaction as the original role
+transfer and replacement receipt. The immutable original Supervisor identity,
+original return payload and operation receipts remain unchanged. An additive
+active Supervisor return-binding alias lets the successor see pending returns
+without rewriting historical S provenance. A positive RCC instance, session,
+tab and actual successor UUID are required; each active Watch updates its
+Supervisor instance ID to that verified new RCC instance. Missing or duplicate
+successor tabs do not authorize replacement. Any in-flight
+or UNKNOWN S external effect aborts the transaction for reconciliation; no
+partial scope migration or duplicate send is permitted.
 Manager A is intentionally excluded from this role-only path
 because its Work Epoch and Watch/Manager-return binding must be fenced
 atomically through Manager succession. A Manager cannot be promoted by merely
