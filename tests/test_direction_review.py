@@ -147,6 +147,47 @@ class DirectionReviewTests(unittest.IsolatedAsyncioTestCase):
     def sends(self):
         return [call for call in self.ops.calls if call["arguments"].get("command") == "send-message"]
 
+    async def test_resume_manager_can_rebind_with_worker_tab_offline(self):
+        # A can be restored even when B is offline: its original Watch belongs
+        # to this Work, and B is independently recoverable later.
+        value = assessment()
+        value["targets"] = value["targets"][:1]
+        self.assertEqual("OK", (await self.save(value))["status"])
+        self.assertEqual("STARTED", (await self.start())["status"])
+        # Seed an exact already-durable B Watch, independent of the fixture's
+        # browser send stub, which intentionally does not finish Watch prearm.
+        with self.store.transaction() as db:
+            db.execute(
+                "INSERT INTO delayed_send_watches "
+                "(task_id,generation,conversation_key,response_turn_id,"
+                "source_send_receipt,state,context_json) "
+                "VALUES(?,1,?,?,?,'WATCHING',?)",
+                ("offline-recovery-task", B, "expected-worker-turn", "send-receipt",
+                 json.dumps({
+                     "work_id": self.work.work_id,
+                     "chain_direction_id": "direction-review",
+                     "manager_conversation_key": A,
+                     "manager_instance_id": "a" * 32,
+                     "supervisor_conversation_key": C,
+                 }, sort_keys=True)),
+            )
+        sends_before = len(self.sends())
+        self.snapshot["monitor"]["current_nodes"]["items"] = [
+            row for row in self.snapshot["monitor"]["current_nodes"]["items"]
+            if row.get("conversation_uuid") != B
+        ]
+        self.tabs[:] = [
+            tab for tab in self.tabs if tab.get("conversation_key") != B
+        ]
+        result = await self.call(
+            "bct_chain_recipe", action="resume_manager",
+            work_id=self.work.work_id, report_target_conversation_key=A,
+        )
+        self.assertEqual("MANAGER_RESUMED", result["status"], result)
+        self.assertEqual([B], result["unavailable_workers_to_recover"])
+        self.assertTrue(result["recovery_rebinding"]["atomic"])
+        self.assertEqual(sends_before, len(self.sends()))
+
     async def test_any_node_recovery_context_is_read_only_and_keeps_original_work(self):
         await self.save()
         before = len(self.ops.calls)

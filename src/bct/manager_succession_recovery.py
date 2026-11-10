@@ -30,6 +30,8 @@ class ManagerSuccessionRecovery:
         self.client = client
         self.owner_id = "manager.succession." + secrets.token_hex(16)
         self.lease_token = secrets.token_hex(32)
+        # Iterate all active Manager sessions, not the same first batch forever.
+        self._scan_cursor = ""
 
     def _acquire(self, now: float) -> bool:
         with self.store.transaction() as db:
@@ -68,17 +70,25 @@ class ManagerSuccessionRecovery:
     @staticmethod
     def _readiness(attachment: dict[str, Any], response: dict[str, Any]) -> str:
         state = response.get("state") if isinstance(response, dict) else None
-        if (response.get("ok") is not True or not isinstance(state, dict)
+        if (not isinstance(response, dict) or response.get("ok") is not True
+                or not isinstance(state, dict)
                 or state.get("instanceId") != attachment["instance_id"]
                 or state.get("sessionId") != attachment["external_session_id"]):
-            return "DISCONNECTED"
-        for endpoint in state.get("endpoints", []):
+            return "UNKNOWN"
+        endpoints = state.get("endpoints")
+        if not isinstance(endpoints, list):
+            return "UNKNOWN"
+        for endpoint in endpoints:
             if not isinstance(endpoint, dict):
                 continue
             if (endpoint.get("tabId") == attachment["tab_id"]
                     and endpoint.get("conversationKey") == attachment["conversation_key"]):
                 if endpoint.get("presence") != "OPEN":
                     return "ORPHANED"
+                connection = endpoint.get("connection")
+                if (isinstance(connection, dict)
+                        and connection.get("disconnected") is True):
+                    return "DISCONNECTED"
                 return "GENERATING" if endpoint.get("generating") is True else "IDLE"
         return "ORPHANED"
 
@@ -92,13 +102,15 @@ class ManagerSuccessionRecovery:
                 command="state", timeout_s=5.0,
             )
         except (RelayUnavailable, RelayEffectUnknown):
-            return "DISCONNECTED"
+            # An unavailable sensor cannot prove a failed Chat node.
+            return "UNKNOWN"
         return self._readiness(attachment, response)
 
     def _current(self, *, limit: int) -> list[dict[str, Any]]:
+        """Fair bounded scan across every active Manager session."""
         db = self.store._connect()
         try:
-            rows = db.execute(
+            statement = (
                 "SELECT s.session_id,s.manager_epoch,s.manager_node_id,s.work_id,"
                 "a.attachment_id,a.generation,a.instance_id,a.external_session_id,a.tab_id,"
                 "a.window_id,a.conversation_key,a.relay_role,a.binding_receipt_id "
@@ -113,10 +125,16 @@ class ManagerSuccessionRecovery:
                 "AND rs.external_session_id=a.external_session_id) AND a.generation=("
                 "SELECT MAX(a2.generation) FROM orchestration_attachments a2 "
                 "WHERE a2.node_id=a.node_id AND a2.active=1) "
-                "ORDER BY s.updated_at,s.session_id LIMIT ?", (limit,),
-            ).fetchall()
-            # One active attachment is expected; duplicate stale observations
-            # are not a choice of authority, so leave them untouched.
+                "AND s.session_id>? ORDER BY s.session_id LIMIT ?"
+            )
+            def scan(after: str):
+                return db.execute(statement, (after, limit)).fetchall()
+            rows = scan(self._scan_cursor)
+            if not rows and self._scan_cursor:
+                # The next pass wraps to the oldest identity; a stale cursor
+                # after Core restart/session removal cannot strand new work.
+                self._scan_cursor = ""
+                rows = scan("")
             values: list[dict[str, Any]] = []
             seen: set[str] = set()
             for row in rows:
@@ -124,6 +142,8 @@ class ManagerSuccessionRecovery:
                 if value["session_id"] not in seen:
                     seen.add(value["session_id"])
                     values.append(value)
+            if rows:
+                self._scan_cursor = str(rows[-1]["session_id"])
             return values
         finally:
             db.close()
@@ -180,6 +200,7 @@ class ManagerSuccessionRecovery:
         summary: dict[str, int | bool] = {
             "lease_owned": False, "observed": 0, "due": 0, "taken_over": 0,
             "handoffs_delivered": 0, "handoffs_unknown": 0,
+            "telemetry_unknown": 0, "needs_successor": 0,
         }
         if not self._acquire(now):
             return summary
@@ -194,13 +215,28 @@ class ManagerSuccessionRecovery:
                 observed_at=now,
             )
             summary["observed"] += 1
+            if state == "UNKNOWN":
+                summary["telemetry_unknown"] += 1
             if not observed["failover_due"]:
                 continue
             summary["due"] += 1
+            # Confirm the failure again immediately before an epoch transfer.
+            final_state = self._observe(current)
+            if final_state not in {"ORPHANED", "DISCONNECTED"}:
+                self.service.observe_manager_liveness(
+                    work=work, session_id=str(current["session_id"]),
+                    manager_epoch=int(current["manager_epoch"]),
+                    state=final_state, evidence={"source": "rcc-recheck"},
+                    observed_at=now,
+                )
+                continue
             for candidate in self.service.manager_successor_candidates(
                 work=work, session_id=str(current["session_id"]),
                 expected_epoch=int(current["manager_epoch"]),
             ):
+                # An idle ordinary Worker is never an implicit Manager.
+                if str(candidate["session_role"]) not in {"STANDBY", "MANAGER"}:
+                    continue
                 if self._observe(candidate) != "IDLE":
                     continue
                 session = self.service.takeover_manager(
@@ -229,4 +265,9 @@ class ManagerSuccessionRecovery:
                     elif result == Outcome.UNKNOWN.value:
                         summary["handoffs_unknown"] += 1
                 break
+            else:
+                # An actual confirmed failure without a safe existing
+                # successor is still not permission to promote a Worker.
+                # Surface the unresolved automatic-recovery work in status.
+                summary["needs_successor"] += 1
         return summary

@@ -210,6 +210,17 @@ USER의 원문은 `CALLER_PROVIDED_TEXT`다. 호출자가 제공한 문자열이
 전송에는 Manager·초기 Worker·전역 Supervisor의 서로 다른 UUID와 현재 역할/대화망
 관계도 실행 조건이다. 이후 대상별 실제 실행 판단은 그 위에서 계속 분리한다.
 
+## 자동 복구가 기본 — 수동 지시는 실패시 재진입
+
+평상시 BCT Core가 Watch·RCC·영속 원장으로 노드·대화망을 자동 감시하여
+Check/Recheck/Recover/Replace와 반환 인계를 시도한다. 사용자가 A/B/C/S 중
+어느 노드에든 복구를 요청하는 것은 **자동 복구가 해결하지 못했을 때만**
+원래 작업으로 되돌아가는 보조 입구다. 요청을 받은 노드는 임시 A/S가
+되지 않으며 사용자에게 Work/UUID/Task/승인 단계 입력을 떠넘기지 않는다.
+정상 GENERATING 또는 관찰 UNKNOWN은 장애 확정이 아니고, UNKNOWN
+외부 전송을 새 ID로 재실행하지 않는다. 이 설명은 목표 운영 계약이며
+전체 자동 생성·승계·반환 복구의 LIVE 구현 완료 증거는 아니다.
+
 ## 어느 노드에서든 복구 요청 받기 — 기존 Recipe 진입
 
 사용자는 Manager A, Worker B/C, 전역 Supervisor S 중 현재 접근 가능한 어느 노드에나

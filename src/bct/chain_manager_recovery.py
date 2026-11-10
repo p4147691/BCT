@@ -201,6 +201,123 @@ class ChainManagerRecoveryLedger:
                 changed += 1
         return changed
 
+    def full_recovery_relations(self, *, work_id: str) -> dict:
+        """Read every active Chain Watch and return before any Manager rebinding.
+
+        No first-100 cap and no schema writes. The caller validates current RCC
+        identity, network and role using the complete set.
+        """
+        with self.store._readonly() as db:
+            # Read Watch and checkpoint relationships from one consistent
+            # SQLite snapshot, not two observations that can race a writer.
+            db.execute("BEGIN")
+            active = [
+                {
+                    "conversation_key": str(row["conversation_key"]),
+                    "context": json.loads(row["context_json"] or "{}"),
+                }
+                for row in db.execute(
+                    "SELECT conversation_key,context_json FROM delayed_send_watches "
+                    "WHERE state IN ('WATCHING','RESERVED') "
+                    "AND json_extract(context_json,'$.work_id')=? "
+                    "ORDER BY task_id,generation", (work_id,),
+                )
+            ]
+            returns = [
+                dict(row) for row in db.execute(
+                    "SELECT * FROM chain_manager_return_checkpoints WHERE work_id=? "
+                    "AND acknowledged_at=0 ORDER BY task_id,generation",
+                    (work_id,),
+                )
+            ]
+        return {"watches": active, "checkpoints": returns, "complete": True}
+
+    def rebind_active_manager_atomic(
+        self, *, work_id: str, manager_conversation_key: str,
+        manager_instance_id: str, succession_proofs: list[dict] | None = None,
+    ) -> dict:
+        """Rebind every active Watch and every unacknowledged return in one TX.
+
+        No browser send/replay and no new authority. Proof validation completes
+        for *all* predecessors before any Watch or checkpoint is modified.
+        """
+        proofs = succession_proofs or []
+        when = time.time()
+        with self.store.transaction() as db:
+            watches = list(db.execute(
+                "SELECT task_id,generation,context_json FROM delayed_send_watches "
+                "WHERE state IN ('WATCHING','RESERVED') "
+                "AND json_extract(context_json,'$.work_id')=? "
+                "ORDER BY task_id,generation", (work_id,),
+            ).fetchall())
+            returns = list(db.execute(
+                "SELECT task_id,generation,active_manager_conversation_key "
+                "FROM chain_manager_return_checkpoints "
+                "WHERE work_id=? AND acknowledged_at=0 "
+                "ORDER BY task_id,generation", (work_id,),
+            ).fetchall())
+            modified_watches = []
+            modified_returns = []
+            def proven(previous: str) -> bool:
+                return previous == manager_conversation_key or any(
+                    proof.get("predecessor_conversation_key") == previous
+                    and proof.get("successor_conversation_key") == manager_conversation_key
+                    for proof in proofs
+                )
+            for row in watches:
+                ctx = json.loads(row["context_json"] or "{}")
+                old = str(ctx.get("manager_conversation_key") or "")
+                if not proven(old):
+                    raise ValueError("DELAYED_MANAGER_SUCCESSION_PROOF_REQUIRED")
+                if (old == manager_conversation_key
+                        and str(ctx.get("manager_instance_id") or "") == manager_instance_id):
+                    continue
+                history = ctx.get("manager_recovery_history")
+                if not isinstance(history, list):
+                    history = []
+                history.append({
+                    "from_manager_conversation_key": old,
+                    "to_manager_conversation_key": manager_conversation_key,
+                    "at": when, "succession_proofs": proofs,
+                })
+                ctx["manager_recovery_history"] = history[-8:]
+                ctx["manager_conversation_key"] = manager_conversation_key
+                ctx["manager_instance_id"] = manager_instance_id
+                modified_watches.append((json.dumps(ctx, sort_keys=True),
+                                         row["task_id"], row["generation"]))
+            for row in returns:
+                old = str(row["active_manager_conversation_key"])
+                if not proven(old):
+                    raise ValueError("CHAIN_MANAGER_SUCCESSION_PROOF_REQUIRED")
+                if old != manager_conversation_key:
+                    modified_returns.append((manager_conversation_key,
+                                             json.dumps(proofs, sort_keys=True),
+                                             row["task_id"], row["generation"]))
+            for context, task, generation in modified_watches:
+                db.execute(
+                    "UPDATE delayed_send_watches SET context_json=? "
+                    "WHERE task_id=? AND generation=? AND state IN ('WATCHING','RESERVED')",
+                    (context, task, generation),
+                )
+            for destination, proof_json, task, generation in modified_returns:
+                db.execute(
+                    "UPDATE chain_manager_return_checkpoints "
+                    "SET active_manager_conversation_key=?,"
+                    "manager_succession_proof_json=?,updated_at=? "
+                    "WHERE task_id=? AND generation=? AND acknowledged_at=0",
+                    (destination, proof_json, when, task, generation),
+                )
+        return {
+            "work_id": work_id,
+            "manager_conversation_key": manager_conversation_key,
+            "updated_watches": len(modified_watches),
+            "rebound_checkpoints": len(modified_returns),
+            "examined_watches": len(watches),
+            "examined_checkpoints": len(returns),
+            "atomic": True,
+            "effects": "DURABLE_BINDING_ONLY_NO_MESSAGE",
+        }
+
     def acknowledge(self, *, work_id: str, task_id: str, generation: int,
                     manager_conversation_key: str) -> dict:
         """Record that the active A read the checkpoint before deciding next work."""

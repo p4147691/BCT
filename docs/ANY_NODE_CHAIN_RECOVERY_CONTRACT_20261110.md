@@ -2,6 +2,27 @@
 
 Status: REVIEWED DESIGN DRAFT. No operational behavior is changed by this document.
 
+## Automatic-first requirement
+
+BCT Core must autonomously observe and heal A/B/C/S chain nodes and reconcile
+durable Work/Watch/return records before any user asks for help.
+A user asking A/B/C/S to restore the network is **manual recovery fallback**
+only after unattended recovery did not resolve the issue. User-supplied raw
+Work IDs, UUIDs, approval step names and internal operations are not required
+when BCT has sufficient evidence; an internal step is not a new user gate.
+Node roles stay unchanged. Normal SELF tasks continue during unrelated recovery.
+
+The first isolated implementation of automatic Manager failover safety:
+- GENERATING and missing RCC telemetry UNKNOWN cannot trigger takeover;
+- actual positive DISCONNECTED/ORPHANED signals require elapsed observation
+  and a fresh final recheck before an epoch transition;
+- an ordinary Worker cannot be silently promoted to Manager;
+- all active Chain Watches and unacknowledged Manager returns rebind in
+  one SQLite transaction with predecessor proof, no first-100 truncation.
+This does NOT yet create replacement A/S/Worker nodes automatically. Full
+auto restoration remains incomplete until exact-target provisioning,
+network role transfer, durable send, Watch return, reboot and crash E2E pass.
+
 ## User command / primary guarantee
 A user may tell the Manager A, or any available B/C/S node:
 "문제가 생긴 노드를 확인하고 기존 체인 복구 후 하던 일을 계속해."

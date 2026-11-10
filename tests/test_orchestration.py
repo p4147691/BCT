@@ -893,8 +893,20 @@ class OrchestrationTests(unittest.TestCase):
             state="GENERATING", evidence={"source": "exact-rcc-state"},
             observed_at=400.0,
         )
-        self.assertTrue(due["failover_due"])
+        self.assertFalse(due["failover_due"])
         self.assertEqual(300.0, due["failover_after_s"])
+        disconnected = self.bct.orchestration.observe_manager_liveness(
+            work=work, session_id="session", manager_epoch=1,
+            state="ORPHANED", evidence={"source": "exact-rcc-state"},
+            observed_at=500.0,
+        )
+        self.assertFalse(disconnected["failover_due"])
+        due = self.bct.orchestration.observe_manager_liveness(
+            work=work, session_id="session", manager_epoch=1,
+            state="ORPHANED", evidence={"source": "exact-rcc-state"},
+            observed_at=801.0,
+        )
+        self.assertTrue(due["failover_due"])
         candidates = self.bct.orchestration.manager_successor_candidates(
             work=work, session_id="session", expected_epoch=1,
         )
@@ -945,15 +957,16 @@ class OrchestrationTests(unittest.TestCase):
         self.bct.orchestration.manager_wake_receipt_v2_enabled = True
         self.bct.orchestration.manager_failover_seconds = 30.0
         self.bct.orchestration.observe_manager_liveness(
-            work=work, session_id="session", manager_epoch=1, state="GENERATING",
+            work=work, session_id="session", manager_epoch=1, state="ORPHANED",
             evidence={"source": "fixture"}, observed_at=time.time() - 31.0,
         )
         recovery = ManagerSuccessionRecovery(self.bct.orchestration, self.relay)
         current = recovery._current(limit=8)
-        for endpoint in self.relay.endpoints:
-            if endpoint["tabId"] == current[0]["tab_id"]:
-                endpoint["generating"] = True
-        self.assertEqual("GENERATING", recovery._observe(current[0]))
+        self.relay.endpoints = [
+            endpoint for endpoint in self.relay.endpoints
+            if endpoint["tabId"] != current[0]["tab_id"]
+        ]
+        self.assertEqual("ORPHANED", recovery._observe(current[0]))
         result = recovery.run_once()
         self.assertEqual(1, result["taken_over"], result)
         snapshot = self.bct.orchestration.snapshot(work=work, session_id="session")
@@ -961,11 +974,124 @@ class OrchestrationTests(unittest.TestCase):
         handoff = snapshot["manager_handoffs"][0]
         self.assertIn(handoff["state"], {"DELIVERED", "BLOCKED"})
         # A later run sees backup as current and cannot revive the original
-        # manager, even though its tab is still generating.
+        # manager, even though its original endpoint is missing.
         recovery.run_once()
         self.assertEqual(2, self.bct.orchestration.snapshot(
             work=work, session_id="session"
         )["session"]["manager_epoch"])
+
+    def test_manager_generating_for_long_time_is_never_auto_replaced(self):
+        from bct.manager_succession_recovery import ManagerSuccessionRecovery
+        work = self.bct.store.get_work("work")
+        with self.bct.store.transaction() as db:
+            db.execute(
+                "UPDATE orchestration_sessions SET wake_receipt_mode='RCC_RESULT_POLL_V1' "
+                "WHERE session_id='session'"
+            )
+        self.bct.orchestration.manager_failover_seconds = 30.0
+        self.bct.orchestration.observe_manager_liveness(
+            work=work, session_id="session", manager_epoch=1,
+            state="GENERATING", observed_at=time.time() - 1200.0,
+        )
+        recovery = ManagerSuccessionRecovery(self.bct.orchestration, self.relay)
+        current = recovery._current(limit=8)
+        for endpoint in self.relay.endpoints:
+            if endpoint["tabId"] == current[0]["tab_id"]:
+                endpoint["generating"] = True
+        result = recovery.run_once()
+        self.assertEqual(0, result["taken_over"], result)
+        self.assertEqual(0, result["due"], result)
+        self.assertEqual("manager", self.bct.orchestration.snapshot(
+            work=work, session_id="session",
+        )["session"]["manager_node_id"])
+
+    def test_missing_rcc_response_never_promotes_manager(self):
+        from unittest.mock import patch
+        from bct.manager_succession_recovery import ManagerSuccessionRecovery
+        work = self.bct.store.get_work("work")
+        with self.bct.store.transaction() as db:
+            db.execute(
+                "UPDATE orchestration_sessions SET wake_receipt_mode='RCC_RESULT_POLL_V1' "
+                "WHERE session_id='session'"
+            )
+        self.bct.orchestration.manager_failover_seconds = 30.0
+        self.bct.orchestration.observe_manager_liveness(
+            work=work, session_id="session", manager_epoch=1,
+            state="ORPHANED", observed_at=time.time() - 1000.0,
+        )
+        recovery = ManagerSuccessionRecovery(self.bct.orchestration, self.relay)
+        with patch.object(self.relay, "request", side_effect=RelayUnavailable("RCC down")):
+            result = recovery.run_once()
+        self.assertEqual(0, result["taken_over"], result)
+        self.assertEqual(0, result["due"], result)
+        self.assertEqual("manager", self.bct.orchestration.snapshot(
+            work=work, session_id="session",
+        )["session"]["manager_node_id"])
+
+    def test_recovered_manager_during_final_recheck_stays_manager(self):
+        from unittest.mock import patch
+        from bct.manager_succession_recovery import ManagerSuccessionRecovery
+        work = self.bct.store.get_work("work")
+        with self.bct.store.transaction() as db:
+            db.execute(
+                "UPDATE orchestration_sessions SET wake_receipt_mode='RCC_RESULT_POLL_V1' "
+                "WHERE session_id='session'"
+            )
+        self.bct.orchestration.manager_failover_seconds = 30.0
+        self.bct.orchestration.observe_manager_liveness(
+            work=work, session_id="session", manager_epoch=1,
+            state="ORPHANED", observed_at=time.time() - 300.0,
+        )
+        recovery = ManagerSuccessionRecovery(self.bct.orchestration, self.relay)
+        with patch.object(recovery, "_observe", side_effect=["ORPHANED", "IDLE"]):
+            result = recovery.run_once()
+        self.assertEqual(0, result["taken_over"], result)
+        self.assertEqual("manager", self.bct.orchestration.snapshot(
+            work=work, session_id="session",
+        )["session"]["manager_node_id"])
+
+    def test_auto_manager_never_promotes_ordinary_worker(self):
+        from bct.manager_succession_recovery import ManagerSuccessionRecovery
+        work = self.bct.store.get_work("work")
+        with self.bct.store.transaction() as db:
+            db.execute(
+                "UPDATE orchestration_sessions SET wake_receipt_mode='RCC_RESULT_POLL_V1' "
+                "WHERE session_id='session'"
+            )
+            db.execute(
+                "UPDATE orchestration_session_nodes SET session_role='WORKER' "
+                "WHERE session_id='session' AND node_id='backup'"
+            )
+        self.bct.orchestration.manager_failover_seconds = 30.0
+        self.bct.orchestration.observe_manager_liveness(
+            work=work, session_id="session", manager_epoch=1,
+            state="ORPHANED", observed_at=time.time() - 300.0,
+        )
+        recovery = ManagerSuccessionRecovery(self.bct.orchestration, self.relay)
+        current = recovery._current(limit=8)
+        self.relay.endpoints = [
+            endpoint for endpoint in self.relay.endpoints
+            if endpoint["tabId"] != current[0]["tab_id"]
+        ]
+        result = recovery.run_once()
+        self.assertEqual(0, result["taken_over"], result)
+        self.assertEqual(1, result["needs_successor"], result)
+        self.assertEqual("manager", self.bct.orchestration.snapshot(
+            work=work, session_id="session",
+        )["session"]["manager_node_id"])
+
+    def test_invalid_rcc_endpoint_list_is_unknown_not_failed_manager(self):
+        from bct.manager_succession_recovery import ManagerSuccessionRecovery
+        recovery = ManagerSuccessionRecovery(self.bct.orchestration, self.relay)
+        current = recovery._current(limit=8)
+        # With missing endpoints, the reader has no identity proof either way.
+        target = self.attachment("manager")
+        snapshot = {"ok": True, "state": {
+            "instanceId": target["instance_id"],
+            "sessionId": target["external_session_id"],
+            "endpoints": None,
+        }}
+        self.assertEqual("UNKNOWN", recovery._readiness(target, snapshot))
 
     def test_chain_runs_two_workers_takes_over_manager_and_synthesizes(self):
         worker_b = self.attachment("worker-b")

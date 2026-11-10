@@ -1302,15 +1302,18 @@ def build_mcp(
                 }
                 if "manager" not in roles or roles & {"worker", "supervisor"}:
                     raise ValueError("CHAIN_RECOVERY_MANAGER_ROLE_NOT_CONFIRMED")
-                from bct.send_delayed_message import DurableWatchLedger
-                watch_ledger = DurableWatchLedger(bct.store)
-                active = [row for row in watch_ledger.watching(limit=100)
-                          if row["context"].get("work_id") == work.work_id]
                 from bct.chain_manager_recovery import ChainManagerRecoveryLedger
+                from bct.send_delayed_message import DurableWatchLedger
+                # The old entry initialized this table even on a fresh Work.
+                # Preserve that compatibility before using the full set.
+                DurableWatchLedger(bct.store)
                 recovery_ledger = ChainManagerRecoveryLedger(bct.store)
-                checkpoints = await asyncio.to_thread(
-                    recovery_ledger.for_work, work_id=work.work_id,
+                full_context = await asyncio.to_thread(
+                    recovery_ledger.full_recovery_relations,
+                    work_id=work.work_id,
                 )
+                active = full_context["watches"]
+                checkpoints = full_context["checkpoints"]
                 manager_scope = str(
                     manager["node_info"].get("network_id")
                     or manager["node_info"].get("network") or ""
@@ -1334,10 +1337,23 @@ def build_mcp(
                                        for row in checkpoints)
                 if report_target_conversation_key.lower() in supervisor_keys:
                     raise ValueError("CHAIN_RECOVERY_MANAGER_IS_SUPERVISOR")
+                unavailable_workers = []
                 for worker_key in worker_keys:
-                    worker = resolve_direction_target(
-                        snapshot=snapshot, conversation_key=worker_key,
-                    )
+                    try:
+                        worker = resolve_direction_target(
+                            snapshot=snapshot, conversation_key=worker_key,
+                        )
+                    except ValueError as exc:
+                        # Recovery must not require a broken Worker to be
+                        # currently open. Exact Watch/return Work receipts are
+                        # already durable; repair this Worker independently.
+                        if str(exc) not in {
+                            "DIRECTION_TARGET_NOT_UNIQUE_OR_OPEN",
+                            "DIRECTION_ATTACHMENT_NOT_UNIQUE_OR_OPEN",
+                        }:
+                            raise
+                        unavailable_workers.append(worker_key)
+                        continue
                     worker_scope = str(
                         worker["node_info"].get("network_id")
                         or worker["node_info"].get("network") or ""
@@ -1359,26 +1375,30 @@ def build_mcp(
                             "CHAIN_RECOVERY_MANAGER_SUCCESSION_PROOF_REQUIRED"
                         )
                     succession_proofs.append(proof)
-                binding = await asyncio.to_thread(
-                    watch_ledger.resume_manager,
+                rebound = await asyncio.to_thread(
+                    recovery_ledger.rebind_active_manager_atomic,
                     work_id=work.work_id,
                     manager_conversation_key=report_target_conversation_key.lower(),
                     manager_instance_id=manager["instance_id"],
                     succession_proofs=succession_proofs,
                 )
-                rebound = await asyncio.to_thread(
-                    recovery_ledger.rebind_active_manager,
-                    work_id=work.work_id,
-                    manager_conversation_key=report_target_conversation_key.lower(),
-                    succession_proofs=succession_proofs,
-                )
+                binding = {
+                    "work_id": work.work_id,
+                    "manager_conversation_key": report_target_conversation_key.lower(),
+                    "updated_watches": rebound["updated_watches"],
+                    "examined_watches": rebound["examined_watches"],
+                    "atomic_with_checkpoints": True,
+                    "effects": "DURABLE_BINDING_ONLY_NO_MESSAGE",
+                }
             except KeyError:
                 return {"status": "NOT_FOUND", "reason": "WORK_NOT_FOUND"}
             except ValueError as exc:
                 return {"status": "INVALID_REQUEST", "reason": str(exc)}
             return {
                 "status": "MANAGER_RESUMED", "binding": binding,
-                "rebound_checkpoints": rebound,
+                "rebound_checkpoints": rebound["rebound_checkpoints"],
+                "recovery_rebinding": rebound,
+                "unavailable_workers_to_recover": sorted(unavailable_workers),
                 "next_safe_step": "READ_RECOVERY_INBOX_THEN_ACK_EACH_CHECKPOINT",
                 "does_not": ["send_message", "replay_unknown", "act_as_supervisor"],
             }

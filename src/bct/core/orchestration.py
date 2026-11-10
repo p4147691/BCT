@@ -812,14 +812,12 @@ class OrchestrationService:
         state: str, evidence: dict[str, Any] | None = None,
         observed_at: float | None = None,
     ) -> dict[str, Any]:
-        """Persist one exact Manager endpoint observation.
+        """Persist exact Manager liveness without guessing that BUSY is dead.
 
-        ``GENERATING``, ``DISCONNECTED`` and ``ORPHANED`` are blocking
-        observations.  They only make a successor *eligible* after the
-        configured timeout; they do not themselves take over or send anything.
-        An ``IDLE`` observation clears the timer for the current epoch.
+        Only positive DISCONNECTED/ORPHANED observation starts the timeout.
+        IDLE, GENERATING and UNKNOWN cannot qualify a replacement.
         """
-        if state not in {"IDLE", "GENERATING", "DISCONNECTED", "ORPHANED"}:
+        if state not in {"IDLE", "GENERATING", "DISCONNECTED", "ORPHANED", "UNKNOWN"}:
             raise PreconditionError("ORCHESTRATION_MANAGER_LIVENESS_STATE_INVALID")
         if evidence is not None and (not isinstance(evidence, dict)
                                      or len(_canonical(evidence)) > 4000):
@@ -837,7 +835,7 @@ class OrchestrationService:
                 "SELECT * FROM orchestration_manager_liveness WHERE session_id=?",
                 (session_id,),
             ).fetchone()
-            blocked = state != "IDLE"
+            blocked = state in {"DISCONNECTED", "ORPHANED"}
             same_owner = previous is not None and (
                 int(previous["manager_epoch"]) == manager_epoch
                 and str(previous["manager_node_id"]) == manager_node_id
