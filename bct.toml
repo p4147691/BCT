@@ -175,6 +175,8 @@ files = [
   "src/bct/github_inbox_autofollow.py",
   "src/bct/send_delayed_message.py",
   "src/bct/node_recovery.py",
+  "src/bct/automatic_chain_recovery.py",
+  "src/bct/automatic_manager_rebinding.py",
   "src/bct/continuation_primitives.py",
   "src/bct/chain_direction.py",
   "src/bct/chain_derived_tasks.py",
