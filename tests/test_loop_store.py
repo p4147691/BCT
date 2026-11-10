@@ -34,8 +34,6 @@ class LoopStoreTests(unittest.TestCase):
     def test_prepared_unknown_no_replay(self):
         self.a.prepare_operation(work_id="loop-test",owner="node-a",epoch=1,
                                  operation_id="op-1",now=110)
-        with self.assertRaisesRegex(LoopStateError,"LOOP_RECONCILE_REQUIRED"):
-            self.claim(self.b,"node-b",1,200)
         self.a.reconcile(work_id="loop-test",owner="node-a",epoch=1,
                          operation_id="op-1",result="UNKNOWN",now=111)
         with self.assertRaisesRegex(LoopStateError,"LOOP_RECONCILE_REQUIRED"):
@@ -46,6 +44,25 @@ class LoopStoreTests(unittest.TestCase):
         self.a.advance(work_id="loop-test",owner="node-a",epoch=1,
                        next_step=1,now=114)
         self.assertEqual(self.a.get("loop-test")["next_step"],1)
+
+    def test_successor_can_reconcile_unknown_without_replaying(self):
+        self.a.prepare_operation(work_id="loop-test",owner="node-a",epoch=1,
+                                 operation_id="op-uncertain",now=110)
+        self.a.reconcile(work_id="loop-test",owner="node-a",epoch=1,
+                         operation_id="op-uncertain",result="UNKNOWN",now=111)
+        successor=self.claim(self.b,"node-b",1,200)
+        self.assertEqual(successor["epoch"],2)
+        self.assertEqual(successor["operation_id"],"op-uncertain")
+        with self.assertRaisesRegex(LoopStateError,"LOOP_RECONCILE_REQUIRED"):
+            self.b.prepare_operation(work_id="loop-test",owner="node-b",epoch=2,
+                                     operation_id="op-replay",now=201)
+        self.b.reconcile(work_id="loop-test",owner="node-b",epoch=2,
+                         operation_id="op-uncertain",result="APPLIED",now=202)
+        self.b.advance(work_id="loop-test",owner="node-b",epoch=2,
+                       next_step=1,now=203)
+        with self.assertRaisesRegex(LoopStateError,"LOOP_FENCED"):
+            self.a.advance(work_id="loop-test",owner="node-a",epoch=1,
+                           next_step=1,now=204)
 
     def test_successor_fencing(self):
         with self.assertRaisesRegex(LoopStateError,"LOOP_LEASE_HELD"):

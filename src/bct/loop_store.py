@@ -95,8 +95,9 @@ class LoopStore:
                 raise LoopStateError("LOOP_COMPLETED")
             if row["epoch"] != epoch:
                 raise LoopStateError("LOOP_FENCED")
-            if row["operation_state"] in {"UNKNOWN","PREPARED"}:
-                raise LoopStateError("LOOP_RECONCILE_REQUIRED")
+            # A successor may take over an expired lease even when an effect
+            # is uncertain, but must reconcile that SAME Operation ID before
+            # any new effect. Blocking the claim would deadlock recovery.
             if row["lease_until"] > now and row["owner"] != owner:
                 raise LoopStateError("LOOP_LEASE_HELD")
             new_epoch = epoch + (row["owner"] != owner or row["lease_until"] <= now)
@@ -113,8 +114,6 @@ class LoopStore:
         with self.store.transaction() as db:
             row=self._owned(db,work_id,owner,epoch,now)
             if row["operation_state"] in {"UNKNOWN","PREPARED"}:
-                if row["operation_id"] == operation_id:
-                    return row
                 raise LoopStateError("LOOP_RECONCILE_REQUIRED")
             if row["operation_state"] == "APPLIED":
                 raise LoopStateError("LOOP_STEP_PENDING_ADVANCE")
