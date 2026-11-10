@@ -23,6 +23,14 @@ class LoopRecoveryExecutorTests(unittest.TestCase):
         return LoopRecoveryExecutor(Store(self.path),principal_id="principal",
                                     owner_ready=lambda owner: ready and owner=="node-a")
 
+    def test_manual_recovery_is_exact_work_scoped(self):
+        result=self.executor().run_once(now=161,work_id_filter="other-work")
+        self.assertEqual(result["checked"],0)
+        self.assertEqual(self.loop.get("w")["epoch"],1)
+        owned=self.executor().run_once(now=161,work_id_filter="w")
+        self.assertEqual(owned["checked"],1)
+        self.assertEqual(self.loop.get("w")["epoch"],2)
+
     def test_disconnected_node_does_not_claim(self):
         result=self.executor(False).run_once(now=161)
         self.assertEqual(result["results"][0]["status"],"OWNER_UNAVAILABLE")

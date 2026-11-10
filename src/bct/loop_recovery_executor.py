@@ -17,11 +17,18 @@ class LoopRecoveryExecutor:
         self.principal_id=principal_id
         self.owner_ready=owner_ready
 
-    def run_once(self, *, now=None, limit=8):
+    def run_once(self, *, now=None, limit=8, work_id_filter=None):
         now=time.time() if now is None else now
         scanner=LoopRecoveryScanner(self.store)
-        candidates=scanner.scan(now=now,limit=limit)
         ledger=LoopStore(self.store)
+        if work_id_filter is not None:
+            current=ledger.get(work_id_filter)
+            candidates=(
+                [current] if current and current["state"]=="LOOP_STARTED"
+                and current["lease_until"]<=now else []
+            )
+        else:
+            candidates=scanner.scan(now=now,limit=limit)
         results=[]
         for current in candidates:
             work_id=current["work_id"]

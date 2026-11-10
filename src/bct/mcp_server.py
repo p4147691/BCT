@@ -3123,6 +3123,29 @@ def build_mcp(
             if work.owner_principal_id != MCP_PRINCIPAL_ID:
                 return {"status": "ACCESS_DENIED"}
             ledger = LoopStore(bct.store)
+            if action == "recover":
+                if status_provider is None:
+                    return {"status": "UNAVAILABLE", "reason": "LOOP_FRESH_STATUS_REQUIRED"}
+                from bct.loop_recovery_executor import LoopRecoveryExecutor
+                snapshot = await asyncio.to_thread(status_provider)
+                nodes = status_view(snapshot, "node").get("current_nodes", {})
+                if nodes.get("observation", {}).get("state") != "FRESH":
+                    return {"status": "UNAVAILABLE", "reason": "LOOP_NODES_NOT_FRESH"}
+                ready = {
+                    node.get("conversation_uuid")
+                    for node in nodes.get("items", [])
+                    if node.get("status") == "CONFIRMED"
+                    and node.get("generating") is False
+                    and not node.get("connection", {}).get("disconnected", True)
+                    and node.get("telemetry", {}).get("readiness") == "IDLE"
+                }
+                result = await asyncio.to_thread(
+                    LoopRecoveryExecutor(
+                        bct.store, principal_id=MCP_PRINCIPAL_ID,
+                        owner_ready=lambda value: value in ready,
+                    ).run_once, work_id_filter=work_id,
+                )
+                return {"status": "OK", "recovery": result}
             if action == "status":
                 loop = await asyncio.to_thread(ledger.get, work_id)
                 return {"status": "OK" if loop else "NOT_FOUND", "loop": loop}
