@@ -319,7 +319,7 @@ class ChainManagerRecoveryLedger:
                 }
                 for row in db.execute(
                     "SELECT conversation_key,context_json FROM delayed_send_watches "
-                    "WHERE state IN ('WATCHING','RESERVED','PAUSED') "
+                    "WHERE state IN ('WATCHING','RESERVED','PAUSED','MANAGER_RECOVERY_PENDING') "
                     "AND json_extract(context_json,'$.work_id')=? "
                     "ORDER BY task_id,generation", (work_id,),
                 )
@@ -348,6 +348,7 @@ class ChainManagerRecoveryLedger:
     def rebind_active_manager_atomic(
         self, *, work_id: str, manager_conversation_key: str,
         manager_instance_id: str, succession_proofs: list[dict] | None = None,
+        require_latest_transfer: bool = False,
     ) -> dict:
         """Rebind every active Watch and every unacknowledged return in one TX.
 
@@ -359,7 +360,7 @@ class ChainManagerRecoveryLedger:
         with self.store.transaction() as db:
             watches = list(db.execute(
                 "SELECT task_id,generation,context_json FROM delayed_send_watches "
-                "WHERE state IN ('WATCHING','RESERVED','PAUSED') "
+                "WHERE state IN ('WATCHING','RESERVED','PAUSED','MANAGER_RECOVERY_PENDING') "
                 "AND json_extract(context_json,'$.work_id')=? "
                 "ORDER BY task_id,generation", (work_id,),
             ).fetchall())
@@ -386,11 +387,44 @@ class ChainManagerRecoveryLedger:
             modified_watches = []
             modified_returns = []
             def proven(previous: str) -> bool:
-                return previous == manager_conversation_key or any(
-                    proof.get("predecessor_conversation_key") == previous
-                    and proof.get("successor_conversation_key") == manager_conversation_key
-                    for proof in proofs
-                )
+                if previous == manager_conversation_key:
+                    return True
+                for proof in proofs:
+                    if (proof.get("predecessor_conversation_key") != previous
+                            or proof.get("successor_conversation_key")
+                                != manager_conversation_key):
+                        continue
+                    if not require_latest_transfer:
+                        return True
+                    # The automatic Core path requires an actual, newest BCT
+                    # role-transfer receipt and current unique Manager role.
+                    # Validate within the SAME SQLite transaction as rebinding.
+                    project_id = str(proof.get("project_id") or "")
+                    transfer_id = str(proof.get("transfer_id") or "")
+                    if not project_id or not transfer_id:
+                        continue
+                    latest = db.execute(
+                        "SELECT transfer_id,predecessor_conversation_key,"
+                        "successor_conversation_key "
+                        "FROM conversation_network_manager_transfers "
+                        "WHERE project_id=? ORDER BY transferred_at DESC,"
+                        "transfer_id DESC LIMIT 1", (project_id,),
+                    ).fetchone()
+                    if (latest is None or latest["transfer_id"] != transfer_id
+                            or latest["predecessor_conversation_key"] != previous
+                            or latest["successor_conversation_key"]
+                               != manager_conversation_key):
+                        continue
+                    active_manager = db.execute(
+                        "SELECT conversation_key FROM conversation_network_membership_tags "
+                        "WHERE project_id=? AND lower(tag)='manager'",
+                        (project_id,),
+                    ).fetchall()
+                    if [str(item["conversation_key"]) for item in active_manager] != [
+                            manager_conversation_key]:
+                        continue
+                    return True
+                return False
             for row in watches:
                 ctx = json.loads(row["context_json"] or "{}")
                 old = str(ctx.get("manager_conversation_key") or "")
@@ -423,7 +457,7 @@ class ChainManagerRecoveryLedger:
             for context, task, generation in modified_watches:
                 db.execute(
                     "UPDATE delayed_send_watches SET context_json=? "
-                    "WHERE task_id=? AND generation=? AND state IN ('WATCHING','RESERVED','PAUSED')",
+                    "WHERE task_id=? AND generation=? AND state IN ('WATCHING','RESERVED','PAUSED','MANAGER_RECOVERY_PENDING')",
                     (context, task, generation),
                 )
             for destination, proof_json, task, generation in modified_returns:

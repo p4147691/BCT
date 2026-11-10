@@ -1,9 +1,9 @@
 {
   "schema": "bct.component-library.bundle.v1",
-  "source_fingerprint": "82e917c0b1cce971b1fe54ee8c6a923722f285ddeef0889a5e1b8aa373a7848a",
+  "source_fingerprint": "398800037c62c889dab6ca12ce4c9c8a9226f0b8eb5466dde867f6c816b79768",
   "source_hashes": {
     "docs/CHAIN_MESSAGE_RECIPE_V2.md": "67793cf99755f2e094fbed7c01d85c23f185b18514fc720b0642389c285046be",
-    "docs/component-library.v1.json": "c05b19372f9f9321035512f1cfdf2d81faa143792d1c18905757ab9fa4fba784",
+    "docs/component-library.v1.json": "731809c372b8ea74f3a774eb6806423e1368d84722ceaf0f193d2115d4537d41",
     "modules/browser-bridge/extension/background.js": "b058aeb8fa8f37b8a21ae8b70be21d003e976a97e9e5ca884d7a98f5dced4472",
     "modules/browser-bridge/extension/chat_tools.js": "cc91898a0c30c58f5bee4e6b7fea991282ce5a21f100cfaeb220cc300e4ee85b",
     "modules/browser-bridge/extension/tool_protocol.js": "05e244e856af58705de1c1fc50a9a8d5e63b9ca2e8ba8674cabe8d9ea9a8563a",
@@ -19,10 +19,12 @@
     "modules/monitor/extension/monitor-window-hwnd-contract.js": "81b0050ba0231328ad3514b35e1d085e18afcf7315bf4674d3e5604a61b34e6e",
     "modules/rcc/extension/content/conversation_rename.js": "94199637687e133deb537d5011c260327b5a4cb06eaaffd673c1221f4a1c1027",
     "modules/rcc/extension/domain/conversation_rename_service.js": "a1462e7a55ce0922a5a56943b5d2c3b99710c5c0e941483550869254a8ecdaa5",
+    "src/bct/automatic_chain_recovery.py": "fc36a225bafec6bf702fff28b8e88d9ac345b572055201dac60af516d2ebf02d",
+    "src/bct/automatic_manager_rebinding.py": "ceebd54e9292d14c7f2ddb00f3f026be9246550d2be2afa38536f0a33db789b2",
     "src/bct/chain_direction.py": "69e40808ce756c014b795f9eaaf7f6d019cd72efce979c0bbb66770c236c423f",
     "src/bct/chain_entry_policy.py": "2f8b585702ed615deb83598fbb5755cb62315ad9e9454fe2caa2c8fdd28d7ecf",
     "src/bct/chain_execution_plan.py": "da98ae2aa5efa9593b9a748856e33fe9140d92c5bc45671105b402517988c61f",
-    "src/bct/chain_manager_recovery.py": "ddc9b40f630cbf4ed03c545c04f57dd21357fdd2aa5aca8d7b9e26f621e068d5",
+    "src/bct/chain_manager_recovery.py": "45f6b6b70b70985d231addb65d118eaa495b4e66bba185a40cef023f875f53c6",
     "src/bct/chain_recipe_blocks.py": "cffd9b97327cbe99dfe84eb8fb8f8a87973a6e3f7a5c8c8c08f0bf7badfd15fd",
     "src/bct/chain_recovery_context.py": "e698b740f472bf701ad7c786a675b1907a7c6f8136547747e8f2b5b9a70515c2",
     "src/bct/chat_input_queue.py": "0873721a88bdca3a84f16e5be9426a63360e98253ce02ceb6ec0dcf1fe9b3a87",
@@ -39,8 +41,8 @@
     "src/bct/features/owned_extension_action.py": "6c164bfb0cacf132940f16c15dfc9f653937b48a91d5e3e3ba648ad07e4bfa15",
     "src/bct/features/rcc.py": "f3b196df21df45ddf91897f893e84bf238e8738f18a366f1320a586fcf40a9a0",
     "src/bct/mcp_server.py": "5408749e6ee56bab64cced23b6f3889fdf002c363282a641e48d4bcc58551814",
-    "src/bct/node_recovery.py": "1c84150ae1af8cc285432565097ac071a2af6c4b2534f1d19ac7f75d7bec2438",
-    "src/bct/runtime_server.py": "b756e7be4063a46623196448fd229c9543df26b6ac1c6be814f57d33a367571f",
+    "src/bct/node_recovery.py": "8b4c3a097018bfd710e60dcf03f5cc925250741d7913eef3cc6a252209bd7615",
+    "src/bct/runtime_server.py": "fa3db54edb0ee6e2808ef00a7c0f6ba7f879d1f1f6f570d8edca75178669a16b",
     "src/bct/send_delayed_message.py": "543b8877796862ae8e5e3f854ad0e05bb268881b53486feeeabab90a41c756e8",
     "src/bct/task_message.py": "c2dec08eb945f546ac548b8ce7d8da1ef39bdd774cd0ade25e046a53c58014ad"
   },
@@ -172,6 +174,47 @@
         "used_by": [
           "bct.chain_recipe",
           "node.recovery"
+        ]
+      },
+      {
+        "id": "bct.automatic_chain_recovery",
+        "kind": "partial_recipe",
+        "maturity": "isolated",
+        "implementation": [
+          {
+            "path": "src/bct/automatic_chain_recovery.py",
+            "symbol": "AutomaticChainNodeRecovery.run_once"
+          },
+          {
+            "path": "src/bct/automatic_manager_rebinding.py",
+            "symbol": "AutomaticManagerRebinding.run_once"
+          },
+          {
+            "path": "src/bct/node_recovery.py",
+            "symbol": "NodeRecoveryLedger.check / mark_automatic_observation"
+          },
+          {
+            "path": "src/bct/runtime_server.py",
+            "symbol": "automatic_chain_recovery_loop"
+          }
+        ],
+        "contract": "BCT Core automatically monitors every current exact A/B/C/S participant linked to active Chain watches and unacknowledged Manager returns. One bounded fair scan reads the existing fresh RCC/Node Info snapshot, uses the original Work and assignment epoch to run durable Check/Recheck, preserves long GENERATING and UNKNOWN sensor conditions, and recognizes the same recovered UUID without replay or new Chat creation; finished Worker returns never trigger Worker replacement. User-requested recovery is a fallback, not a prerequisite. A formal, latest, SQLite-verifiable Manager role-transfer receipt with a positively connected exact successor can automatically and atomically rebind active Watch and unacknowledged return relations. An unavailable node without a confirmed successor remains RECOVERY_NEEDED; this partial recipe does not claim to create replacement Chats.",
+        "effects": [
+          "original-work-recovery-observations"
+        ],
+        "safety": [
+          "no-user-ids",
+          "no-new-approval-gate",
+          "exact-uuid",
+          "watch-untouched",
+          "no-unknown-replay",
+          "no-auto-manager-promotion",
+          "no-invented-successor"
+        ],
+        "used_by": [
+          "bct.chain_recipe",
+          "node.recovery",
+          "bct.runtime_core"
         ]
       },
       {

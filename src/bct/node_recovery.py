@@ -289,6 +289,38 @@ class NodeRecoveryLedger:
             value["latest_check"].pop("evidence_json", None)
         return value
 
+    def mark_automatic_observation(
+        self, *, work, case_id: str, state: str, reason: str,
+    ) -> bool:
+        """Persist a Core observation result, not an external recovery effect.
+
+        Only the auto-node-* cases are advanced. A manual Pause/Replace/Reset
+        case cannot be cleared by a routine background observation.
+        """
+        if not str(case_id).startswith("auto-node-"):
+            raise ValueError("NODE_AUTOMATIC_CASE_REQUIRED")
+        if state not in {"RECOVERY_NEEDED", "RECOVERED"}:
+            raise ValueError("NODE_AUTOMATIC_STATE_INVALID")
+        with self.store.transaction() as db:
+            row = self._case(db, case_id)
+            if not self._owned(row, work):
+                return False
+            if str(row["state"]) in {
+                "PAUSED", "REPLACEMENT_PREPARED", "REPLACED",
+                "RESETTING", "RESET_UNKNOWN", "RESET",
+            }:
+                return False
+            context = json.loads(row["context_json"] or "{}")
+            context["automatic_node_observation"] = {
+                "state": state, "reason": reason, "at": time.time(),
+            }
+            return db.execute(
+                "UPDATE node_recovery_cases SET state=?,context_json=?,updated_at=? "
+                "WHERE case_id=? AND work_id=? AND assignment_epoch=?",
+                (state, _canonical(context), time.time(), case_id,
+                 work.work_id, work.assignment_epoch),
+            ).rowcount == 1
+
     def pause(self, *, work, case_id: str, reason: str) -> dict[str, Any]:
         reason = str(reason or "").strip()
         if not reason or len(reason) > 500:

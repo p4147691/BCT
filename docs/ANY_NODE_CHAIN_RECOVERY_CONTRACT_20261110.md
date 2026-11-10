@@ -29,6 +29,47 @@ A user may tell the Manager A, or any available B/C/S node:
 The receiving AI node is an **intake and coordinator** (not the acting replacement Manager).
 It should inspect BCT state/receipts and run the already defined Recover Node R and Watch·Alarm Continuation R; it must eventually return to its own original Direction/Task/generation. User must not need to provide Work IDs, UUIDs, operations, role tokens or special approvals for ordinary recovery.
 
+## Automatic Core Check/Recheck, before manual fallback
+
+The BCT Core background thread continuously inspects current Work-linked
+A/B/C/S nodes from existing active Chain Watches and unacknowledged Manager
+returns. It does not ask a Manager, Worker, Supervisor or user to start.
+For each exact UUID, Check/Recheck evidence is stored in the existing
+NodeRecoveryLedger (one case per Work and assignment epoch). Healthy nodes
+and long GENERATING turns are left untouched. A Worker already finished in
+MANAGER_RECOVERY_PENDING, or present only in a completed return checkpoint,
+is never considered an unfinished node requiring automatic re-execution. If BCT cannot obtain a fresh
+RCC/Node Info snapshot it marks the sensor UNKNOWN, never the node dead.
+Two consistent failure observations create RECOVERY_NEEDED; repeated identical
+signals do not grow the same ledger indefinitely. When the original UUID
+reappears with fresh confirmed readiness, the case becomes RECOVERED,
+and existing delayed-send Watch/SELF and Manager-return mechanisms continue.
+Core restart reuses the existing recovery case and original Task/Generation.
+
+This stage is **automatic observation and same-UUID restoration only**, not
+an assertion that arbitrary missing conversations can be opened or replaced.
+A missing verified successor UUID must never be invented; replacement requires
+the existing exact identity, durable send receipts, role/epoch transfer,
+and E2E evidence. Until those mechanisms are implemented the case stays
+RECOVERY_NEEDED instead of introducing a user confirmation barrier or
+claiming successful recovery.
+
+## Automatic formal Manager transfer reconciliation
+
+When an actual BCT conversation-network Manager transfer has already been
+committed, the Core scans original Work-linked Watch and return checkpoints,
+reads the latest immutable manager-transfer receipt, and verifies the
+successor's current actual UUID, Node Info Manager role, network scope and
+positive RCC connection. Only then does it atomically rebind all active
+Watches and unacknowledged returns to the proven successor without any
+new user prompt. A missing connection, role conflict, stale superseded
+transfer or inconsistent predecessor identity cannot elect a successor.
+The newest Manager transfer is checked inside the same SQLite transaction
+as the rebinding to avoid a time-of-check/role-change race. Any DELIVERING or
+UNKNOWN external effect stays unresolved and is never replayed as a fresh
+message. This does not create new Chat conversations automatically; that
+physical provisioning capability and replacement E2E remain unfinished.
+
 ## Recovery scope and routing
 1. Start with bct_status, current Node Info and durable conversation network directory; infer the original Work/Direction/Task/generation from existing watches, directions, execution plans and return checkpoints. Prefer explicit context already in the receiving conversation over mere recent timestamps.
 2. For unique, evidence-backed target, use existing Check Node R → Recheck Node R. If the node is GENERATING or making progress, WAIT; never replace due only to elapsed time.

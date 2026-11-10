@@ -58,6 +58,21 @@
       "used_by": ["bct.chain_recipe", "node.recovery"]
     },
     {
+      "id": "bct.automatic_chain_recovery",
+      "kind": "partial_recipe",
+      "maturity": "isolated",
+      "implementation": [
+        {"path": "src/bct/automatic_chain_recovery.py", "symbol": "AutomaticChainNodeRecovery.run_once"},
+        {"path": "src/bct/automatic_manager_rebinding.py", "symbol": "AutomaticManagerRebinding.run_once"},
+        {"path": "src/bct/node_recovery.py", "symbol": "NodeRecoveryLedger.check / mark_automatic_observation"},
+        {"path": "src/bct/runtime_server.py", "symbol": "automatic_chain_recovery_loop"}
+      ],
+      "contract": "BCT Core automatically monitors every current exact A/B/C/S participant linked to active Chain watches and unacknowledged Manager returns. One bounded fair scan reads the existing fresh RCC/Node Info snapshot, uses the original Work and assignment epoch to run durable Check/Recheck, preserves long GENERATING and UNKNOWN sensor conditions, and recognizes the same recovered UUID without replay or new Chat creation; finished Worker returns never trigger Worker replacement. User-requested recovery is a fallback, not a prerequisite. A formal, latest, SQLite-verifiable Manager role-transfer receipt with a positively connected exact successor can automatically and atomically rebind active Watch and unacknowledged return relations. An unavailable node without a confirmed successor remains RECOVERY_NEEDED; this partial recipe does not claim to create replacement Chats.",
+      "effects": ["original-work-recovery-observations"],
+      "safety": ["no-user-ids", "no-new-approval-gate", "exact-uuid", "watch-untouched", "no-unknown-replay", "no-auto-manager-promotion", "no-invented-successor"],
+      "used_by": ["bct.chain_recipe", "node.recovery", "bct.runtime_core"]
+    },
+    {
       "id": "bct.component_library",
       "kind": "module",
       "maturity": "isolated",

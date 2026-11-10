@@ -411,6 +411,10 @@ def main() -> int:
         "bottleneck_ack": bottleneck_ack.status(),
         "chat_stream_rcc_watch": {"state": "IDLE", "polls": 0, "last_events": 0},
         "delayed_send_watch": {"state": "IDLE", "polls": 0, "last_events": 0},
+        "automatic_chain_recovery": {
+            "enabled": True, "runs": 0,
+            "scope": "EXACT_A_B_C_S_CHECK_RECHECK",
+        },
     }
 
     recovery_stop = threading.Event()
@@ -587,6 +591,43 @@ def main() -> int:
             },
             "monitor": monitor,
         }
+
+    def automatic_chain_recovery_loop() -> None:
+        """Automatic-first node Check/Recheck, independent of user prompts."""
+        from .automatic_chain_recovery import AutomaticChainNodeRecovery
+        from .automatic_manager_rebinding import AutomaticManagerRebinding
+        recovery = AutomaticChainNodeRecovery(
+            store=bct.store, status_provider=status_snapshot,
+        )
+        manager_binding = AutomaticManagerRebinding(
+            store=bct.store, status_provider=status_snapshot,
+        )
+        while not recovery_stop.is_set():
+            try:
+                outcome = recovery.run_once(limit=16)
+                # Manager transfer must already be formally recorded, and
+                # the actual successor UUID/role/connection must be verified.
+                # This never creates a new Chat or replays a Worker task.
+                outcome["manager_rebinding"] = manager_binding.run_once(limit=8)
+                state["automatic_chain_recovery"] = {
+                    "enabled": True,
+                    "runs": int(state["automatic_chain_recovery"].get("runs", 0)) + 1,
+                    "last_outcome": outcome,
+                    "last_error": None,
+                    "last_run_at": time.time(),
+                    "scope": "EXACT_A_B_C_S_CHECK_RECHECK",
+                }
+            except Exception as exc:
+                state["automatic_chain_recovery"] = {
+                    "enabled": True,
+                    "runs": int(state["automatic_chain_recovery"].get("runs", 0)) + 1,
+                    "last_error": type(exc).__name__,
+                    "last_run_at": time.time(),
+                    "scope": "EXACT_A_B_C_S_CHECK_RECHECK",
+                }
+            # A healthy Chat can generate for an unbounded period. Never
+            # treat elapsed time alone as a replacement trigger.
+            recovery_stop.wait(8.0)
 
     mcp = build_mcp(bct, status_provider=status_snapshot, compact_catalogue=compact_catalogue, hybrid_catalogue=hybrid_catalogue)
     holder: dict[str, uvicorn.Server] = {}
@@ -834,6 +875,11 @@ def main() -> int:
         target=delayed_send_watch_loop, name="bct-delayed-send-watch", daemon=True,
     )
     delayed_send_watch_thread.start()
+    automatic_chain_recovery_thread = threading.Thread(
+        target=automatic_chain_recovery_loop,
+        name="bct-automatic-chain-recovery", daemon=True,
+    )
+    automatic_chain_recovery_thread.start()
     if bct.manager_decision_recovery is not None:
         recovery_thread = threading.Thread(
             target=manager_decision_recovery_loop,
@@ -862,6 +908,7 @@ def main() -> int:
     finally:
         recovery_stop.set()
         node_label_notifier.stop()
+        automatic_chain_recovery_thread.join(timeout=3.0)
         if recovery_thread is not None:
             recovery_thread.join(timeout=3.0)
         if dispatch_thread is not None:
