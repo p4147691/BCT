@@ -6,7 +6,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from bct.automatic_chain_recovery import AutomaticChainNodeRecovery, _identity
+from bct.automatic_chain_recovery import AutomaticChainNodeRecovery, _identity, _targets
+from bct.chain_direction import ChainDirectionLedger
+from bct.chain_manager_recovery import ChainManagerRecoveryLedger
 from bct.core.models import Work
 from bct.core.store import Store
 from bct.node_recovery import NodeRecoveryLedger
@@ -53,6 +55,30 @@ class AutomaticChainRecoveryTests(unittest.TestCase):
                 (task, worker, "original-response-turn", "original-send", context),
             )
 
+    def seed_direction(self, *, direction_id, target="", task_id="",
+                       recipe_state="IN_PROGRESS", chain_state="NOT_PLANNED",
+                       assessment=None):
+        ChainDirectionLedger(self.store)
+        with self.store.transaction() as db:
+            db.execute(
+                "INSERT INTO chain_directions "
+                "(direction_id,work_id,source_kind,source_task_id,source_generation,"
+                "source_result_sha256,decision,direction_text,assessment_json,"
+                "target_conversation_key,chain_task_id,chain_state,recipe_state,"
+                "created_at,updated_at) "
+                "VALUES(?,?, 'USER','',0,'','NEW_TASK','saved Direction',"
+                "?,?,?,?,?,1,1)",
+                (direction_id, "direction-only-work",
+                 json.dumps(assessment if assessment is not None else {}),
+                 target, task_id, chain_state, recipe_state),
+            )
+
+    def direction_only_work(self):
+        return self.store.create_work(Work(
+            "direction-only-work", "Direction before Watch",
+            self.work.roots, frozenset({"browser"}), "principal",
+        ))
+
     def snapshot(self):
         if self.sensor_unavailable:
             raise RuntimeError("RCC observe failed")
@@ -87,6 +113,68 @@ class AutomaticChainRecoveryTests(unittest.TestCase):
                 }],
             },
         }}
+
+    def test_saved_direction_monitors_a_and_s_before_first_watch(self):
+        self.direction_only_work()
+        self.seed_direction(
+            direction_id="manager-pending", recipe_state="READY",
+            assessment={
+                "manager_conversation_key": A,
+                "supervisor_conversation_key": S,
+                "targets": [{"conversation_key": B, "role": "worker"}],
+            },
+        )
+        found = {
+            (row["work_id"], row["conversation_key"], row["role"])
+            for row in _targets(self.store)
+        }
+        self.assertIn(("direction-only-work", A, "manager"), found)
+        self.assertIn(("direction-only-work", S, "supervisor"), found)
+        # No Worker send occurred; don't diagnose B as failed before delivery.
+        self.assertNotIn(("direction-only-work", B, "worker"), found)
+
+    def test_started_child_direction_without_watch_is_monitored_until_return(self):
+        self.direction_only_work()
+        self.seed_direction(
+            direction_id="started-child", target=C,
+            task_id="child-task", chain_state="CHAIN_STARTED",
+        )
+        targets = _targets(self.store)
+        self.assertTrue(any(
+            row["work_id"] == "direction-only-work"
+            and row["conversation_key"] == C and row["task_id"] == "child-task"
+            for row in targets
+        ))
+        ChainManagerRecoveryLedger(self.store).record_pending(
+            task_id="child-task", generation=1,
+            work_id="direction-only-work", direction_id="started-child",
+            worker_conversation_key=C, manager_conversation_key=A,
+            supervisor_conversation_key=S, response_turn_key="turn-1",
+            response_sha256="a" * 64, return_payload="completed",
+        )
+        found = {
+            (row["work_id"], row["conversation_key"], row["role"])
+            for row in _targets(self.store)
+        }
+        self.assertNotIn(("direction-only-work", C, "worker"), found)
+
+    def test_completed_or_planned_directions_never_spawn_worker_recovery(self):
+        self.direction_only_work()
+        self.seed_direction(
+            direction_id="planned-child", target=B,
+            task_id="planned-task", chain_state="CHAIN_PLANNED",
+        )
+        self.seed_direction(
+            direction_id="completed-child", target=C,
+            task_id="completed-task", chain_state="CHAIN_STARTED",
+            recipe_state="COMPLETED",
+        )
+        found = {
+            (row["work_id"], row["conversation_key"])
+            for row in _targets(self.store)
+        }
+        self.assertNotIn(("direction-only-work", B), found)
+        self.assertNotIn(("direction-only-work", C), found)
 
     def test_all_a_b_c_s_are_checked_and_healthy_nodes_untouched(self):
         result = self.coordinator.run_once()

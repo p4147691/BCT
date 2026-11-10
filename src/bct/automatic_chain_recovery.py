@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from typing import Any
 
 from .node_recovery import NodeRecoveryLedger, observe_node
@@ -86,6 +87,71 @@ def _targets(store: Any) -> list[dict[str, str]]:
                             "work_id": wid, "conversation_key": key,
                             "role": role, "task_id": "",
                         })
+        if "chain_directions" in existing:
+            # A saved Direction can precede the first Watch. Without these
+            # links, a stopped A or S is invisible to automatic Check/Recheck
+            # at precisely the boundary where recovery is most useful.
+            for row in db.execute(
+                "SELECT d.work_id,d.assessment_json,d.chain_state,"
+                "d.chain_task_id,d.target_conversation_key "
+                "FROM chain_directions d JOIN works w ON w.work_id=d.work_id "
+                "WHERE w.state='ACTIVE' AND d.decision='NEW_TASK' "
+                "AND d.recipe_state IN ('READY','IN_PROGRESS') "
+                "ORDER BY d.work_id,d.created_at,d.direction_id"
+            ):
+                wid = str(row["work_id"])
+                try:
+                    assessment = json.loads(row["assessment_json"] or "{}")
+                except (ValueError, TypeError):
+                    assessment = {}
+                if not isinstance(assessment, dict):
+                    assessment = {}
+                for role, field in (
+                    ("manager", "manager_conversation_key"),
+                    ("supervisor", "supervisor_conversation_key"),
+                ):
+                    key = str(assessment.get(field) or "").lower()
+                    if not re.fullmatch(
+                        r"[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}", key
+                    ):
+                        continue
+                    entry = linked.setdefault((wid, key), {
+                        "work_id": wid, "conversation_key": key,
+                        "role": role, "task_id": "",
+                    })
+                    if role == "manager":
+                        entry["role"] = "manager"
+                # A per-target Direction known to have *started* is another
+                # exact Worker source even when Watch registration was lost.
+                # Planned-but-unsent Workers are not recovery candidates.
+                key = str(row["target_conversation_key"] or "").lower()
+                task_id = str(row["chain_task_id"] or "")
+                if (row["chain_state"] != "CHAIN_STARTED" or not task_id
+                        or not re.fullmatch(
+                            r"[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}", key
+                        )):
+                    continue
+                if "chain_manager_return_checkpoints" in existing:
+                    completed = db.execute(
+                        "SELECT 1 FROM chain_manager_return_checkpoints "
+                        "WHERE work_id=? AND task_id=? LIMIT 1", (wid, task_id),
+                    ).fetchone()
+                    if completed is not None:
+                        continue
+                if "delayed_send_watches" in existing:
+                    prior_watch = db.execute(
+                        "SELECT 1 FROM delayed_send_watches "
+                        "WHERE task_id=? AND json_extract(context_json,'$.work_id')=? "
+                        "AND state NOT IN ('WATCHING','RESERVED','PAUSED',"
+                        "'DISPATCHING','UNKNOWN') LIMIT 1",
+                        (task_id, wid),
+                    ).fetchone()
+                    if prior_watch is not None:
+                        continue
+                linked.setdefault((wid, key), {
+                    "work_id": wid, "conversation_key": key,
+                    "role": "worker", "task_id": task_id,
+                })
         active = {
             str(row["work_id"]): str(row["owner_principal_id"])
             for row in db.execute(

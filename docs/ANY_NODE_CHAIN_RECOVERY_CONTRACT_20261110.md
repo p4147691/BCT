@@ -32,8 +32,12 @@ It should inspect BCT state/receipts and run the already defined Recover Node R 
 ## Automatic Core Check/Recheck, before manual fallback
 
 The BCT Core background thread continuously inspects current Work-linked
-A/B/C/S nodes from existing active Chain Watches and unacknowledged Manager
-returns. It does not ask a Manager, Worker, Supervisor or user to start.
+A/B/C/S nodes from existing active Chain Watches, unacknowledged Manager
+returns, and active or ready Direction relationships. A Direction saved
+before the first Watch provides original A and S identities; an individual
+Worker is added only after its child Direction is marked CHAIN_STARTED,
+not while its send is merely planned. Completed Worker returns never
+cause a second Worker recovery or replay. It does not ask a Manager, Worker, Supervisor or user to start.
 For each exact UUID, Check/Recheck evidence is stored in the existing
 NodeRecoveryLedger (one case per Work and assignment epoch). Healthy nodes
 and long GENERATING turns are left untouched. A Worker already finished in
