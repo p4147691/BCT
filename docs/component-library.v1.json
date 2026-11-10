@@ -45,6 +45,19 @@
       "used_by": ["ordinary-user-assigned-work"]
     },
     {
+      "id": "bct.chain_recovery_context",
+      "kind": "module",
+      "maturity": "isolated",
+      "implementation": [
+        {"path": "src/bct/chain_recovery_context.py", "symbol": "read_chain_recovery_context"},
+        {"path": "src/bct/mcp_server.py", "symbol": "bct_chain_recipe(action=recovery_context)"}
+      ],
+      "contract": "Any A/B/C/S receiving a user recovery request may discover the original Work from exact conversation-linked Watch, Direction and return receipts and read existing progress and UNKNOWN evidence without a new permission gate. A recovered Manager alone authors its next Direction. Partial evidence is explicitly marked and requires continuation, never silently declared complete.",
+      "effects": [],
+      "safety": ["read-only", "work-principal-owner", "no-manager-promotion", "no-user-internal-ids-required-when-unique", "unknown-no-replay", "no-implicit-node-replacement"],
+      "used_by": ["bct.chain_recipe", "node.recovery"]
+    },
+    {
       "id": "bct.component_library",
       "kind": "module",
       "maturity": "isolated",

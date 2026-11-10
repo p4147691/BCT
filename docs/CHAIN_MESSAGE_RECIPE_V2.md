@@ -210,6 +210,32 @@ USER의 원문은 `CALLER_PROVIDED_TEXT`다. 호출자가 제공한 문자열이
 전송에는 Manager·초기 Worker·전역 Supervisor의 서로 다른 UUID와 현재 역할/대화망
 관계도 실행 조건이다. 이후 대상별 실제 실행 판단은 그 위에서 계속 분리한다.
 
+## 어느 노드에서든 복구 요청 받기 — 기존 Recipe 진입
+
+사용자는 Manager A, Worker B/C, 전역 Supervisor S 중 현재 접근 가능한 어느 노드에나
+'문제가 생긴 노드를 복구하고 기존 일을 계속해'라고 말할 수 있다.
+그 노드는 임시 Manager가 되지 않고 복구 요청의 접수·조정자로 동작한다.
+
+기존 Chain Recipe의 읽기 기능
+bct_chain_recipe(action="recovery_context", caller_conversation_key=현재 대화 UUID)
+을 통해 Direction·Watch·반환·UNKNOWN 기록이 연결된 원래 Work를 찾는다.
+Work를 이미 알고 있으면 work_id를 그대로 사용하고 필요한 대상은
+target_conversation_key로 확인한다. 사용자가 내부 UUID·Work ID를 직접
+찾아 입력할 필요는 없다.
+
+이 단계는 읽기 전용이며 별도 R 단계·권한·승인 관문이 아니다. 정확한 Work가
+여럿이면 근거와 자연어 설명을 제공하되 임의로 선택하지 않는다. 복구 요청을
+받은 노드는 Check Node R → Recheck Node R → Recover/Replace Node R을 재사용한다.
+S나 Worker가 접수했다고 정식 A가 되는 것은 아니다. A 복구 뒤에는 기존
+Manager 반환을 인계하며, 접수한 B/C/S는 원래 Execute Plan·Task·generation으로
+돌아간다. 마지막 AI 답변·Watch·Operation·반환 증거는 서로 대조하되 장시간
+GENERATING을 시간만으로 고장 취급하지 않는다. UNKNOWN 외부 효과는 자동
+재전송하지 않는다. recovery_context는 진단용 첫 블록이며 아직 단독 호출로
+전체 노드 복구·인계를 실행하는 기능은 아니다. 출력이 PARTIAL_EVIDENCE이면
+next_cursors에 기록된 이어 읽기 값을 동일 action의 recovery_cursors로 넘겨
+남은 원장을 조회한다. 이 반복은 복구를 실행하는 노드가 수행하며 사용자에게
+커서·작업 ID 입력을 요구하지 않는다. 한 페이지만 읽고 전체 복구 완료를 선언하지 않는다.
+
 ## Recover Node R: 선택형 노드 복구 점검
 
 `Recover Node R`은 “복구 담당 노드”가 아니라 **하나의 노드를 복구 흐름으로 점검하는

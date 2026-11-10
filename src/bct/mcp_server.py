@@ -1129,7 +1129,9 @@ def build_mcp(
             "When report_target_conversation_key is supplied, State R also reads that exact A return "
             "conversation's Recovery Notices. action=recovery_inbox reads durable Worker MANAGER "
             "returns collected for the bound A or S, including their last execution and delivery "
-            "receipts, without sending or replaying anything."
+            "receipts, without sending or replaying anything. "
+            "action=recovery_context assembles read-only original Work/Watch/return "
+            "evidence for any A/B/C/S recovery intake; it never appoints a Manager."
         ),
         structured_output=True,
     )
@@ -1145,10 +1147,69 @@ def build_mcp(
         worker_preparation_id: str = "",
         parent_direction_id: str = "", parent_step_id: str = "",
         branch_kind: str = "PRIMARY", branch_reason: str = "", branch_request_id: str = "",
+        caller_conversation_key: str = "",
+        recovery_limit: int = 1000,
+        recovery_cursors: dict[str, int] | None = None,
     ) -> dict[str, Any]:
         """Run one explicit boundary of the Chain Recipe."""
-        if action not in {"prepare", "save", "recover_node", "prepare_send", "apply_network", "send", "preflight", "provision_worker", "recovery_inbox", "bind_recovery_collector", "resume_manager", "ack_recovery"}:
+        if action not in {"prepare", "save", "recover_node", "prepare_send", "apply_network", "send", "preflight", "provision_worker", "recovery_inbox", "recovery_context", "bind_recovery_collector", "resume_manager", "ack_recovery"}:
             return {"status": "INVALID_REQUEST", "reason": "CHAIN_RECIPE_ACTION_INVALID"}
+        if action == "recovery_context":
+            # Any connected node may start recovery observation.  Its role label
+            # cannot appoint it as the Manager, and no new Work permission is
+            # introduced.  The original Work is discovered from exact receipts
+            # when the caller does not already have its internal ID.
+            from bct.chain_recovery_context import read_chain_recovery_context
+            try:
+                result = await asyncio.to_thread(
+                    read_chain_recovery_context, bct.store,
+                    principal_id=principal.principal_id, work_id=work_id,
+                    caller_conversation_key=caller_conversation_key,
+                    target_conversation_key=target_conversation_key,
+                    limit=recovery_limit, cursors=recovery_cursors,
+                )
+                if result.get("status") in {"READY", "PARTIAL_EVIDENCE"}:
+                    # Inspect the entire observed chain, not only the originally
+                    # mentioned target.  The existing Node Recovery function
+                    # classifies BUSY as WAIT and never authorizes replacement.
+                    all_keys = {
+                        key for key in (caller_conversation_key,
+                                        target_conversation_key) if key
+                    }
+                    for row in result["watches"]["items"]:
+                        all_keys.update(str(row.get(field) or "") for field in (
+                            "conversation_key", "manager_conversation_key",
+                            "supervisor_conversation_key"))
+                    for row in result["manager_returns"]["items"]:
+                        all_keys.update(str(row.get(field) or "") for field in (
+                            "worker_conversation_key",
+                            "active_manager_conversation_key"))
+                    for row in result["directions"]["items"]:
+                        all_keys.add(str(row.get("target_conversation_key") or ""))
+                    all_keys.discard("")
+                    if status_provider is not None:
+                        try:
+                            from bct.node_recovery import observe_node
+                            fresh = status_view(
+                                await asyncio.to_thread(status_provider), "node"
+                            )
+                            observations = {
+                                key: observe_node(fresh, key)
+                                for key in sorted(all_keys)
+                            }
+                            result["node_observations"] = observations
+                            result["node_observation_status"] = "OBSERVED"
+                            if target_conversation_key:
+                                result["node_observation"] = observations[
+                                    target_conversation_key.lower()
+                                ]
+                        except (ValueError, KeyError, RuntimeError) as exc:
+                            result["node_observation_status"] = "UNAVAILABLE"
+                            result["node_observation_reason"] = type(exc).__name__
+                return result
+            except ValueError as exc:
+                return {"status": "INVALID_REQUEST", "reason": str(exc),
+                        "read_only": True}
         if action == "recovery_inbox":
             if not report_target_conversation_key:
                 return {"status": "INVALID_REQUEST",

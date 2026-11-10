@@ -16,7 +16,7 @@ CATALOGUE = "docs/component-library.v1.json"
 OUTPUT = "src/bct/data/component-library.json"
 FLOW_SOURCES = (
     "src/bct/mcp_server.py", "src/bct/chain_direction.py", "src/bct/chain_execution_plan.py",
-    "src/bct/chain_entry_policy.py", "src/bct/chain_recipe_blocks.py",
+    "src/bct/chain_entry_policy.py", "src/bct/chain_recipe_blocks.py", "src/bct/chain_recovery_context.py",
     "src/bct/send_delayed_message.py", "src/bct/continuation_primitives.py",
     "src/bct/component_library.py", "src/bct/conversation_network.py",
     "src/bct/features/conversation_network.py", "src/bct/node_recovery.py",

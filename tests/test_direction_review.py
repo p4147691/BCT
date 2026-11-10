@@ -147,6 +147,36 @@ class DirectionReviewTests(unittest.IsolatedAsyncioTestCase):
     def sends(self):
         return [call for call in self.ops.calls if call["arguments"].get("command") == "send-message"]
 
+    async def test_any_node_recovery_context_is_read_only_and_keeps_original_work(self):
+        await self.save()
+        before = len(self.ops.calls)
+        result = await self.call(
+            "bct_chain_recipe", action="recovery_context",
+            work_id=self.work.work_id, caller_conversation_key=B,
+            target_conversation_key=A,
+        )
+        self.assertEqual("READY", result["status"], result)
+        self.assertTrue(result["read_only"])
+        self.assertEqual(self.work.work_id, result["work"]["work_id"])
+        self.assertIn("node_observation", result)
+        self.assertEqual("OBSERVED", result["node_observation_status"])
+        self.assertIn(A, result["node_observations"])
+        self.assertIn(B, result["node_observations"])
+        self.assertTrue(result["all_rows_examined"])
+        self.assertIn("grant_manager_role", result["does_not"])
+        self.assertIn("replay_unknown", result["does_not"])
+        self.assertEqual(before, len(self.ops.calls))
+
+    async def test_unbound_any_node_recovery_never_creates_work_or_sends(self):
+        before = len(self.ops.calls)
+        result = await self.call(
+            "bct_chain_recipe", action="recovery_context",
+            caller_conversation_key=A,
+        )
+        self.assertEqual("NO_BOUND_CONTEXT", result["status"])
+        self.assertTrue(result["read_only"])
+        self.assertEqual(before, len(self.ops.calls))
+
     async def test_instruction_only_entry_reads_current_and_historical_networks_without_writes(self):
         upsert_project(self.store, project_id="old-project", display_name="Historical network")
         with self.store._readonly() as db:
