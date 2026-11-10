@@ -19,7 +19,7 @@ from .background_operations import BACKGROUND_CAPABILITIES, launch_background_op
 from .chat_input_queue import ChatInputQueue
 from .chain_entry_policy import public_entry_policy
 from .component_library import DISCOVERY_GUIDE, discover, get_manual_guidance
-from .chain_message_preflight import (
+from .chain_recipe_blocks import (
     EXPLICIT_NEXT_TASK_SUFFIX, check_chain_work, prepare_chain_instruction,
 )
 from .code_block_scan import resolve_scan_root, scan as run_code_block_scan

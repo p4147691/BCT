@@ -147,7 +147,9 @@ C 역할 기록 → A→B`다. C는 이후 B의 결과가 메인 병합·배포�
 깨지 않도록 남긴 호환 별칭이다. 개념상 Target은 **이번 정확한 대상 X**를
 뜻한다. X가 B든 C든 감독관이든 같은 경로를 쓴다.
 
-### Chain Message 전송 전 권한·응답 출력 계약 (선택형)
+### Chain Recipe 전송 준비 공통 블록 (선택형 읽기 전용 검사)
+
+기존 State R·Prepare Send Direction R·Send Direction R이 재사용하는 검사·지시문 구성 블록이며, 별도의 Preflight R이나 Chain Message 실행 경로가 아니다.
 
 `bct_chain_recipe(action="preflight", ...)`는 실제 `send`에 사용할 **같은 Work,
 Task/Operation ID, 정확한 대상·발신자 식별자와 지시문**을 입력받아 기존

@@ -349,7 +349,7 @@ def compose_target_direction(*, direction: dict, target: dict, task_id: str,
             + "\n\n" + context
             + f"\n\n공통 설명서의 노드 안내 (manual SHA-256: {guidance['manual_sha256']}):\n"
             + guidance["text"])
-    from bct.chain_message_preflight import prepare_chain_instruction
+    from bct.chain_recipe_blocks import prepare_chain_instruction
     # Include the actual marker suffix in the size check before any effects.
     prepare_chain_instruction(text, output_contract="explicit-next-task-v1")
     return child_id, text
@@ -394,7 +394,7 @@ def compose_prepared_worker_direction(
         + f"\n\n공통 설명서의 노드 안내 (manual SHA-256: {guidance['manual_sha256']}):\n"
         + guidance["text"]
     )
-    from bct.chain_message_preflight import prepare_chain_instruction
+    from bct.chain_recipe_blocks import prepare_chain_instruction
     prepare_chain_instruction(text, output_contract="explicit-next-task-v1")
     return child_id, text
 

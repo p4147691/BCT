@@ -1,7 +1,9 @@
-"""Read-only Chain Recipe caller preflight and optional output-format instruction.
+"""Reusable Chain Recipe instruction and Work-observation blocks.
 
-This component neither expands a Work nor sends, prearms, or decides a NEXT TASK
-route. Exact RCC identity and durable Operation receipt gates remain elsewhere.
+These blocks support State R, Prepare Send Direction R, and Send Direction R.
+They are not a separate Preflight R or a Chain Message delivery route.
+They do not expand Work authority, send, prearm, or decide NEXT TASK.
+Legacy CHAIN_MESSAGE_* diagnostic codes remain stable for old receipts.
 """
 from __future__ import annotations
 

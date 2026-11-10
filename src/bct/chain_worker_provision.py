@@ -5,7 +5,7 @@ import re
 from typing import Any, Callable
 
 from .chain_direction import ChainDirectionLedger, compose_prepared_worker_direction
-from .chain_message_preflight import prepare_chain_instruction
+from .chain_recipe_blocks import prepare_chain_instruction
 from .chain_worker_preparation import (
     validate_worker_preparation, worker_preparation_operation_id,
 )

@@ -1,9 +1,9 @@
 {
   "schema": "bct.component-library.bundle.v1",
-  "source_fingerprint": "04980a3b7cbea12a9a3ba718ea84a77f5dd7d8d8adf694f3f5b82a25a9f5623b",
+  "source_fingerprint": "d43d5550f78d68cfd3ab1bc2ae88c7b709dc50f14d407aac3bcc5b719fe84abd",
   "source_hashes": {
     "docs/CHAIN_MESSAGE_RECIPE_V2.md": "c6a6a44f46083cb040530ee89f63a3bfeb9bcf4e24a7e76d7c01ed835d29bf15",
-    "docs/component-library.v1.json": "2257a9ae62902b710d7ea7bf3a4e3e367f22b73a30622b02262418a65d0cfecf",
+    "docs/component-library.v1.json": "10b320c647e63c6a19de199f52a288d1d0f753fcffb7e4cf79940c71b46b2c3b",
     "modules/browser-bridge/extension/background.js": "b058aeb8fa8f37b8a21ae8b70be21d003e976a97e9e5ca884d7a98f5dced4472",
     "modules/browser-bridge/extension/chat_tools.js": "cc91898a0c30c58f5bee4e6b7fea991282ce5a21f100cfaeb220cc300e4ee85b",
     "modules/browser-bridge/extension/tool_protocol.js": "05e244e856af58705de1c1fc50a9a8d5e63b9ca2e8ba8674cabe8d9ea9a8563a",
@@ -19,11 +19,11 @@
     "modules/monitor/extension/monitor-window-hwnd-contract.js": "81b0050ba0231328ad3514b35e1d085e18afcf7315bf4674d3e5604a61b34e6e",
     "modules/rcc/extension/content/conversation_rename.js": "94199637687e133deb537d5011c260327b5a4cb06eaaffd673c1221f4a1c1027",
     "modules/rcc/extension/domain/conversation_rename_service.js": "a1462e7a55ce0922a5a56943b5d2c3b99710c5c0e941483550869254a8ecdaa5",
-    "src/bct/chain_direction.py": "84fffaf0e19513b5bda381fdc18ac83debe8a86a99d1a0139b6b46e06d632577",
+    "src/bct/chain_direction.py": "69e40808ce756c014b795f9eaaf7f6d019cd72efce979c0bbb66770c236c423f",
     "src/bct/chain_entry_policy.py": "2f8b585702ed615deb83598fbb5755cb62315ad9e9454fe2caa2c8fdd28d7ecf",
     "src/bct/chain_execution_plan.py": "da98ae2aa5efa9593b9a748856e33fe9140d92c5bc45671105b402517988c61f",
     "src/bct/chain_manager_recovery.py": "191f9c5bcc63b3d2508640f44a3cf4d2eac24cba3c6294e50afeea81614d6787",
-    "src/bct/chain_message_preflight.py": "daa47a7eb84b3e3e3fdef08bb3823f8c189a9789570c0a3664d1c9eb053ba206",
+    "src/bct/chain_recipe_blocks.py": "cffd9b97327cbe99dfe84eb8fb8f8a87973a6e3f7a5c8c8c08f0bf7badfd15fd",
     "src/bct/chat_input_queue.py": "0873721a88bdca3a84f16e5be9426a63360e98253ce02ceb6ec0dcf1fe9b3a87",
     "src/bct/code_block_organize.py": "aa9471232321334c1c2ce7f52f0fa4725a4016e13ba19bac942dd71f62622cfd",
     "src/bct/code_block_scan.py": "179a2a63497310b53900e49e44da9f71cbc9d2d1c2b9321279c9ebebb2c5646f",
@@ -37,7 +37,7 @@
     "src/bct/features/conversation_network.py": "950299ce295bf82f6efd2c993d8bddae1ce56294b7312ed97765ac516725f6ce",
     "src/bct/features/owned_extension_action.py": "6c164bfb0cacf132940f16c15dfc9f653937b48a91d5e3e3ba648ad07e4bfa15",
     "src/bct/features/rcc.py": "f3b196df21df45ddf91897f893e84bf238e8738f18a366f1320a586fcf40a9a0",
-    "src/bct/mcp_server.py": "91b182646359c5c0f5268933e88f009c83c7c679f7f7143a61dfad85af6797d2",
+    "src/bct/mcp_server.py": "a355e42de54657ecf00c0ba6c2165ff710a8717a1d5fbde10d6c288ef3f2f448",
     "src/bct/node_recovery.py": "1c84150ae1af8cc285432565097ac071a2af6c4b2534f1d19ac7f75d7bec2438",
     "src/bct/runtime_server.py": "b756e7be4063a46623196448fd229c9543df26b6ac1c6be814f57d33a367571f",
     "src/bct/send_delayed_message.py": "3ccd131cda4baaf798ecf0b29b54d0c9427c7a1f20f072138fc4194ed83c9c94",
@@ -199,16 +199,16 @@
         ]
       },
       {
-        "id": "bct.chain_recipe_caller_preflight",
+        "id": "bct.chain_recipe_instruction_blocks",
         "kind": "module",
         "maturity": "isolated",
         "implementation": [
           {
-            "path": "src/bct/chain_message_preflight.py",
+            "path": "src/bct/chain_recipe_blocks.py",
             "symbol": "check_chain_work"
           },
           {
-            "path": "src/bct/chain_message_preflight.py",
+            "path": "src/bct/chain_recipe_blocks.py",
             "symbol": "prepare_chain_instruction"
           },
           {
@@ -216,7 +216,7 @@
             "symbol": "bct_chain_recipe(action=preflight)"
           }
         ],
-        "contract": "Read-only existing-Work browser-authority preflight and opt-in explicit NEXT TASK output instruction with exact preview SHA; default Chain Recipe text and durable watch semantics remain unchanged.",
+        "contract": "Reusable Chain Recipe blocks within State R, Prepare Send Direction R and Send Direction R: read-only Work observation, outgoing instruction validation, optional explicit NEXT TASK and Execute Plan footers, and exact SHA-256. The optional preflight action is only a preview, not a separate R stage or a Chain Message route.",
         "effects": [],
         "safety": [
           "never-grants-work-actions",
