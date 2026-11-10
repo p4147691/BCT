@@ -118,7 +118,13 @@ A 장애 중 Manager 반환 보존
   ├─ A가 정확히 연결 중이면 A에게 그대로 반환
   ├─ A의 PAUSED/연결 끊김이 확인되면 이용 가능한 S에게 인계 정보로 전달
   ├─ A와 S가 모두 사용 불가하거나 S가 없는 경우 BCT 체크포인트를 PENDING으로 보존
-  │    └─ MANAGER_RECOVERY_PENDING은 메시지 미전송의 확정 상태; 재전송·Worker 재실행 없음
+  │    └─ MANAGER_RECOVERY_PENDING은 최초 반환 메시지 미전송의 확정 상태
+  ├─ 기존 A가 같은 UUID로 복귀하면 BCT Core가 자동으로 저장된 반환을 A에게 전달
+  │    ├─ 미완료 PENDING → 단일 영속 전송권 점유 DELIVERING → RETURNED_TO_MANAGER
+  │    ├─ 동일한 Work/Task/generation/response SHA와 결정적 Operation ID만 사용
+  │    ├─ Core 재시작시 같은 Operation 영수증 조정; Worker 원작업 재실행 금지
+  │    ├─ A가 GENERATING이면 기다리고, 통신 UNKNOWN이면 새 ID로 재전송하지 않음
+  │    └─ A 인수 ACK는 별도 기록; 메시지 제출 성공만으로 A 작업 완료라 하지 않음
   │    └─ S는 판단·완료·재지시하지 않고 반환 원문과 식별값만 보관
   ├─ A 상태가 애매하거나 전송 효과가 UNKNOWN이면 S로 우회 재전송하지 않음
   ├─ S 또는 복구된/후임 A는 action="recovery_inbox"로 마지막 실행 결과와

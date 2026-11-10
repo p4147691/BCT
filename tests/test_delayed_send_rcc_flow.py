@@ -41,6 +41,7 @@ class SimulatedRcc:
         self.visible_count_override = None
         self.worker_detached = False
         self.manager_disconnected = False
+        self.manager_generating = False
         self.supervisor_disconnected = False
         self.responses = {WORKER: ("", 0), MANAGER: ("", 0), SUPERVISOR: ("", 0)}
         self.locations = {
@@ -90,7 +91,7 @@ class SimulatedRcc:
                          {"kind": self.attention, "label": self.attention}
                          if self.attention else None)}},
                     {**self.locations[MANAGER], "conversationKey": MANAGER,
-                     "generating": False, "connection": {
+                     "generating": self.manager_generating, "connection": {
                          "disconnected": self.manager_disconnected},
                      "telemetry": {"user_attention": None}},
                     {**self.locations[SUPERVISOR], "conversationKey": SUPERVISOR,
@@ -445,15 +446,28 @@ class DelayedSendRccFlowTests(unittest.TestCase):
                     self.assertEqual("PENDING", checkpoint["delivery_state"])
                     self.assertEqual("", checkpoint["destination_conversation_key"])
                     self.assertIn("Review original result", checkpoint["return_payload"])
-                    # A may come back: the original Worker task is not replayed.
+                    # Automatic-first: A comes back, and BCT delivers this
+                    # one saved return without rerunning the Worker task.
                     rcc.manager_disconnected = False
+                    events = service.poll_once()["events"]
+                    self.assertEqual("MANAGER_RETURN_AUTODELIVERED", events[-1]["status"])
+                    self.assertEqual(len(already_sent) + 1, len(rcc.sent))
+                    self.assertEqual(MANAGER, rcc.sent[-1][0])
+                    self.assertIn("Review original result", rcc.sent[-1][1])
+                    receipt = ChainManagerRecoveryLedger(bct.store).get(
+                        task_id="durable-return-task", generation=1,
+                    )
+                    self.assertEqual("RETURNED_TO_MANAGER", receipt["delivery_state"])
+                    self.assertTrue(receipt["delivery_operation_id"].startswith("delayed-recovery-"))
+                    # No duplicate delivery after the next background cycle.
                     service.poll_once()
-                    self.assertEqual(already_sent, rcc.sent)
+                    self.assertEqual(len(already_sent) + 1, len(rcc.sent))
                     inbox = ChainManagerRecoveryLedger(bct.store).inbox(
                         work_id=work.work_id,
                         report_target_conversation_key=MANAGER,
                     )
                     self.assertEqual(1, len(inbox))
+                    self.assertEqual(0.0, inbox[0]["acknowledged_at"])
 
     def test_chain_worker_provision_recipe_replays_without_duplicate_tab_or_send(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -1591,6 +1591,7 @@ class SendDelayedMessageService:
         self.browser_feature = browser_feature
         self.operations = operations
         self.ledger = DurableWatchLedger(store)
+        self._pending_manager_cursor = ("", 0)
 
     def _locate(self, instance_id: str, conversation_key: str):
         import secrets
@@ -2029,6 +2030,7 @@ class SendDelayedMessageService:
 
     def _conversation_availability(
         self, row: dict, *, conversation_key: str, instance_id: str,
+        require_idle: bool = False,
     ) -> str:
         """Read positive destination-stop evidence without inventing fallback.
 
@@ -2078,6 +2080,10 @@ class SendDelayedMessageService:
                 "CONNECTION_DISCONNECTED", "NEW_CHAT_REQUIRED",
                 "RECOVERY_REQUIRED"}:
             return "UNAVAILABLE"
+        if require_idle and endpoint.get("generating") is not False:
+            # A can be generating for hours without being broken. Never
+            # deliver a stored completion to its busy input.
+            return "BUSY" if endpoint.get("generating") is True else "UNKNOWN"
         return "AVAILABLE"
 
     def _manager_availability(self, row: dict) -> str:
@@ -2248,6 +2254,123 @@ class SendDelayedMessageService:
             )
         return operation_id
 
+    def poll_pending_manager_returns(self, *, limit: int = 8) -> list[dict]:
+        """Automatically deliver stored Manager returns after A reconnects.
+
+        A/S failure must not require a user prompt. This reads only precise
+        Direction/Watch checkpoints and never reruns the completed Worker task.
+        Every external send has one deterministic BCT Operation ID. UNKNOWN is
+        terminal and never submitted under another ID after restart.
+        """
+        from bct.chain_manager_recovery import ChainManagerRecoveryLedger
+        from bct.core.models import Outcome
+        recovery = ChainManagerRecoveryLedger(self.store, initialize=False)
+        cursor_task, cursor_generation = self._pending_manager_cursor
+        pending = recovery.pending_manager_deliveries(
+            after_task_id=cursor_task, after_generation=cursor_generation,
+            limit=limit,
+        )
+        if not pending and self._pending_manager_cursor != ("", 0):
+            self._pending_manager_cursor = ("", 0)
+            pending = recovery.pending_manager_deliveries(limit=limit)
+        events: list[dict] = []
+        for item in pending:
+            self._pending_manager_cursor = (str(item["task_id"]), int(item["generation"]))
+            task_id = str(item["task_id"])
+            generation = int(item["generation"])
+            work_id = str(item["work_id"])
+            manager = str(item["active_manager_conversation_key"] or "")
+            watch = self.ledger.get(task_id, generation)
+            if not watch or str(watch["state"]) != "MANAGER_RECOVERY_PENDING":
+                continue
+            ctx = json.loads(watch["context_json"] or "{}")
+            if (ctx.get("work_id") != work_id
+                    or str(ctx.get("manager_conversation_key") or "") != manager
+                    or not manager):
+                events.append({"task_id": task_id, "generation": generation,
+                               "status": "RECOVERY_BINDING_RECHECK_REQUIRED"})
+                continue
+            row = {
+                "task_id": task_id, "generation": generation,
+                "conversation_key": str(watch["conversation_key"]),
+                "context": ctx,
+            }
+            if self._conversation_availability(
+                row, conversation_key=manager,
+                instance_id=str(ctx.get("manager_instance_id") or ""),
+                require_idle=True,
+            ) != "AVAILABLE":
+                continue
+            digest = hashlib.sha256((
+                work_id + "|" + task_id + "|" + str(generation) + "|"
+                + str(item["response_sha256"]) + "|" + manager
+            ).encode("utf-8")).hexdigest()[:32]
+            operation_id = "delayed-recovery-" + digest
+            claim = recovery.claim_pending_manager_delivery(
+                work_id=work_id, task_id=task_id, generation=generation,
+                manager_conversation_key=manager, operation_id=operation_id,
+            )
+            if claim is None:
+                continue
+            # The original return body is immutable. The envelope adds only
+            # exact BCT receipt pointers so the receiving A can ACK this
+            # checkpoint and re-enter its previous Chain Recipe Direction.
+            body = (
+                "[BCT RECOVERED MANAGER RETURN]\n"
+                "This Worker task already completed; do not re-execute it.\n"
+                + "work_id=" + work_id + "\n"
+                + "direction_id=" + str(claim["direction_id"]) + "\n"
+                + "task_id=" + task_id + "\n"
+                + "generation=" + str(generation) + "\n"
+                + "response_sha256=" + str(claim["response_sha256"]) + "\n"
+                + "Read bct_chain_recipe(action=recovery_inbox), ACK the exact "
+                "checkpoint, then resume the saved Manager Direction.\n"
+                + "[ORIGINAL RETURN]\n" + str(claim["return_payload"])
+                + "\n[/ORIGINAL RETURN]"
+            )
+            try:
+                self._send_for(
+                    row, destination=manager, message=body,
+                    operation_id=operation_id,
+                )
+            except ValueError as exc:
+                # A confirmed NOT_APPLIED operation or a pre-dispatch target
+                # mismatch is not an UNKNOWN effect; neither gets replayed
+                # automatically under a new ID.
+                reason = str(exc)
+                outcome = ("NOT_APPLIED"
+                           if reason in {
+                               "DELAYED_RCC_SEND_NOT_APPLIED",
+                               "DELAYED_TARGET_NOT_EXACT",
+                               "DELAYED_WORK_CHANGED",
+                           } or reason.startswith("NODE_RECOVERY_SEND_FENCED")
+                           else "UNKNOWN")
+                recovery.finish_pending_manager_delivery(
+                    work_id=work_id, task_id=task_id, generation=generation,
+                    manager_conversation_key=manager, operation_id=operation_id,
+                    outcome=outcome,
+                )
+                events.append({"task_id": task_id, "generation": generation,
+                               "status": "MANAGER_RETURN_" + outcome})
+                continue
+            except Exception:
+                recovery.finish_pending_manager_delivery(
+                    work_id=work_id, task_id=task_id, generation=generation,
+                    manager_conversation_key=manager, operation_id=operation_id,
+                    outcome="UNKNOWN",
+                )
+                events.append({"task_id": task_id, "generation": generation,
+                               "status": "MANAGER_RETURN_UNKNOWN"})
+                continue
+            recovery.finish_pending_manager_delivery(
+                work_id=work_id, task_id=task_id, generation=generation,
+                manager_conversation_key=manager, operation_id=operation_id,
+                outcome="RETURNED_TO_MANAGER",
+            )
+            events.append({"task_id": task_id, "generation": generation,
+                           "status": "MANAGER_RETURN_AUTODELIVERED"})
+        return events
+
     def poll_once(self, limit: int = 8) -> dict:
         events=[]
         for row in self.ledger.watching(limit=limit):
@@ -2282,5 +2405,8 @@ class SendDelayedMessageService:
             except Exception as exc:
                 events.append({"task_id":row["task_id"],"generation":row["generation"],
                                "status":"ERROR","reason":type(exc).__name__})
+        # Recovery is automatic-first: A can receive a pending B result
+        # without a user asking any node to run recovery manually.
+        events.extend(self.poll_pending_manager_returns(limit=limit))
         return {"watched":len(self.ledger.watching(limit=limit)),
                 "events":events}

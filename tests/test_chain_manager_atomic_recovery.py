@@ -96,6 +96,43 @@ class AtomicManagerRecoveryTests(unittest.TestCase):
         self.assertEqual(0, again["updated_watches"])
         self.assertEqual(0, again["rebound_checkpoints"])
 
+    def test_inflight_return_delivery_does_not_rebind_old_claim_to_successor(self):
+        self.seed(1)
+        claimed = self.ledger.claim_pending_manager_delivery(
+            work_id="my-work", task_id="task-0", generation=1,
+            manager_conversation_key=OLD, operation_id="same-durable-op",
+        )
+        self.assertEqual("DELIVERING", claimed["delivery_state"])
+        result = self.ledger.rebind_active_manager_atomic(
+            work_id="my-work", manager_conversation_key=NEW,
+            manager_instance_id="new-instance", succession_proofs=self.proof(),
+        )
+        self.assertEqual(1, result["updated_watches"])
+        self.assertEqual(0, result["rebound_checkpoints"])
+        self.assertFalse(result["complete"])
+        self.assertEqual(
+            "same-durable-op",
+            result["unresolved_return_claims"][0]["operation_id"],
+        )
+        # Old exact send may have happened. Never attach its claim to new A.
+        old = self.ledger.get(task_id="task-0", generation=1)
+        self.assertEqual(OLD, old["active_manager_conversation_key"])
+        self.ledger.finish_pending_manager_delivery(
+            work_id="my-work", task_id="task-0", generation=1,
+            manager_conversation_key=OLD, operation_id="same-durable-op",
+            outcome="UNKNOWN",
+        )
+        retry = self.ledger.rebind_active_manager_atomic(
+            work_id="my-work", manager_conversation_key=NEW,
+            manager_instance_id="new-instance", succession_proofs=self.proof(),
+        )
+        self.assertEqual(1, retry["rebound_checkpoints"])
+        self.assertTrue(retry["complete"])
+        self.assertEqual(
+            "UNKNOWN",
+            self.ledger.get(task_id="task-0", generation=1)["delivery_state"],
+        )
+
     def test_paused_watch_rebinds_but_unknown_remains_unreplayed(self):
         self.seed(3)
         with self.store.transaction() as db:

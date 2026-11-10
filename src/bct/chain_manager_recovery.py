@@ -16,6 +16,7 @@ class ChainManagerRecoveryLedger:
 
     _DELIVERY_STATES = {
         "PENDING",
+        "DELIVERING",
         "RETURNED_TO_MANAGER",
         "COLLECTED_BY_SUPERVISOR",
         "NOT_APPLIED",
@@ -125,6 +126,106 @@ class ChainManagerRecoveryLedger:
             )
             if changed.rowcount != 1:
                 raise ValueError("CHAIN_MANAGER_RETURN_NOT_FOUND")
+        return self.get(task_id=task_id, generation=generation)
+
+    def pending_manager_deliveries(
+        self, *, after_task_id: str = "", after_generation: int = 0,
+        limit: int = 8,
+    ) -> list[dict]:
+        """Read only exact saved Worker returns lacking a confirmed A delivery.
+
+        The originating Watch must be MANAGER_RECOVERY_PENDING. Other pending
+        checkpoints belong to normal delivery and must not be replayed here.
+        """
+        if type(limit) is not int or not 1 <= limit <= 100:
+            raise ValueError("CHAIN_RECOVERY_POLL_LIMIT_INVALID")
+        if not self._table_exists():
+            # Core may be polling before any Chain Manager return exists.
+            # Do not create a new recovery table during an empty read.
+            return []
+        with self.store._readonly() as db:
+            rows = db.execute(
+                "SELECT c.*,w.context_json AS watch_context_json,"
+                "w.conversation_key AS watched_conversation "
+                "FROM chain_manager_return_checkpoints c "
+                "JOIN delayed_send_watches w ON "
+                "w.task_id=c.task_id AND w.generation=c.generation "
+                "WHERE c.delivery_state IN ('PENDING','DELIVERING') "
+                "AND c.acknowledged_at=0 "
+                "AND w.state='MANAGER_RECOVERY_PENDING' "
+                "AND (c.task_id>? OR (c.task_id=? AND c.generation>?)) "
+                "ORDER BY c.task_id,c.generation LIMIT ?",
+                (after_task_id, after_task_id, after_generation, limit),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def claim_pending_manager_delivery(
+        self, *, work_id: str, task_id: str, generation: int,
+        manager_conversation_key: str, operation_id: str,
+    ) -> dict | None:
+        """Store one exact destination/operation claim before RCC dispatch.
+
+        A second caller may resume the same claim and Operation ID. It cannot
+        choose a different A or replay under a new Operation ID.
+        """
+        now = time.time()
+        with self.store.transaction() as db:
+            row = db.execute(
+                "SELECT * FROM chain_manager_return_checkpoints "
+                "WHERE work_id=? AND task_id=? AND generation=?",
+                (work_id, task_id, generation),
+            ).fetchone()
+            if row is None or float(row["acknowledged_at"] or 0) != 0:
+                return None
+            if row["active_manager_conversation_key"] != manager_conversation_key:
+                return None
+            if row["delivery_state"] == "DELIVERING":
+                if (row["destination_conversation_key"] != manager_conversation_key
+                        or row["delivery_operation_id"] != operation_id):
+                    return None
+                return dict(row)
+            if row["delivery_state"] != "PENDING":
+                return None
+            changed = db.execute(
+                "UPDATE chain_manager_return_checkpoints "
+                "SET delivery_state='DELIVERING',"
+                "destination_conversation_key=?,delivery_operation_id=?,updated_at=? "
+                "WHERE work_id=? AND task_id=? AND generation=? AND delivery_state='PENDING' "
+                "AND active_manager_conversation_key=? AND acknowledged_at=0",
+                (manager_conversation_key, operation_id, now,
+                 work_id, task_id, generation, manager_conversation_key),
+            ).rowcount
+            if changed != 1:
+                return None
+            latest = db.execute(
+                "SELECT * FROM chain_manager_return_checkpoints "
+                "WHERE work_id=? AND task_id=? AND generation=?",
+                (work_id, task_id, generation),
+            ).fetchone()
+            return dict(latest)
+
+    def finish_pending_manager_delivery(
+        self, *, work_id: str, task_id: str, generation: int,
+        manager_conversation_key: str, operation_id: str,
+        outcome: str,
+    ) -> dict:
+        """Finish only the previously claimed exact external operation."""
+        if outcome not in {"RETURNED_TO_MANAGER","NOT_APPLIED","UNKNOWN"}:
+            raise ValueError("CHAIN_MANAGER_AUTO_RETURN_OUTCOME_INVALID")
+        with self.store.transaction() as db:
+            changed = db.execute(
+                "UPDATE chain_manager_return_checkpoints "
+                "SET delivery_state=?,delivery_receipt=?,updated_at=? "
+                "WHERE work_id=? AND task_id=? AND generation=? "
+                "AND delivery_state='DELIVERING' "
+                "AND active_manager_conversation_key=? "
+                "AND destination_conversation_key=? AND delivery_operation_id=?",
+                (outcome, operation_id if outcome=="RETURNED_TO_MANAGER" else "",
+                 time.time(), work_id, task_id, generation,
+                 manager_conversation_key, manager_conversation_key, operation_id),
+            ).rowcount
+            if changed != 1:
+                raise ValueError("CHAIN_MANAGER_AUTO_RETURN_CLAIM_CONFLICT")
         return self.get(task_id=task_id, generation=generation)
 
     def get(self, *, task_id: str, generation: int) -> dict:
@@ -266,6 +367,14 @@ class ChainManagerRecoveryLedger:
                 "SELECT task_id,generation,active_manager_conversation_key "
                 "FROM chain_manager_return_checkpoints "
                 "WHERE work_id=? AND acknowledged_at=0 "
+                "AND delivery_state!='DELIVERING' "
+                "ORDER BY task_id,generation", (work_id,),
+            ).fetchall())
+            unresolved_claims = list(db.execute(
+                "SELECT task_id,generation,destination_conversation_key,"
+                "delivery_operation_id FROM chain_manager_return_checkpoints "
+                "WHERE work_id=? AND acknowledged_at=0 "
+                "AND delivery_state='DELIVERING' "
                 "ORDER BY task_id,generation", (work_id,),
             ).fetchall())
             unresolved = list(db.execute(
@@ -337,7 +446,14 @@ class ChainManagerRecoveryLedger:
                  "generation": int(row["generation"]),
                  "state": str(row["state"])} for row in unresolved
             ],
-            "complete": len(unresolved) == 0,
+            "unresolved_return_claims": [
+                {"task_id": str(row["task_id"]),
+                 "generation": int(row["generation"]),
+                 "destination_conversation_key": str(row["destination_conversation_key"]),
+                 "operation_id": str(row["delivery_operation_id"])}
+                for row in unresolved_claims
+            ],
+            "complete": len(unresolved) == 0 and len(unresolved_claims) == 0,
             "atomic": True,
             "effects": "DURABLE_BINDING_ONLY_NO_MESSAGE",
         }

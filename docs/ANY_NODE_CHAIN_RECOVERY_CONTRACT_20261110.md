@@ -57,6 +57,28 @@ DISPATCHING/UNKNOWN watches are retained and surfaced as unresolved; they are
 not changed and must never be represented as a fully completed network recovery.
 No additional user approval, ID prompt, or extra S is required by this rule.
 
+## Automatic restoration of an already-recorded Manager return
+
+The existing BCT delayed-watch Core loop checks PENDING/DELIVERING Manager
+return checkpoints without a user request. It only handles exact source
+Watches already terminated as MANAGER_RECOVERY_PENDING. It waits while A is
+unavailable or GENERATING, and sends one original completed Worker return
+envelope when the same or formally rebound Manager is idle.
+
+The exact source Work, Task, Generation, response SHA and active Manager UUID
+derive one deterministic BCT browser Operation ID. The checkpoint records
+DELIVERING and that ID before any RCC effect. On Core restart the same claim
+and Operation receipt are reconciled: APPLIED closes as RETURNED_TO_MANAGER,
+UNKNOWN remains UNKNOWN and is never resent under a fresh ID. Submitted is
+not the same as Manager-acknowledged. The recovered A must still read and
+ACK the original checkpoint before a new Direction.
+
+A concurrent Manager replacement never rebinds an in-flight DELIVERING
+checkpoint to a different Manager. It remains explicitly unresolved until
+the original external effect is reconciled, without blocking unrelated
+Worker SELF work. These are Core-internal identity and continuity checks;
+none are extra user authorization steps.
+
 ## No artificial gate
 These are **internal steps the agent/tool performs**, not questions for the user. Receipt/epoch/Work identity are continuity checks, not new permission grants. If user asked for recovery, ordinary reversible diagnosis and recovery steps should proceed without a second approval. If a target cannot be unambiguously identified, show natural project/node choices, not raw internal IDs.
 
