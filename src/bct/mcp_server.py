@@ -3103,13 +3103,14 @@ def build_mcp(
         name="bct_loop_recipe",
         description=("Durable SINGLE_PERSISTENT start/status/claim/reconcile/advance; "
                      "reconcile verifies the original BCT Operation receipt. "
-                     "No Worker dispatch or autonomous scheduler is performed."),
+                     "It also records exact SELF wake intent without directly sending."),
         structured_output=True,
     )
     async def bct_loop_recipe(
         action: str = "status", work_id: str = "", direction_id: str = "",
         task_id: str = "", owner: str = "", plan_text: str = "",
         epoch: int = 1, operation_id: str = "", next_step: int = 0,
+        message_text: str = "",
     ) -> dict[str, Any]:
         from bct.loop_store import LoopStore
         from bct.chain_direction import ChainDirectionLedger
@@ -3146,6 +3147,28 @@ def build_mcp(
                     task_id=task_id, generation=1, plan_text=plan_text,
                 )
                 return {"status": "OK", "loop": loop, "plan": plan}
+            if action in {"queue_self", "self_status", "reconcile_self"}:
+                from bct.loop_self_outbox import LoopSelfOutbox
+                outbox = LoopSelfOutbox(bct.store)
+                if action == "queue_self":
+                    value = await asyncio.to_thread(
+                        outbox.queue,work_id=work_id,epoch=epoch,step=next_step,
+                        owner=owner,message=message_text,
+                    )
+                elif action == "self_status":
+                    value = await asyncio.to_thread(
+                        outbox.get,work_id=work_id,epoch=epoch,step=next_step,
+                    )
+                else:
+                    value = await asyncio.to_thread(
+                        outbox.reconcile,work_id=work_id,epoch=epoch,
+                        step=next_step,principal_id=MCP_PRINCIPAL_ID,
+                    )
+                # Do not expose user instruction text in status responses.
+                if value is not None:
+                    value = {k:v for k,v in value.items() if k != "message_text"}
+                return {"status": "OK" if value else "NOT_FOUND",
+                        "self_outbox": value}
             if action == "claim":
                 loop = await asyncio.to_thread(
                     ledger.claim, work_id=work_id, owner=owner, epoch=epoch,

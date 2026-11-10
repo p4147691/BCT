@@ -1,6 +1,6 @@
 {
   "schema": "bct.component-library.bundle.v1",
-  "source_fingerprint": "d68c100dec7add4173e728218acf19b374d98ed93091cafc29930630718ab004",
+  "source_fingerprint": "7746dbe5adbfdf5a80066c15aa301f0b5e7da8c80b40e49e79e5a9cc45fdfb9c",
   "source_hashes": {
     "docs/CHAIN_MESSAGE_RECIPE_V2.md": "c6a6a44f46083cb040530ee89f63a3bfeb9bcf4e24a7e76d7c01ed835d29bf15",
     "docs/component-library.v1.json": "2257a9ae62902b710d7ea7bf3a4e3e367f22b73a30622b02262418a65d0cfecf",
@@ -37,7 +37,7 @@
     "src/bct/features/conversation_network.py": "950299ce295bf82f6efd2c993d8bddae1ce56294b7312ed97765ac516725f6ce",
     "src/bct/features/owned_extension_action.py": "6c164bfb0cacf132940f16c15dfc9f653937b48a91d5e3e3ba648ad07e4bfa15",
     "src/bct/features/rcc.py": "f3b196df21df45ddf91897f893e84bf238e8738f18a366f1320a586fcf40a9a0",
-    "src/bct/mcp_server.py": "fc65cfeea6db6782790e93d144d4dda6c4206744f147c25f53c9663273bbc7ba",
+    "src/bct/mcp_server.py": "83bc378f5c9da5fefeea7a26194a1c91b627162e401c9ba7d0d57c9f35efdbc0",
     "src/bct/node_recovery.py": "1c84150ae1af8cc285432565097ac071a2af6c4b2534f1d19ac7f75d7bec2438",
     "src/bct/runtime_server.py": "05a77d4ea34f81327449df913d3d401b0c303811d88ad972641ee74adb365677",
     "src/bct/send_delayed_message.py": "3ccd131cda4baaf798ecf0b29b54d0c9427c7a1f20f072138fc4194ed83c9c94",
