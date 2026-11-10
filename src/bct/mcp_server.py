@@ -3110,7 +3110,7 @@ def build_mcp(
         action: str = "status", work_id: str = "", direction_id: str = "",
         task_id: str = "", owner: str = "", plan_text: str = "",
         epoch: int = 1, operation_id: str = "", next_step: int = 0,
-        message_text: str = "",
+        message_text: str = "", verified: bool = False,
     ) -> dict[str, Any]:
         from bct.loop_store import LoopStore
         from bct.chain_direction import ChainDirectionLedger
@@ -3202,6 +3202,9 @@ def build_mcp(
                 return {"status": "OK" if value else "NOT_FOUND",
                         "self_outbox": value}
             if action == "claim":
+                current = await asyncio.to_thread(ledger.get, work_id)
+                if current is not None and current["state"] == "COMPLETED":
+                    return {"status": "INVALID_REQUEST", "reason": "LOOP_COMPLETED"}
                 if status_provider is None:
                     return {"status": "UNAVAILABLE",
                             "reason": "LOOP_EXACT_SUCCESSOR_STATUS_REQUIRED"}
@@ -3229,6 +3232,14 @@ def build_mcp(
                 loop = await asyncio.to_thread(
                     ledger.advance, work_id=work_id, owner=owner,
                     epoch=epoch, next_step=next_step,
+                )
+            elif action == "complete":
+                if verified is not True:
+                    return {"status": "INVALID_REQUEST",
+                            "reason": "LOOP_COMPLETION_VERIFICATION_REQUIRED"}
+                loop = await asyncio.to_thread(
+                    ledger.complete, work_id=work_id, owner=owner,
+                    epoch=epoch, verified=True,
                 )
             else:
                 return {"status": "INVALID_REQUEST", "reason": "LOOP_ACTION_INVALID"}
