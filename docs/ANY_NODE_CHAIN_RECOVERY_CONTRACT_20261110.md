@@ -39,6 +39,24 @@ It should inspect BCT state/receipts and run the already defined Recover Node R 
 7. Recovered A reads original Work context, pending returns and each exact receipt; acknowledges receipt review before issuing its own new Chain Recipe Direction. An intake B/C/S does not write A's decisions. Then B/C/S resumes its own previously saved plan and next incomplete step, rather than spawning a second chain.
 8. S remains the single global integration/CI/E2E Supervisor. S failure uses the **same** Check/Recheck/Recover/Replace primitives. An extra standby S is not a prerequisite; no special Supervisor authority is conferred by role tags.
 
+## Durable manager returns with or without a working S
+
+For a Direction-linked Worker MANAGER return, BCT persists the exact Task,
+generation, response turn, response hash, and return payload *before* any
+browser delivery. This does not require a live or designated Supervisor.
+If A is confirmed unavailable, S receives only an advisory copy when its
+exact endpoint is available. If S is absent, disconnected, or unobservable,
+BCT retains a PENDING return and terminates this continuation as
+MANAGER_RECOVERY_PENDING without submitting to a guessed destination.
+A recovered/successor Manager reads the existing recovery Inbox and ACKs
+the precise return; no completed Worker task is replayed.
+
+A resumed Manager rebinds WATCHING, RESERVED, and PAUSED Watch relationships
+along with unacknowledged returns in one transaction. PAUSED remains PAUSED.
+DISPATCHING/UNKNOWN watches are retained and surfaced as unresolved; they are
+not changed and must never be represented as a fully completed network recovery.
+No additional user approval, ID prompt, or extra S is required by this rule.
+
 ## No artificial gate
 These are **internal steps the agent/tool performs**, not questions for the user. Receipt/epoch/Work identity are continuity checks, not new permission grants. If user asked for recovery, ordinary reversible diagnosis and recovery steps should proceed without a second approval. If a target cannot be unambiguously identified, show natural project/node choices, not raw internal IDs.
 

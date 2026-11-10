@@ -218,7 +218,7 @@ class ChainManagerRecoveryLedger:
                 }
                 for row in db.execute(
                     "SELECT conversation_key,context_json FROM delayed_send_watches "
-                    "WHERE state IN ('WATCHING','RESERVED') "
+                    "WHERE state IN ('WATCHING','RESERVED','PAUSED') "
                     "AND json_extract(context_json,'$.work_id')=? "
                     "ORDER BY task_id,generation", (work_id,),
                 )
@@ -230,7 +230,19 @@ class ChainManagerRecoveryLedger:
                     (work_id,),
                 )
             ]
-        return {"watches": active, "checkpoints": returns, "complete": True}
+            unresolved = [
+                dict(row) for row in db.execute(
+                    "SELECT task_id,generation,state FROM delayed_send_watches "
+                    "WHERE state IN ('DISPATCHING','UNKNOWN') "
+                    "AND json_extract(context_json,'$.work_id')=? "
+                    "ORDER BY task_id,generation", (work_id,),
+                )
+            ]
+        return {
+            "watches": active, "checkpoints": returns,
+            "unresolved_watches": unresolved,
+            "complete": not unresolved,
+        }
 
     def rebind_active_manager_atomic(
         self, *, work_id: str, manager_conversation_key: str,
@@ -246,7 +258,7 @@ class ChainManagerRecoveryLedger:
         with self.store.transaction() as db:
             watches = list(db.execute(
                 "SELECT task_id,generation,context_json FROM delayed_send_watches "
-                "WHERE state IN ('WATCHING','RESERVED') "
+                "WHERE state IN ('WATCHING','RESERVED','PAUSED') "
                 "AND json_extract(context_json,'$.work_id')=? "
                 "ORDER BY task_id,generation", (work_id,),
             ).fetchall())
@@ -254,6 +266,12 @@ class ChainManagerRecoveryLedger:
                 "SELECT task_id,generation,active_manager_conversation_key "
                 "FROM chain_manager_return_checkpoints "
                 "WHERE work_id=? AND acknowledged_at=0 "
+                "ORDER BY task_id,generation", (work_id,),
+            ).fetchall())
+            unresolved = list(db.execute(
+                "SELECT task_id,generation,state FROM delayed_send_watches "
+                "WHERE state IN ('DISPATCHING','UNKNOWN') "
+                "AND json_extract(context_json,'$.work_id')=? "
                 "ORDER BY task_id,generation", (work_id,),
             ).fetchall())
             modified_watches = []
@@ -296,7 +314,7 @@ class ChainManagerRecoveryLedger:
             for context, task, generation in modified_watches:
                 db.execute(
                     "UPDATE delayed_send_watches SET context_json=? "
-                    "WHERE task_id=? AND generation=? AND state IN ('WATCHING','RESERVED')",
+                    "WHERE task_id=? AND generation=? AND state IN ('WATCHING','RESERVED','PAUSED')",
                     (context, task, generation),
                 )
             for destination, proof_json, task, generation in modified_returns:
@@ -314,6 +332,12 @@ class ChainManagerRecoveryLedger:
             "rebound_checkpoints": len(modified_returns),
             "examined_watches": len(watches),
             "examined_checkpoints": len(returns),
+            "unresolved_watches": [
+                {"task_id": str(row["task_id"]),
+                 "generation": int(row["generation"]),
+                 "state": str(row["state"])} for row in unresolved
+            ],
+            "complete": len(unresolved) == 0,
             "atomic": True,
             "effects": "DURABLE_BINDING_ONLY_NO_MESSAGE",
         }

@@ -114,15 +114,19 @@ B/C/X/S가 자기 범위의 구체적인 계획을 세움
 A 장애 중 Manager 반환 보존
   ├─ Direction의 전역 Supervisor UUID를 첫 Watch부터 recovery collector로 결속
   ├─ Worker의 MANAGER 반환을 원 Work/Direction/Task/generation에 먼저 체크포인트 저장
+  │    └─ S 정보의 존재 여부와 무관하게 BCT SQLite에 기록
   ├─ A가 정확히 연결 중이면 A에게 그대로 반환
-  ├─ A의 PAUSED/연결 끊김이 확인된 경우에만 S에게 인계 정보로 전달
+  ├─ A의 PAUSED/연결 끊김이 확인되면 이용 가능한 S에게 인계 정보로 전달
+  ├─ A와 S가 모두 사용 불가하거나 S가 없는 경우 BCT 체크포인트를 PENDING으로 보존
+  │    └─ MANAGER_RECOVERY_PENDING은 메시지 미전송의 확정 상태; 재전송·Worker 재실행 없음
   │    └─ S는 판단·완료·재지시하지 않고 반환 원문과 식별값만 보관
   ├─ A 상태가 애매하거나 전송 효과가 UNKNOWN이면 S로 우회 재전송하지 않음
   ├─ S 또는 복구된/후임 A는 action="recovery_inbox"로 마지막 실행 결과와
   │    동일 전송 영수증을 읽음
   ├─ 기존 진행 Watch는 action="bind_recovery_collector"로 전송 없이 보강
   ├─ 기존 A 복구 또는 대화망에서 정식 Manager 승계가 확인된 뒤
-  │    action="resume_manager"로 활성 Watch와 미확인 체크포인트의 A 결속만 변경
+  │    action="resume_manager"로 WATCHING/RESERVED/PAUSED Watch와 미확인 체크포인트를
+  │    하나의 DB 트랜잭션에서 결속 변경; DISPATCHING/UNKNOWN은 보존하고 미해결로 표시
   └─ A가 각 체크포인트를 읽고 action="ack_recovery"한 뒤 State R에서 다음
        Direction을 판단함. ACK 전에는 복구 완료로 보지 않음
                  ↓

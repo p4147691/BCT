@@ -1399,7 +1399,12 @@ def build_mcp(
                 "rebound_checkpoints": rebound["rebound_checkpoints"],
                 "recovery_rebinding": rebound,
                 "unavailable_workers_to_recover": sorted(unavailable_workers),
-                "next_safe_step": "READ_RECOVERY_INBOX_THEN_ACK_EACH_CHECKPOINT",
+                "recovery_rebinding_complete": rebound["complete"],
+                "next_safe_step": (
+                    "RECONCILE_UNCERTAIN_WATCH_RECEIPTS_NO_REPLAY"
+                    if not rebound["complete"] else
+                    "READ_RECOVERY_INBOX_THEN_ACK_EACH_CHECKPOINT"
+                ),
                 "does_not": ["send_message", "replay_unknown", "act_as_supervisor"],
             }
         if action == "bind_recovery_collector":

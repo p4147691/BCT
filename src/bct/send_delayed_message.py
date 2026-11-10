@@ -208,6 +208,11 @@ def dispatch_send_delayed_message(
         destination, result_status, payload = resolve_manager_return(
             watch, alarm, decision,
         )
+    if result_status == "MANAGER_RECOVERY_PENDING" and not destination:
+        # The completed Worker return was persisted by the resolver.
+        # Neither A nor S can receive it now. Do not create an UNKNOWN
+        # browser effect or pretend a delivery occurred.
+        return Continuation("MANAGER_RECOVERY_PENDING")
     receipt = send_message(destination, payload,
                            "delayed-manager-" + key)
     return Continuation(result_status, None, receipt)
@@ -1289,7 +1294,7 @@ class DurableWatchLedger:
     def mark_result(self, watch: Watch, status: str) -> None:
         if status not in {
                 "SELF_SENT", "RETURNED_TO_MANAGER",
-                "COLLECTED_BY_SUPERVISOR", "UNKNOWN"}:
+                "COLLECTED_BY_SUPERVISOR", "MANAGER_RECOVERY_PENDING", "UNKNOWN"}:
             raise ValueError("DELAYED_RESULT_INVALID")
         with self.store.transaction() as db:
             db.execute(
@@ -2022,16 +2027,19 @@ class SendDelayedMessageService:
             response_turn_id=row["response_turn_id"],input_ready=True,
         )
 
-    def _manager_availability(self, row: dict) -> str:
-        """Classify only exact, positive manager-stop evidence.
+    def _conversation_availability(
+        self, row: dict, *, conversation_key: str, instance_id: str,
+    ) -> str:
+        """Read positive destination-stop evidence without inventing fallback.
 
-        UNKNOWN deliberately remains on the primary Manager route.  Falling
-        back after an ambiguous observation could duplicate an already-visible
-        external effect.
+        UNKNOWN is not proof of a stopped destination and never authorizes
+        a second send. Shared by Manager and optional Supervisor routes.
         """
         ctx = row["context"]
-        manager = str(ctx.get("manager_conversation_key") or "")
-        instance = str(ctx.get("manager_instance_id") or "")
+        manager = conversation_key
+        instance = instance_id
+        if not manager or not instance:
+            return "UNKNOWN"
         try:
             from bct.node_recovery import NodeRecoveryLedger
             NodeRecoveryLedger(self.store).assert_send_allowed(
@@ -2072,13 +2080,22 @@ class SendDelayedMessageService:
             return "UNAVAILABLE"
         return "AVAILABLE"
 
+    def _manager_availability(self, row: dict) -> str:
+        ctx = row["context"]
+        return self._conversation_availability(
+            row,
+            conversation_key=str(ctx.get("manager_conversation_key") or ""),
+            instance_id=str(ctx.get("manager_instance_id") or ""),
+        )
+
     def _resolve_manager_return(self, row: dict, watch: Watch, alarm: Alarm,
                                 decision: ContinuationDecision) -> tuple[str, str, str]:
         ctx = row["context"]
         manager = str(ctx.get("manager_conversation_key") or "")
         supervisor = str(ctx.get("supervisor_conversation_key") or "")
         direction_id = str(ctx.get("chain_direction_id") or "")
-        if not direction_id or not supervisor:
+        if not direction_id:
+            # Legacy non-Direction sends retain their existing behavior.
             return manager, "RETURNED_TO_MANAGER", decision.payload
         from bct.chain_manager_recovery import (
             ChainManagerRecoveryLedger, supervisor_collection_message,
@@ -2099,24 +2116,32 @@ class SendDelayedMessageService:
         )
         if self._manager_availability(row) != "UNAVAILABLE":
             return manager, "RETURNED_TO_MANAGER", decision.payload
-        return (
-            supervisor,
-            "COLLECTED_BY_SUPERVISOR",
-            supervisor_collection_message(
-                task_id=watch.task_id,
-                generation=watch.generation,
-                worker_conversation_key=watch.conversation_key,
-                manager_conversation_key=manager,
-                payload=decision.payload,
-            ),
-        )
+        # S is an optional notification/collector, never the authoritative
+        # message store. The BCT checkpoint above is durable even if S is
+        # absent or unavailable at the same time as A.
+        supervisor_instance = str(ctx.get("supervisor_instance_id") or "")
+        if supervisor and self._conversation_availability(
+            row, conversation_key=supervisor, instance_id=supervisor_instance,
+        ) == "AVAILABLE":
+            return (
+                supervisor,
+                "COLLECTED_BY_SUPERVISOR",
+                supervisor_collection_message(
+                    task_id=watch.task_id,
+                    generation=watch.generation,
+                    worker_conversation_key=watch.conversation_key,
+                    manager_conversation_key=manager,
+                    payload=decision.payload,
+                ),
+            )
+        return "", "MANAGER_RECOVERY_PENDING", decision.payload
 
     def _send_and_record(self, row: dict, *, destination: str, message: str,
                          operation_id: str) -> str:
         ctx = row["context"]
         checkpoint = bool(
             ctx.get("chain_direction_id")
-            and ctx.get("supervisor_conversation_key")
+            and destination
             and destination in {
                 ctx.get("manager_conversation_key"),
                 ctx.get("supervisor_conversation_key"),

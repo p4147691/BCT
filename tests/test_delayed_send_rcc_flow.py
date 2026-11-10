@@ -41,6 +41,7 @@ class SimulatedRcc:
         self.visible_count_override = None
         self.worker_detached = False
         self.manager_disconnected = False
+        self.supervisor_disconnected = False
         self.responses = {WORKER: ("", 0), MANAGER: ("", 0), SUPERVISOR: ("", 0)}
         self.locations = {
             WORKER: {"tabId": 10, "windowId": 11, "index": 0},
@@ -93,7 +94,7 @@ class SimulatedRcc:
                          "disconnected": self.manager_disconnected},
                      "telemetry": {"user_attention": None}},
                     {**self.locations[SUPERVISOR], "conversationKey": SUPERVISOR,
-                     "generating": False, "connection": {"disconnected": False},
+                     "generating": False, "connection": {"disconnected": self.supervisor_disconnected},
                      "telemetry": {"user_attention": None}},
                 ],
             }}
@@ -366,6 +367,93 @@ class DelayedSendRccFlowTests(unittest.TestCase):
             )
             self.assertEqual(SUCCESSOR, acknowledged["acknowledged_by"])
             self.assertGreater(acknowledged["acknowledged_at"], 0)
+
+    def test_manager_return_survives_without_available_supervisor(self):
+        for supervisor_case in ("absent", "disconnected"):
+            with self.subTest(supervisor_case=supervisor_case):
+                with tempfile.TemporaryDirectory() as tmp:
+                    root = Path(tmp)
+                    policy = root / "bct.toml"
+                    policy.write_text(chr(10).join([
+                        "[policy]", 'normal_actions=["browser"]',
+                        "approval_actions=[]", "",
+                    ]), encoding="utf-8")
+                    bct = BCT(state_path=root / "state.sqlite", policy_path=policy)
+                    rcc = SimulatedRcc()
+                    rcc.manager_disconnected = True
+                    rcc.supervisor_disconnected = supervisor_case == "disconnected"
+                    browser = BrowserFeature(rcc, store=bct.store)
+                    bct.operations._features["browser"] = browser
+                    principal = Principal("tester", "test", frozenset({"browser"}))
+                    work = bct.create_work(
+                        work_id="durable-return-work",
+                        request_summary="Preserve MANAGER return before A/S recovery.",
+                        roots=[str(root)], actions=["browser"], principal=principal,
+                    )
+                    service = SendDelayedMessageService(
+                        store=bct.store, browser_feature=browser, operations=bct.operations,
+                    )
+                    rcc.reply(WORKER, "Earlier baseline result.")
+                    prompt = "Complete the exact assigned Work."
+                    send_id = "durable-return-source-send"
+                    args = {
+                        "command": "send-delayed-message",
+                        "task_id": "durable-return-task",
+                        "instance_id": INSTANCE,
+                        "conversation_key": WORKER,
+                        "manager_conversation_key": MANAGER,
+                        "manager_instance_id": INSTANCE,
+                        "planned_send_operation_id": send_id,
+                        "planned_send_text": prompt,
+                        "execution_path": "DIRECTION_DECLARED",
+                        "chain_direction_id": "durable-return-direction",
+                    }
+                    if supervisor_case == "disconnected":
+                        args.update({
+                            "supervisor_conversation_key": SUPERVISOR,
+                            "supervisor_instance_id": INSTANCE,
+                        })
+                    armed = bct.operations.run(
+                        principal=principal, work_id=work.work_id,
+                        operation_id="durable-return-arm", capability="browser",
+                        arguments=args,
+                    )
+                    self.assertEqual(Outcome.APPLIED, armed.outcome, armed.as_dict())
+                    sent = bct.operations.run(
+                        principal=principal, work_id=work.work_id,
+                        operation_id=send_id, capability="browser",
+                        arguments={
+                            "command": "send-message", "instance_id": INSTANCE,
+                            "session_id": SESSION, "tab_id": 10, "window_id": 11,
+                            "conversation_key": WORKER, "text": prompt,
+                        },
+                    )
+                    self.assertEqual(Outcome.APPLIED, sent.outcome, sent.as_dict())
+                    rcc.reply(WORKER, chr(10).join([
+                        "Completed.",
+                        "NEXT TASK — MANAGER: Review original result.",
+                    ]))
+                    already_sent = list(rcc.sent)
+                    result = service.poll_once()
+                    self.assertEqual(
+                        "MANAGER_RECOVERY_PENDING", result["events"][0]["status"], result,
+                    )
+                    self.assertEqual(already_sent, rcc.sent)
+                    checkpoint = ChainManagerRecoveryLedger(bct.store).get(
+                        task_id="durable-return-task", generation=1,
+                    )
+                    self.assertEqual("PENDING", checkpoint["delivery_state"])
+                    self.assertEqual("", checkpoint["destination_conversation_key"])
+                    self.assertIn("Review original result", checkpoint["return_payload"])
+                    # A may come back: the original Worker task is not replayed.
+                    rcc.manager_disconnected = False
+                    service.poll_once()
+                    self.assertEqual(already_sent, rcc.sent)
+                    inbox = ChainManagerRecoveryLedger(bct.store).inbox(
+                        work_id=work.work_id,
+                        report_target_conversation_key=MANAGER,
+                    )
+                    self.assertEqual(1, len(inbox))
 
     def test_chain_worker_provision_recipe_replays_without_duplicate_tab_or_send(self):
         with tempfile.TemporaryDirectory() as tmp:

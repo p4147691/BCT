@@ -96,6 +96,42 @@ class AtomicManagerRecoveryTests(unittest.TestCase):
         self.assertEqual(0, again["updated_watches"])
         self.assertEqual(0, again["rebound_checkpoints"])
 
+    def test_paused_watch_rebinds_but_unknown_remains_unreplayed(self):
+        self.seed(3)
+        with self.store.transaction() as db:
+            db.execute(
+                "UPDATE delayed_send_watches SET state='PAUSED' WHERE task_id='task-1'",
+            )
+            db.execute(
+                "UPDATE delayed_send_watches SET state='UNKNOWN' WHERE task_id='task-2'",
+            )
+        inventory = self.ledger.full_recovery_relations(work_id="my-work")
+        self.assertFalse(inventory["complete"])
+        self.assertEqual(2, len(inventory["watches"]))
+        self.assertEqual(
+            [{"task_id": "task-2", "generation": 1, "state": "UNKNOWN"}],
+            inventory["unresolved_watches"],
+        )
+        result = self.ledger.rebind_active_manager_atomic(
+            work_id="my-work", manager_conversation_key=NEW,
+            manager_instance_id="new-instance", succession_proofs=self.proof(),
+        )
+        self.assertEqual(2, result["updated_watches"])
+        self.assertEqual(3, result["rebound_checkpoints"])
+        self.assertFalse(result["complete"])
+        self.assertEqual("UNKNOWN", result["unresolved_watches"][0]["state"])
+        with self.store._readonly() as db:
+            paused = db.execute(
+                "SELECT state,context_json FROM delayed_send_watches WHERE task_id='task-1'",
+            ).fetchone()
+            self.assertEqual("PAUSED", paused["state"])
+            self.assertEqual(NEW, json.loads(paused["context_json"])["manager_conversation_key"])
+            unknown = db.execute(
+                "SELECT state,context_json FROM delayed_send_watches WHERE task_id='task-2'",
+            ).fetchone()
+            self.assertEqual("UNKNOWN", unknown["state"])
+            self.assertEqual(OLD, json.loads(unknown["context_json"])["manager_conversation_key"])
+
     def test_missing_proof_never_partially_changes_either_ledger(self):
         self.seed(2)
         with self.assertRaisesRegex(ValueError, "SUCCESSION_PROOF_REQUIRED"):
