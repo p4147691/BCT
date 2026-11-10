@@ -408,7 +408,7 @@ def main() -> int:
         "delivery_continuation_recovery": {
             "enabled": True, "runs": 0,
         },
-        "loop_recipe_recovery": {"enabled": True, "runs": 0, "mode": "OBSERVE_ONLY"},
+        "loop_recipe_recovery": {"enabled": True, "runs": 0, "mode": "RECONCILE_ONLY"},
         "bottleneck_ack": bottleneck_ack.status(),
         "chat_stream_rcc_watch": {"state": "IDLE", "polls": 0, "last_events": 0},
         "delayed_send_watch": {"state": "IDLE", "polls": 0, "last_events": 0},
@@ -529,30 +529,49 @@ def main() -> int:
             recovery_stop.wait(2.0)
 
     def loop_recipe_recovery_loop() -> None:
-        """Observe due Loop runs; never infer identity or dispatch an effect."""
+        """Reconcile expired Loop receipts only for freshly proven idle owners."""
         from .loop_recovery import LoopRecoveryScanner
+        from .loop_recovery_executor import LoopRecoveryExecutor
+        from .mcp_server import MCP_PRINCIPAL_ID
         observer = LoopRecoveryScanner(bct.store)
         while not recovery_stop.is_set():
             try:
                 due = observer.scan(limit=8)
+                recovered = {"checked": 0, "results": [], "external_effect": "NONE"}
+                if due:
+                    monitor = build_monitor_state(
+                        store=bct.store, service_state=state,
+                        data_root=runtime_root.parent / "data",
+                    )
+                    nodes = status_view(monitor, "node").get("current_nodes", {})
+                    allowed = set()
+                    if nodes.get("observation", {}).get("state") == "FRESH":
+                        for node in nodes.get("items", []):
+                            if (node.get("status") == "CONFIRMED"
+                                    and node.get("generating") is False
+                                    and not node.get("connection", {}).get("disconnected", True)
+                                    and node.get("telemetry", {}).get("readiness") == "IDLE"):
+                                allowed.add(node.get("conversation_uuid"))
+                    executor = LoopRecoveryExecutor(
+                        bct.store, principal_id=MCP_PRINCIPAL_ID,
+                        owner_ready=lambda owner: owner in allowed,
+                    )
+                    recovered = executor.run_once(limit=8)
                 state["loop_recipe_recovery"] = {
-                    "enabled": True, "mode": "OBSERVE_ONLY",
+                    "enabled": True, "mode": "RECONCILE_ONLY",
                     "runs": int(state["loop_recipe_recovery"].get("runs", 0)) + 1,
-                    "due": len(due),
-                    "requires_reconciliation": sum(
-                        item["advisory_action"] == "RECONCILE_ORIGINAL_RECEIPT"
-                        for item in due
-                    ),
+                    "due": len(due), "last_outcome": recovered,
                     "last_error": None, "last_run_at": time.time(),
                 }
             except Exception as exc:
                 state["loop_recipe_recovery"] = {
-                    "enabled": True, "mode": "OBSERVE_ONLY",
+                    "enabled": True, "mode": "RECONCILE_ONLY",
                     "runs": int(state["loop_recipe_recovery"].get("runs", 0)) + 1,
                     "last_error": type(exc).__name__,
                     "last_run_at": time.time(),
                 }
             recovery_stop.wait(2.0)
+
 
     def chat_stream_rcc_watch_loop() -> None:
         # No watches => no RCC request. No message submits or claims.

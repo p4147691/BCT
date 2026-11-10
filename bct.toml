@@ -184,6 +184,7 @@ files = [
   "src/bct/loop_store.py",
   "src/bct/loop_runtime.py",
   "src/bct/loop_recovery.py",
+  "src/bct/loop_recovery_executor.py",
   "src/bct/loop_self_outbox.py",
   "src/bct/background_operations.py",
   "src/bct/operation_worker.py",
