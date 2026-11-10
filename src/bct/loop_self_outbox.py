@@ -82,14 +82,14 @@ class LoopSelfOutbox:
         """Persist an intent before external delivery; claim only once."""
         now=time.time() if now is None else now
         with self.store.transaction() as db:
-            row=self._get(db,work_id,epoch,step)
-            if not row or row["conversation_key"]!=owner:
-                raise LoopStateError("LOOP_SELF_NOT_FOUND")
             loop=db.execute("SELECT * FROM loop_recipe_runs WHERE work_id=?",(work_id,)).fetchone()
             if (not loop or loop["owner"]!=owner or loop["epoch"]!=epoch
                     or loop["lease_until"]<=now or loop["state"]!="LOOP_STARTED"
                     or loop["operation_state"] in ("PREPARED","UNKNOWN","APPLIED")):
                 raise LoopStateError("LOOP_FENCED")
+            row=self._get(db,work_id,epoch,step)
+            if not row or row["conversation_key"]!=owner:
+                raise LoopStateError("LOOP_SELF_NOT_FOUND")
             if row["state"]!="PENDING":
                 raise LoopStateError("LOOP_SELF_ALREADY_DISPATCHED")
             db.execute("""UPDATE loop_recipe_self_outbox SET
@@ -125,6 +125,83 @@ class LoopSelfOutbox:
                 WHERE work_id=? AND epoch=? AND step=?""",
                 (new_state,now,work_id,epoch,step))
             return self._get(db,work_id,epoch,step)
+
+    def list_delivered(self, *, limit=8):
+        if not isinstance(limit,int) or not 1 <= limit <= 32:
+            raise LoopStateError("LOOP_SELF_LIMIT_INVALID")
+        with self.store._readonly() as db:
+            return [dict(x) for x in db.execute(
+                """SELECT o.* FROM loop_recipe_self_outbox o
+                JOIN loop_recipe_runs l ON l.work_id=o.work_id
+                WHERE o.state='DELIVERED' AND l.state='LOOP_STARTED'
+                ORDER BY o.updated_at,o.work_id LIMIT ?""",
+                (limit,),
+            ).fetchall()]
+
+    def record_terminal_response(self, *, work_id, epoch, step, owner,
+                                 response_turn_key, response_sha256,
+                                 next_message=None, now=None):
+        """Atomically ACK a proven terminal reply and queue the NEXT SELF step.
+
+        The caller must verify the exact RCC message-source digest before
+        passing it here. The previous send cannot be replayed.
+        """
+        now=time.time() if now is None else now
+        if (not response_turn_key or not re.fullmatch(r"[a-f0-9]{64}", response_sha256)
+                or (next_message is not None and
+                    (not isinstance(next_message,str) or not next_message.strip()
+                     or len(next_message)>12000))):
+            raise LoopStateError("LOOP_RESPONSE_PROOF_INVALID")
+        with self.store.transaction() as db:
+            prior=self._get(db,work_id,epoch,step)
+            if not prior or prior["conversation_key"]!=owner or prior["state"]!="DELIVERED":
+                raise LoopStateError("LOOP_RESPONSE_RECEIPT_REQUIRED")
+            loop=db.execute(
+                "SELECT * FROM loop_recipe_runs WHERE work_id=?", (work_id,)
+            ).fetchone()
+            if (not loop or loop["owner"]!=owner or loop["epoch"]<epoch
+                    or loop["lease_until"]<=now):
+                raise LoopStateError("LOOP_FENCED")
+            if next_message is not None and (
+                    loop["state"]!="LOOP_STARTED" or loop["next_step"]<=step
+                    or loop["operation_state"] is not None):
+                raise LoopStateError("LOOP_NEXT_STEP_NOT_CONFIRMED")
+            db.execute("""CREATE TABLE IF NOT EXISTS loop_recipe_self_responses(
+                work_id TEXT NOT NULL, epoch INTEGER NOT NULL, step INTEGER NOT NULL,
+                response_turn_key TEXT NOT NULL, response_sha256 TEXT NOT NULL,
+                created_at REAL NOT NULL,
+                PRIMARY KEY(work_id,epoch,step),
+                UNIQUE(work_id,response_turn_key))""")
+            db.execute("""INSERT INTO loop_recipe_self_responses VALUES(?,?,?,?,?,?)""",
+                       (work_id,epoch,step,response_turn_key,response_sha256,now))
+            db.execute("""UPDATE loop_recipe_self_outbox SET state='ACKED',
+                updated_at=? WHERE work_id=? AND epoch=? AND step=?""",
+                (now,work_id,epoch,step))
+            queued=None
+            if next_message is not None:
+                next_step=loop["next_step"]
+                active_epoch=loop["epoch"]
+                op="loop-self-"+hashlib.sha256(
+                    f"{work_id}:{active_epoch}:{next_step}".encode("utf-8")
+                ).hexdigest()[:24]
+                digest=hashlib.sha256(next_message.encode("utf-8")).hexdigest()
+                # The prior ACK + next wake must commit as one unit.
+                db.execute("""INSERT INTO loop_recipe_self_outbox VALUES
+                    (?,?,?,?,?,?,?,'PENDING',?,?)""",
+                    (work_id,active_epoch,next_step,owner,op,next_message,digest,now,now))
+                queued=self._get(db,work_id,active_epoch,next_step)
+            return {"acknowledged":True,"queued":queued}
+
+    def list_pending(self, *, limit=8):
+        """Exact unsent intents only; Core still rechecks all fences."""
+        if not isinstance(limit,int) or not 1 <= limit <= 32:
+            raise LoopStateError("LOOP_SELF_LIMIT_INVALID")
+        with self.store._readonly() as db:
+            return [dict(x) for x in db.execute(
+                """SELECT * FROM loop_recipe_self_outbox
+                WHERE state='PENDING' ORDER BY created_at,work_id LIMIT ?""",
+                (limit,),
+            ).fetchall()]
 
     def list_uncertain(self, *, limit=32):
         if not isinstance(limit,int) or not 1<=limit<=128:

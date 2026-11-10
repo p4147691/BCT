@@ -408,7 +408,7 @@ def main() -> int:
         "delivery_continuation_recovery": {
             "enabled": True, "runs": 0,
         },
-        "loop_recipe_recovery": {"enabled": True, "runs": 0, "mode": "RECONCILE_ONLY"},
+        "loop_recipe_recovery": {"enabled": True, "runs": 0, "mode": "EXACT_SELF_AND_RECONCILE"},
         "bottleneck_ack": bottleneck_ack.status(),
         "chat_stream_rcc_watch": {"state": "IDLE", "polls": 0, "last_events": 0},
         "delayed_send_watch": {"state": "IDLE", "polls": 0, "last_events": 0},
@@ -529,16 +529,33 @@ def main() -> int:
             recovery_stop.wait(2.0)
 
     def loop_recipe_recovery_loop() -> None:
-        """Reconcile expired Loop receipts only for freshly proven idle owners."""
+        """Bounded self-dispatch and recovery, with fresh RCC identity proof.
+
+        No work is created here. Uncertain sends remain reserved for receipt
+        reconciliation rather than being blindly submitted a second time.
+        """
         from .loop_recovery import LoopRecoveryScanner
         from .loop_recovery_executor import LoopRecoveryExecutor
+        from .loop_self_outbox import LoopSelfOutbox
+        from .loop_self_dispatch import LoopSelfDispatcher
+        from .loop_self_continuation import LoopSelfContinuation
         from .mcp_server import MCP_PRINCIPAL_ID
         observer = LoopRecoveryScanner(bct.store)
+        outbox = LoopSelfOutbox(bct.store)
+        dispatcher = LoopSelfDispatcher(bct.store, bct.operations)
+        continuation = LoopSelfContinuation(
+            bct.store, bct.operations._features["browser"],
+        )
         while not recovery_stop.is_set():
             try:
                 due = observer.scan(limit=8)
+                pending = outbox.list_pending(limit=2)
+                delivered = outbox.list_delivered(limit=2)
                 recovered = {"checked": 0, "results": [], "external_effect": "NONE"}
-                if due:
+                delivery = []
+                continuations = []
+                monitor = None
+                if due or pending or delivered:
                     monitor = build_monitor_state(
                         store=bct.store, service_state=state,
                         data_root=runtime_root.parent / "data",
@@ -548,24 +565,53 @@ def main() -> int:
                     if nodes.get("observation", {}).get("state") == "FRESH":
                         for node in nodes.get("items", []):
                             if (node.get("status") == "CONFIRMED"
+                                    and node.get("source") == "RCC_FRESH"
                                     and node.get("generating") is False
                                     and not node.get("connection", {}).get("disconnected", True)
                                     and node.get("telemetry", {}).get("readiness") == "IDLE"):
                                 allowed.add(node.get("conversation_uuid"))
-                    executor = LoopRecoveryExecutor(
-                        bct.store, principal_id=MCP_PRINCIPAL_ID,
-                        owner_ready=lambda owner: owner in allowed,
-                    )
-                    recovered = executor.run_once(limit=8)
+                    if due:
+                        executor = LoopRecoveryExecutor(
+                            bct.store, principal_id=MCP_PRINCIPAL_ID,
+                            owner_ready=lambda owner: owner in allowed,
+                        )
+                        recovered = executor.run_once(limit=8)
+                    for item in pending:
+                        try:
+                            result = dispatcher.send_once(
+                                work_id=item["work_id"], epoch=item["epoch"],
+                                step=item["step"], owner=item["conversation_key"],
+                                snapshot=monitor,
+                            )
+                        except Exception as exc:
+                            # No blanket retry. A post-reservation failure
+                            # remains UNCERTAIN and needs original receipt.
+                            result = {"operation_id": item["operation_id"],
+                                      "status": "HELD",
+                                      "reason": type(exc).__name__}
+                        delivery.append(result)
+                    for item in delivered:
+                        try:
+                            result = continuation.observe_once(
+                                row=item, snapshot=monitor,
+                            )
+                        except Exception as exc:
+                            result = {"status": "HELD",
+                                      "reason": type(exc).__name__,
+                                      "operation_id": item["operation_id"]}
+                        continuations.append(result)
                 state["loop_recipe_recovery"] = {
-                    "enabled": True, "mode": "RECONCILE_ONLY",
+                    "enabled": True, "mode": "EXACT_SELF_AND_RECONCILE",
                     "runs": int(state["loop_recipe_recovery"].get("runs", 0)) + 1,
-                    "due": len(due), "last_outcome": recovered,
+                    "due": len(due), "pending": len(pending),
+                    "delivered_waiting_response": len(delivered),
+                    "last_outcome": recovered, "last_delivery": delivery,
+                    "last_continuations": continuations,
                     "last_error": None, "last_run_at": time.time(),
                 }
             except Exception as exc:
                 state["loop_recipe_recovery"] = {
-                    "enabled": True, "mode": "RECONCILE_ONLY",
+                    "enabled": True, "mode": "EXACT_SELF_AND_RECONCILE",
                     "runs": int(state["loop_recipe_recovery"].get("runs", 0)) + 1,
                     "last_error": type(exc).__name__,
                     "last_run_at": time.time(),

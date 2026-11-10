@@ -74,6 +74,31 @@ class LoopSelfOutboxTests(unittest.TestCase):
             self.outbox.queue(work_id="work",epoch=2,step=0,
                               owner=NEXT,message="continue plan",now=162)
 
+    def test_unsent_wake_transfers_to_successor_once(self):
+        self.queue()
+        new=self.loop.claim(work_id="work",owner=NEXT,epoch=1,now=161)
+        self.assertEqual(new["epoch"],2)
+        self.assertIsNone(self.outbox.get(work_id="work",epoch=1,step=0))
+        migrated=self.outbox.get(work_id="work",epoch=2,step=0)
+        self.assertEqual(migrated["state"],"PENDING")
+        self.assertEqual(migrated["conversation_key"],NEXT)
+        with self.assertRaisesRegex(LoopStateError,"LOOP_FENCED"):
+            self.outbox.reserve(work_id="work",epoch=1,step=0,owner=OWNER,now=162)
+        self.outbox.reserve(work_id="work",epoch=2,step=0,owner=NEXT,now=162)
+        self.assertEqual(self.outbox.get(work_id="work",epoch=2,step=0)["state"],
+                         "UNCERTAIN")
+
+    def test_uncertain_wake_never_migrates_to_successor(self):
+        self.queue()
+        self.outbox.reserve(work_id="work",epoch=1,step=0,owner=OWNER,now=111)
+        self.loop.claim(work_id="work",owner=NEXT,epoch=1,now=161)
+        self.assertEqual(self.outbox.get(work_id="work",epoch=1,step=0)["state"],
+                         "UNCERTAIN")
+        self.assertIsNone(self.outbox.get(work_id="work",epoch=2,step=0))
+        with self.assertRaisesRegex(LoopStateError,"LOOP_SELF_PRIOR_EFFECT_UNRESOLVED"):
+            self.outbox.queue(work_id="work",epoch=2,step=0,owner=NEXT,
+                              message="continuation",now=162)
+
     def test_lease_and_epoch_fence(self):
         self.queue()
         successor=self.loop.claim(work_id="work",owner=NEXT,epoch=1,now=161)

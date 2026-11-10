@@ -23,6 +23,33 @@ class LoopRecoveryExecutorTests(unittest.TestCase):
         return LoopRecoveryExecutor(Store(self.path),principal_id="principal",
                                     owner_ready=lambda owner: ready and owner=="node-a")
 
+    def test_no_id_recovery_only_when_one_owned_work_exists(self):
+        from bct.core.models import Work
+        with tempfile.TemporaryDirectory() as root:
+            store=Store(Path(root)/"owned.sqlite")
+            def create(name,principal):
+                store.create_work(Work(
+                    work_id=name,request_summary="test",roots=(root,),
+                    actions=frozenset({"read"}),owner_principal_id=principal,
+                ))
+                LoopStore(store).start(
+                    work_id=name,direction_id="d",task_id="t",
+                    owner="node-a",plan_text="plan",now=100,
+                )
+            create("first","principal")
+            create("foreign","other-principal")
+            self.assertEqual(
+                LoopRecoveryExecutor.resolve_single_work(
+                    store,principal_id="principal"
+                ),"first"
+            )
+            create("second","principal")
+            from bct.loop_store import LoopStateError
+            with self.assertRaisesRegex(LoopStateError,"LOOP_WORK_AMBIGUOUS"):
+                LoopRecoveryExecutor.resolve_single_work(
+                    store,principal_id="principal"
+                )
+
     def test_manual_recovery_is_exact_work_scoped(self):
         result=self.executor().run_once(now=161,work_id_filter="other-work")
         self.assertEqual(result["checked"],0)

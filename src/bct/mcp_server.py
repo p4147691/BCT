@@ -3116,6 +3116,15 @@ def build_mcp(
         from bct.chain_direction import ChainDirectionLedger
         from bct.chain_execution_plan import ChainExecutionPlanLedger
 
+        if not work_id and action == "recover":
+            from bct.loop_recovery_executor import LoopRecoveryExecutor
+            try:
+                work_id = await asyncio.to_thread(
+                    LoopRecoveryExecutor.resolve_single_work,
+                    bct.store, principal_id=MCP_PRINCIPAL_ID,
+                )
+            except ValueError as exc:
+                return {"status": "INVALID_REQUEST", "reason": str(exc)}
         if not work_id:
             return {"status": "INVALID_REQUEST", "reason": "LOOP_WORK_REQUIRED"}
         try:
@@ -3193,6 +3202,15 @@ def build_mcp(
                 return {"status": "OK" if value else "NOT_FOUND",
                         "self_outbox": value}
             if action == "claim":
+                if status_provider is None:
+                    return {"status": "UNAVAILABLE",
+                            "reason": "LOOP_EXACT_SUCCESSOR_STATUS_REQUIRED"}
+                from bct.loop_self_dispatch import LoopSelfDispatcher
+                from bct.loop_store import LoopStateError
+                observed = await asyncio.to_thread(status_provider)
+                LoopSelfDispatcher.exact_route(
+                    observed.get("monitor",observed),owner,
+                )
                 loop = await asyncio.to_thread(
                     ledger.claim, work_id=work_id, owner=owner, epoch=epoch,
                 )

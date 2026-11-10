@@ -17,6 +17,30 @@ class LoopRecoveryExecutor:
         self.principal_id=principal_id
         self.owner_ready=owner_ready
 
+    @staticmethod
+    def resolve_single_work(store, *, principal_id: str) -> str:
+        """Resolve no-ID manual recovery only when exactly one owned Loop exists."""
+        with store._readonly() as db:
+            exists=db.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' "
+                "AND name='loop_recipe_runs'"
+            ).fetchone()
+            if not exists:
+                raise LoopStateError("LOOP_WORK_NOT_FOUND")
+            matches=db.execute(
+                """SELECT l.work_id FROM loop_recipe_runs l
+                JOIN works w ON w.work_id=l.work_id
+                WHERE l.state='LOOP_STARTED'
+                AND w.owner_principal_id=? AND w.state='ACTIVE'
+                ORDER BY l.updated_at DESC, l.work_id LIMIT 2""",
+                (principal_id,),
+            ).fetchall()
+        if not matches:
+            raise LoopStateError("LOOP_WORK_NOT_FOUND")
+        if len(matches)!=1:
+            raise LoopStateError("LOOP_WORK_AMBIGUOUS")
+        return str(matches[0][0])
+
     def run_once(self, *, now=None, limit=8, work_id_filter=None):
         now=time.time() if now is None else now
         scanner=LoopRecoveryScanner(self.store)

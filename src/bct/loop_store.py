@@ -104,6 +104,19 @@ class LoopStore:
             db.execute("""UPDATE loop_recipe_runs SET owner=?,epoch=?,lease_until=?,
                 updated_at=? WHERE work_id=? AND epoch=?""",
                 (owner,new_epoch,now+60,now,work_id,epoch))
+            if new_epoch != epoch:
+                # An unsent intent can be safely carried to the new fenced
+                # owner. A reserved/uncertain/delivered effect is NEVER moved:
+                # it remains evidence under its original Epoch.
+                exists=db.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' "
+                    "AND name='loop_recipe_self_outbox'"
+                ).fetchone()
+                if exists:
+                    db.execute("""UPDATE loop_recipe_self_outbox
+                        SET epoch=?,conversation_key=?,updated_at=?
+                        WHERE work_id=? AND epoch=? AND state='PENDING'""",
+                        (new_epoch,owner,now,work_id,epoch))
             if owner != row["owner"]:
                 self._event(db,work_id,"SUCCESSOR_CLAIMED",new_epoch,now=now)
             return self._get(db,work_id)
