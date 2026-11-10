@@ -135,6 +135,8 @@ class LoopStore:
         row=LoopStore._get(db,work_id)
         if not row or row["owner"] != owner or row["epoch"] != epoch:
             raise LoopStateError("LOOP_FENCED")
+        if row["state"] == "COMPLETED":
+            raise LoopStateError("LOOP_COMPLETED")
         if row["lease_until"] <= now:
             raise LoopStateError("LOOP_LEASE_EXPIRED")
         return row
@@ -192,7 +194,7 @@ class LoopStore:
         now=time.time() if now is None else now
         with self.store.transaction() as db:
             row=self._owned(db,work_id,owner,epoch,now)
-            if not verified or row["next_step"] < 1 or row["operation_state"] in {"PREPARED","UNKNOWN"}:
+            if not verified or row["next_step"] < 1 or row["operation_state"] is not None:
                 raise LoopStateError("LOOP_COMPLETION_UNVERIFIED")
             db.execute("UPDATE loop_recipe_runs SET state='COMPLETED',updated_at=? WHERE work_id=?",
                        (now,work_id))

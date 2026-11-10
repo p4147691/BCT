@@ -129,6 +129,22 @@ class LoopStoreTests(unittest.TestCase):
             self.a.prepare_operation(work_id="loop-test",owner="node-a",
                                      epoch=1,operation_id="op-1",now=109)
 
+    def test_completed_run_rejects_late_mutations(self):
+        self.a.prepare_operation(work_id="loop-test",owner="node-a",epoch=1,
+                                 operation_id="op-final",now=110)
+        self.a.reconcile(work_id="loop-test",owner="node-a",epoch=1,
+                         operation_id="op-final",result="APPLIED",now=111)
+        self.a.advance(work_id="loop-test",owner="node-a",epoch=1,
+                       next_step=1,now=112)
+        self.a.complete(work_id="loop-test",owner="node-a",epoch=1,
+                        verified=True,now=113)
+        with self.assertRaisesRegex(LoopStateError,"LOOP_COMPLETED"):
+            self.a.reconcile(work_id="loop-test",owner="node-a",epoch=1,
+                             operation_id="op-final",result="APPLIED",now=114)
+        with self.assertRaisesRegex(LoopStateError,"LOOP_COMPLETED"):
+            self.a.advance(work_id="loop-test",owner="node-a",epoch=1,
+                           next_step=2,now=115)
+
     def test_complete_requires_verification_and_is_terminal(self):
         with self.assertRaisesRegex(LoopStateError,"LOOP_COMPLETION_UNVERIFIED"):
             self.a.complete(work_id="loop-test",owner="node-a",epoch=1,
