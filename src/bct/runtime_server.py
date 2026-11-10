@@ -596,10 +596,14 @@ def main() -> int:
         """Automatic-first node Check/Recheck, independent of user prompts."""
         from .automatic_chain_recovery import AutomaticChainNodeRecovery
         from .automatic_manager_rebinding import AutomaticManagerRebinding
+        from .automatic_prepared_replacement import AutomaticPreparedReplacement
         recovery = AutomaticChainNodeRecovery(
             store=bct.store, status_provider=status_snapshot,
         )
         manager_binding = AutomaticManagerRebinding(
+            store=bct.store, status_provider=status_snapshot,
+        )
+        prepared_replacement = AutomaticPreparedReplacement(
             store=bct.store, status_provider=status_snapshot,
         )
         while not recovery_stop.is_set():
@@ -609,6 +613,7 @@ def main() -> int:
                 # the actual successor UUID/role/connection must be verified.
                 # This never creates a new Chat or replays a Worker task.
                 outcome["manager_rebinding"] = manager_binding.run_once(limit=8)
+                outcome["prepared_replacement"] = prepared_replacement.run_once(limit=8)
                 state["automatic_chain_recovery"] = {
                     "enabled": True,
                     "runs": int(state["automatic_chain_recovery"].get("runs", 0)) + 1,

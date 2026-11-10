@@ -177,6 +177,7 @@ files = [
   "src/bct/node_recovery.py",
   "src/bct/automatic_chain_recovery.py",
   "src/bct/automatic_manager_rebinding.py",
+  "src/bct/automatic_prepared_replacement.py",
   "src/bct/continuation_primitives.py",
   "src/bct/chain_direction.py",
   "src/bct/chain_derived_tasks.py",

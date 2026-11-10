@@ -74,6 +74,34 @@ UNKNOWN external effect stays unresolved and is never replayed as a fresh
 message. This does not create new Chat conversations automatically; that
 physical provisioning capability and replacement E2E remain unfinished.
 
+## Automatic finalization of a proven, previously prepared B/C/S replacement
+
+When Node Recovery has already recorded REPLACEMENT_PREPARED, the BCT Core
+automatically resumes the last safe stage after a restart. It reuses the exact
+actual successor UUID, fresh Node Info evidence and the original inheritance
+Task, rather than creating a second tab or replaying the initial instruction.
+A successor must have produced a durable observed response from the intended
+Work's inheritance Watch before the original atomic NodeRecovery.commit_replace
+is called. A bare WATCHING reservation is not proof of a sent instruction.
+
+The predecessor must remain unavailable, and any UNKNOWN or DISPATCHING
+original-task Watch holds the automatic role transfer for reconciliation.
+If the original node comes back, no replacement occurs. Worker and S
+replacement use the existing role/scope transfer, do not create a backup S,
+and resume the prepared replacement without asking the user for IDs or a
+second approval. If global S still has active Watch/return bindings across
+other Work, this narrow stage reports SUPERVISOR_GLOBAL_REBIND_REQUIRED and
+preserves the prepared case/role. Global S role transfer must not silently
+strand other networks; full cross-Work atomic rebinding remains separate.
+Manager A is intentionally excluded from this role-only path
+because its Work Epoch and Watch/Manager-return binding must be fenced
+atomically through Manager succession. A Manager cannot be promoted by merely
+giving it a role tag.
+
+This only completes already-prepared replacements. The full unattended
+creation/first-send/exact UUID discovery for all roles still needs integrated
+RCC/Node Recovery testing and must not be claimed as complete.
+
 ## Recovery scope and routing
 1. Start with bct_status, current Node Info and durable conversation network directory; infer the original Work/Direction/Task/generation from existing watches, directions, execution plans and return checkpoints. Prefer explicit context already in the receiving conversation over mere recent timestamps.
 2. For unique, evidence-backed target, use existing Check Node R → Recheck Node R. If the node is GENERATING or making progress, WAIT; never replace due only to elapsed time.
