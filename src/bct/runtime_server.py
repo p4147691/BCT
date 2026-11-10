@@ -408,6 +408,7 @@ def main() -> int:
         "delivery_continuation_recovery": {
             "enabled": True, "runs": 0,
         },
+        "loop_recipe_recovery": {"enabled": True, "runs": 0, "mode": "OBSERVE_ONLY"},
         "bottleneck_ack": bottleneck_ack.status(),
         "chat_stream_rcc_watch": {"state": "IDLE", "polls": 0, "last_events": 0},
         "delayed_send_watch": {"state": "IDLE", "polls": 0, "last_events": 0},
@@ -523,6 +524,32 @@ def main() -> int:
                     "enabled": True,
                     "runs": int(state["delivery_continuation_recovery"].get("runs", 0)) + 1,
                     "last_error": type(exc).__name__ + ":" + str(exc),
+                    "last_run_at": time.time(),
+                }
+            recovery_stop.wait(2.0)
+
+    def loop_recipe_recovery_loop() -> None:
+        """Observe due Loop runs; never infer identity or dispatch an effect."""
+        from .loop_recovery import LoopRecoveryScanner
+        observer = LoopRecoveryScanner(bct.store)
+        while not recovery_stop.is_set():
+            try:
+                due = observer.scan(limit=8)
+                state["loop_recipe_recovery"] = {
+                    "enabled": True, "mode": "OBSERVE_ONLY",
+                    "runs": int(state["loop_recipe_recovery"].get("runs", 0)) + 1,
+                    "due": len(due),
+                    "requires_reconciliation": sum(
+                        item["advisory_action"] == "RECONCILE_ORIGINAL_RECEIPT"
+                        for item in due
+                    ),
+                    "last_error": None, "last_run_at": time.time(),
+                }
+            except Exception as exc:
+                state["loop_recipe_recovery"] = {
+                    "enabled": True, "mode": "OBSERVE_ONLY",
+                    "runs": int(state["loop_recipe_recovery"].get("runs", 0)) + 1,
+                    "last_error": type(exc).__name__,
                     "last_run_at": time.time(),
                 }
             recovery_stop.wait(2.0)
@@ -825,6 +852,11 @@ def main() -> int:
         name="bct-delivery-continuation-recovery", daemon=True,
     )
     delivery_continuation_thread.start()
+    loop_recovery_thread = threading.Thread(
+        target=loop_recipe_recovery_loop,
+        name="bct-loop-recovery-observer", daemon=True,
+    )
+    loop_recovery_thread.start()
     chat_stream_watch_thread = threading.Thread(
         target=chat_stream_rcc_watch_loop,
         name="bct-chat-stream-rcc-watch", daemon=True,
@@ -871,6 +903,7 @@ def main() -> int:
         if bottleneck_thread is not None:
             bottleneck_thread.join(timeout=3.0)
         delivery_continuation_thread.join(timeout=3.0)
+        loop_recovery_thread.join(timeout=3.0)
         chat_stream_watch_thread.join(timeout=3.0)
         try:
             bct.cdp_connections.close()
