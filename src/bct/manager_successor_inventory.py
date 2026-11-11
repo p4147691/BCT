@@ -65,16 +65,48 @@ def manager_successor_inventory(store: Any, *, work_id: str,
         }
         watches=[]
         watch_count=0
+        legacy_watch_count=0
+        corrupt_watch_context_count=0
+        # Invalid historical metadata must not break the whole Manager
+        # snapshot. A legacy Work-only Watch is visible for reconciliation,
+        # but is NOT proof of membership in this orchestration Session.
         if "delayed_send_watches" in tables:
+            safe_work = (
+                "CASE WHEN json_valid(d.context_json) "
+                "THEN json_extract(d.context_json,'$.work_id') END"
+            )
+            safe_session = (
+                "CASE WHEN json_valid(d.context_json) "
+                "THEN json_extract(d.context_json,'$.session_id') END"
+            )
+            where = (
+                f"{safe_work}=? AND ({safe_session}=? "
+                f"OR {safe_session} IS NULL)"
+            )
             watches = db.execute(
                 "SELECT d.task_id,d.generation,d.state,d.conversation_key,"
-                "d.source_send_receipt FROM delayed_send_watches d "
-                "WHERE json_extract(d.context_json,'$.work_id')=? "
-                "ORDER BY d.task_id,d.generation LIMIT ?", (work_id,limit+1),
+                "d.source_send_receipt,CASE WHEN "
+                f"{safe_session}=? THEN 'EXACT_SESSION' ELSE "
+                "'LEGACY_WORK_ONLY_UNVERIFIED' END AS session_scope "
+                "FROM delayed_send_watches d WHERE " + where +
+                " ORDER BY d.task_id,d.generation LIMIT ?",
+                (session_id,work_id,session_id,limit+1),
             ).fetchall()
             watch_count=db.execute(
+                "SELECT COUNT(*) AS n FROM delayed_send_watches d WHERE "+where,
+                (work_id,session_id),
+            ).fetchone()["n"]
+            legacy_watch_count=db.execute(
+                "SELECT COUNT(*) AS n FROM delayed_send_watches d WHERE "+where+
+                f" AND {safe_session} IS NULL",
+                (work_id,session_id),
+            ).fetchone()["n"]
+            # Malformed JSON cannot reliably be attributed to a Work, so
+            # report a global integrity count rather than silently adopting
+            # or misattributing such a Watch. Never alter its original row.
+            corrupt_watch_context_count=db.execute(
                 "SELECT COUNT(*) AS n FROM delayed_send_watches "
-                "WHERE json_extract(context_json,'$.work_id')=?", (work_id,),
+                "WHERE NOT json_valid(context_json)"
             ).fetchone()["n"]
         returns=[]
         return_count=0
@@ -137,6 +169,11 @@ def manager_successor_inventory(store: Any, *, work_id: str,
         "chain_watches":[dict(x) for x in watches[:limit]],
         "total_chain_watches":int(watch_count),
         "watches_complete_listing":int(watch_count)<=limit,
+        "legacy_work_only_watches":int(legacy_watch_count),
+        "watch_session_membership_verified":(
+            int(legacy_watch_count)==0 and int(corrupt_watch_context_count)==0
+        ),
+        "corrupt_watch_context_count_unattributed":int(corrupt_watch_context_count),
         "unacknowledged_returns":[dict(x) for x in returns[:limit]],
         "total_unacknowledged_returns":int(return_count),
         "returns_complete_listing":int(return_count)<=limit,

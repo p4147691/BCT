@@ -1179,6 +1179,70 @@ class OrchestrationTests(unittest.TestCase):
         ))
         self.assertEqual("READ_ONLY_NO_SEND_NO_REPLACE",inventory["effects"])
 
+    def test_successor_inventory_excludes_other_session_watch(self):
+        from bct.manager_successor_inventory import manager_successor_inventory
+        from bct.send_delayed_message import DurableWatchLedger
+        work=self.bct.store.get_work("work")
+        DurableWatchLedger(self.bct.store)
+        with self.bct.store.transaction() as db:
+            for task,context in (
+                ("other-session-task",{"work_id":"work","session_id":"other-session"}),
+                ("exact-session-task",{"work_id":"work","session_id":"session"}),
+                ("legacy-work-only-task",{"work_id":"work"}),
+            ):
+                db.execute(
+                    "INSERT INTO delayed_send_watches "
+                    "(task_id,generation,conversation_key,response_turn_id,"
+                    "source_send_receipt,state,context_json) VALUES(?,?,?,?,?,?,?)",
+                    (task,1,"conversation-b",task+"-turn",task+"-send",
+                     "PENDING",json.dumps(context)),
+                )
+        self.bct.orchestration.takeover_manager(
+            work=work,session_id="session",expected_epoch=1,
+            manager_node_id="backup",reason="isolated audit",
+        )
+        result=manager_successor_inventory(
+            self.bct.store,work_id="work",session_id="session",expected_epoch=2,
+        )
+        watches={x["task_id"]:x for x in result["chain_watches"]}
+        self.assertNotIn("other-session-task",watches)
+        self.assertEqual(2,result["total_chain_watches"])
+        self.assertEqual("EXACT_SESSION",watches["exact-session-task"]["session_scope"])
+        self.assertEqual("LEGACY_WORK_ONLY_UNVERIFIED",
+                         watches["legacy-work-only-task"]["session_scope"])
+        self.assertEqual(1,result["legacy_work_only_watches"])
+        self.assertFalse(result["watch_session_membership_verified"])
+
+    def test_successor_inventory_malformed_legacy_watch_does_not_break_snapshot(self):
+        from bct.send_delayed_message import DurableWatchLedger
+        work=self.bct.store.get_work("work")
+        DurableWatchLedger(self.bct.store)
+        with self.bct.store.transaction() as db:
+            db.execute(
+                "INSERT INTO delayed_send_watches "
+                "(task_id,generation,conversation_key,response_turn_id,"
+                "source_send_receipt,state,context_json) VALUES(?,?,?,?,?,?,?)",
+                ("malformed-original",3,"conversation-b","turn-original",
+                 "send-original","PENDING","{broken"),
+            )
+        self.bct.orchestration.takeover_manager(
+            work=work,session_id="session",expected_epoch=1,
+            manager_node_id="backup",reason="isolated audit",
+        )
+        view=self.bct.orchestration.snapshot(work=work,session_id="session")
+        inventory=view["manager_recovery_inventory"]
+        self.assertEqual(2,inventory["manager_epoch"])
+        self.assertEqual(0,inventory["total_chain_watches"])
+        self.assertEqual(1,inventory["corrupt_watch_context_count_unattributed"])
+        self.assertFalse(inventory["watch_session_membership_verified"])
+        with self.bct.store._readonly() as db:
+            original=db.execute(
+                "SELECT context_json,source_send_receipt FROM delayed_send_watches "
+                "WHERE task_id='malformed-original'"
+            ).fetchone()
+        self.assertEqual("{broken",original["context_json"])
+        self.assertEqual("send-original",original["source_send_receipt"])
+
     def test_successor_inventory_is_bounded_and_never_claims_full_listing(self):
         from bct.manager_successor_inventory import manager_successor_inventory
         work=self.bct.store.get_work("work")
