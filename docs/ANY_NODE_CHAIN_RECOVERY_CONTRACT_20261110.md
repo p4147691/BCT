@@ -111,6 +111,39 @@ This only completes already-prepared replacements. The full unattended
 creation/first-send/exact UUID discovery for all roles still needs integrated
 RCC/Node Recovery testing and must not be claimed as complete.
 
+## Core-owned exact new Chat bootstrap — only positive NEW_CHAT_REQUIRED
+
+BCT Core's existing background recovery loop now has an automatic physical
+replacement stage for a currently observable original tab that explicitly
+reports NEW_CHAT_REQUIRED on a fresh RCC/Node Info snapshot. It first uses
+the existing Work-scoped Check/Recheck and a final old-UUID readiness probe.
+If the same UUID recovers, the old Work/Task/Generation and paused Watch
+are restored, not replaced. Long GENERATING, disconnected RCC observation,
+or an unknown external send can never by themselves trigger new Chat creation.
+
+The auto-stage uses the original Work's bounded browser capability, an opaque
+RCC window target_ref, one deterministic automatic replacement Operation ID,
+and a durable pause/intention recorded BEFORE the external new-chat-send.
+It uses the existing atomic RCC create-and-send terminal result; it does not
+separately create a chat and then blindly send a second instruction.
+On Core restart only the original exact Operation/receipt may be reconciled.
+An in-flight or UNKNOWN external effect cannot be submitted under a new ID.
+An APPLIED terminal reply must include the actual new conversation UUID,
+RCC instance/session/tab/window identity and persisted result hash.
+Only after the observed successor matches that evidence does BCT copy the
+old role/task metadata and finalize the existing Node Recovery Replace.
+The inheritance instruction includes original Work, Direction, Task and
+Generation when those values are recorded, and directs the successor to
+read exact receipts and continue the next incomplete Chain Recipe step.
+
+The A role remains fenced by Manager Epoch and active orchestration manager
+ownership; the global S role preserves every Work's active Watch and immutable
+original S return receipt, rebinding the active alias transactionally.
+No user-provided internal UUID, role grant or extra approval is introduced.
+An observed endpoint without positive NEW_CHAT_REQUIRED, a completely absent
+tab lacking a trustworthy target, or any unverified UUID is explicitly
+unresolved, not asserted to have been automatically replaced.
+
 ## Recovery scope and routing
 1. Start with bct_status, current Node Info and durable conversation network directory; infer the original Work/Direction/Task/generation from existing watches, directions, execution plans and return checkpoints. Prefer explicit context already in the receiving conversation over mere recent timestamps.
 2. For unique, evidence-backed target, use existing Check Node R → Recheck Node R. If the node is GENERATING or making progress, WAIT; never replace due only to elapsed time.

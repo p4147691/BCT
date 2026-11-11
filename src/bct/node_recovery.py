@@ -321,7 +321,8 @@ class NodeRecoveryLedger:
                  work.work_id, work.assignment_epoch),
             ).rowcount == 1
 
-    def pause(self, *, work, case_id: str, reason: str) -> dict[str, Any]:
+    def pause(self, *, work, case_id: str, reason: str,
+              automatic_intent: dict[str, Any] | None = None) -> dict[str, Any]:
         reason = str(reason or "").strip()
         if not reason or len(reason) > 500:
             raise ValueError("NODE_RECOVERY_PAUSE_REASON_INVALID")
@@ -334,6 +335,36 @@ class NodeRecoveryLedger:
                 raise ValueError("NODE_RECOVERY_CASE_TERMINAL")
             context = json.loads(row["context_json"] or "{}")
             context.setdefault("pause", {"reason": reason, "at": when})
+            if automatic_intent is not None:
+                if (not str(case_id).startswith("auto-node-")
+                        or row["state"] not in {"RECOVERY_NEEDED", "CHECKED"}
+                        or context.get("automatic_new_chat_intent")):
+                    raise ValueError("NODE_AUTO_BOOTSTRAP_INTENT_CONFLICT")
+                if not (isinstance(automatic_intent, dict)
+                        and automatic_intent.get("operation_id")
+                        and automatic_intent.get("instruction")
+                        and automatic_intent.get("instance_id")
+                        and automatic_intent.get("target_ref")
+                        and automatic_intent.get("window_id")):
+                    raise ValueError("NODE_AUTO_BOOTSTRAP_INTENT_INVALID")
+                context["automatic_new_chat_intent"] = automatic_intent
+            # A Core-initiated pause must be reversible when the SAME exact
+            # conversation UUID recovers. Store original Watch state before
+            # the mutation, without duplicating message content or receipts.
+            if str(case_id).startswith("auto-node-"):
+                original = [
+                    {"task_id": str(item["task_id"]),
+                     "generation": int(item["generation"]),
+                     "state": str(item["state"])}
+                    for item in db.execute(
+                        "SELECT task_id,generation,state FROM delayed_send_watches "
+                        "WHERE state IN ('WATCHING','RESERVED') "
+                        "AND json_extract(context_json,'$.work_id')=? "
+                        "AND conversation_key=? ORDER BY task_id,generation",
+                        (work.work_id, row["conversation_key"]),
+                    )
+                ]
+                context["automatic_watch_restore"] = original
             paused = db.execute(
                 "UPDATE delayed_send_watches SET state='PAUSED' "
                 "WHERE state IN ('WATCHING','RESERVED') "
@@ -346,6 +377,80 @@ class NodeRecoveryLedger:
                        "WHERE case_id=?", (_canonical(context), when, case_id))
         return {"case_id": case_id, "state": "PAUSED", "delayed_sends_paused": paused,
                 "warning": "UNKNOWN_EFFECTS_ARE_NOT_REPLAYED"}
+
+    def restore_automatic_predecessor(
+        self, *, work, case_id: str, evidence: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Restore original Watch states only after the exact old UUID recovers.
+
+        Never clears a manual pause, prepared replacement or UNKNOWN effect;
+        all changes and case closure occur inside one SQLite transaction.
+        """
+        if not str(case_id).startswith("auto-node-"):
+            raise ValueError("NODE_AUTOMATIC_CASE_REQUIRED")
+        if (evidence.get("result") != "OK"
+                or evidence.get("observation_state") != "FRESH"):
+            raise ValueError("NODE_RECOVERY_POSITIVE_IDENTITY_REQUIRED")
+        when = time.time()
+        with self.store.transaction() as db:
+            row = self._case(db, case_id)
+            if not self._owned(row, work) or row["state"] != "PAUSED":
+                raise ValueError("NODE_AUTO_RESTORE_PAUSED_REQUIRED")
+            if evidence.get("conversation_key") != row["conversation_key"]:
+                raise ValueError("NODE_AUTO_RESTORE_IDENTITY_CHANGED")
+            context = json.loads(row["context_json"] or "{}")
+            intent = context.get("automatic_new_chat_intent")
+            if intent:
+                # Core may cancel its own pending bootstrap only when the
+                # original external create/send was conclusively never sent.
+                opid = str(intent.get("operation_id") or "")
+                if not opid:
+                    raise ValueError("NODE_AUTO_RESTORE_INTENT_INVALID")
+                operation = db.execute(
+                    "SELECT state,outcome FROM operations "
+                    "WHERE operation_id=? AND work_id=?",
+                    (opid, work.work_id),
+                ).fetchone()
+                if operation is not None and not (
+                    operation["state"] == "FINISHED"
+                    and operation["outcome"] == "NOT_APPLIED"
+                ):
+                    raise ValueError("NODE_AUTO_RESTORE_EXTERNAL_EFFECT_UNCERTAIN")
+                context.pop("automatic_new_chat_intent", None)
+                context["automatic_bootstrap_cancelled"] = opid
+            restore = context.get("automatic_watch_restore")
+            if not isinstance(restore, list):
+                raise ValueError("NODE_AUTO_RESTORE_HISTORY_MISSING")
+            # Never partially unpause if another recovery step changed one
+            # of the original generation states while we were offline.
+            for item in restore:
+                if item["state"] not in {"WATCHING", "RESERVED"}:
+                    raise ValueError("NODE_AUTO_RESTORE_STATE_INVALID")
+                actual = db.execute(
+                    "SELECT state,conversation_key,context_json FROM delayed_send_watches "
+                    "WHERE task_id=? AND generation=?",
+                    (item["task_id"],item["generation"]),
+                ).fetchone()
+                if actual is None or actual["state"] != "PAUSED" or (
+                        actual["conversation_key"] != row["conversation_key"]):
+                    raise ValueError("NODE_AUTO_RESTORE_WATCH_CHANGED")
+                if json.loads(actual["context_json"] or "{}").get("work_id") != work.work_id:
+                    raise ValueError("NODE_AUTO_RESTORE_FOREIGN_WORK")
+            for item in restore:
+                db.execute(
+                    "UPDATE delayed_send_watches SET state=? "
+                    "WHERE task_id=? AND generation=? AND state='PAUSED'",
+                    (item["state"],item["task_id"],item["generation"]),
+                )
+            context["automatic_resumed_at"] = when
+            db.execute(
+                "UPDATE node_recovery_cases SET state='RECOVERED',context_json=?,updated_at=? "
+                "WHERE case_id=? AND work_id=? AND assignment_epoch=?",
+                (_canonical(context),when,case_id,work.work_id,work.assignment_epoch),
+            )
+        return {"case_id":case_id,"state":"RECOVERED",
+                "restored_watches":len(restore),
+                "effects":"DURABLE_WATCH_STATE_ONLY_NO_EXTERNAL_SEND"}
 
     def assert_send_allowed(self, *, work_id: str, conversation_key: str) -> None:
         key = _valid_conversation(conversation_key)
@@ -372,8 +477,45 @@ class NodeRecoveryLedger:
         if row is not None:
             raise ValueError("NODE_RECOVERY_SEND_FENCED:" + str(row["case_id"]))
 
+    @staticmethod
+    def _verified_atomic_bootstrap(db, *, work, operation_id: str,
+                                   successor_conversation_key: str) -> dict[str, Any]:
+        """Verify one existing BCT+RCC atomic new-chat send/reply receipt.
+
+        Never infer a UUID or trust a caller's result: every field derives
+        from the ORIGINAL Work's durable Operation, not a new message.
+        """
+        result = db.execute(
+            "SELECT state,outcome,capability,assignment_epoch,principal_id,evidence_json "
+            "FROM operations WHERE work_id=? AND operation_id=?",
+            (work.work_id, operation_id),
+        ).fetchone()
+        if result is None or not (
+            result["state"] == "FINISHED" and result["outcome"] == "APPLIED"
+            and result["capability"] == "browser"
+            and int(result["assignment_epoch"]) == work.assignment_epoch
+            and result["principal_id"] == work.owner_principal_id
+        ):
+            raise ValueError("NODE_REPLACEMENT_ATOMIC_RECEIPT_NOT_APPLIED")
+        proof = json.loads(result["evidence_json"] or "{}")
+        if not (
+            proof.get("command") in {"create-and-send", "new-chat-send"}
+            and proof.get("rcc_command") == "new-chat-send"
+            and proof.get("result_state") == "RESULT_PERSISTED"
+            and proof.get("conversation_key") == successor_conversation_key
+            and isinstance(proof.get("result_hash"), str)
+            and re.fullmatch(r"[a-f0-9]{64}", proof["result_hash"])
+            and str(proof.get("session_id") or "")
+            and str(proof.get("instance_id") or "")
+            and type(proof.get("tab_id")) is int and proof["tab_id"] > 0
+            and type(proof.get("window_id")) is int and proof["window_id"] > 0
+        ):
+            raise ValueError("NODE_REPLACEMENT_ATOMIC_RECEIPT_IDENTITY_INVALID")
+        return proof
+
     def prepare_replace(self, *, work, case_id: str, successor_conversation_key: str,
-                        inheritance_task_id: str, successor_evidence: dict[str, Any]) -> dict[str, Any]:
+                        inheritance_task_id: str, successor_evidence: dict[str, Any],
+                        atomic_inheritance_operation_id: str = "") -> dict[str, Any]:
         successor = _valid_conversation(successor_conversation_key, "NODE_REPLACEMENT_SUCCESSOR_INVALID")
         inheritance = _valid_id(inheritance_task_id, "NODE_REPLACEMENT_TASK_ID_INVALID")
         if successor_evidence.get("result") != "OK":
@@ -392,10 +534,18 @@ class NodeRecoveryLedger:
                     or row["inheritance_task_id"] != inheritance):
                 raise ValueError("NODE_REPLACEMENT_CONFLICT")
             context = json.loads(row["context_json"] or "{}")
+            if atomic_inheritance_operation_id:
+                if successor_evidence.get("conversation_key") != successor:
+                    raise ValueError("NODE_REPLACEMENT_SUCCESSOR_EVIDENCE_IDENTITY_INVALID")
+                self._verified_atomic_bootstrap(
+                    db, work=work, operation_id=atomic_inheritance_operation_id,
+                    successor_conversation_key=successor,
+                )
             context["replacement"] = {
                 "successor_conversation_key": successor,
                 "inheritance_task_id": inheritance,
                 "successor_evidence_sha256": successor_evidence["evidence_sha256"],
+                "atomic_inheritance_operation_id": atomic_inheritance_operation_id,
                 "prepared_at": when,
             }
             db.execute(
@@ -416,6 +566,10 @@ class NodeRecoveryLedger:
 
     def commit_replace(self, *, work, case_id: str, successor_evidence: dict[str, Any]) -> dict[str, Any]:
         when = time.time()
+        # Additive schema initialization occurs outside the replacement TX.
+        # Auto-new-chat first-submit evidence itself is stored by Operations.
+        from .chain_manager_recovery import ChainManagerRecoveryLedger
+        recovery_ledger = ChainManagerRecoveryLedger(self.store)
         with self.store.transaction() as db:
             row = self._case(db, case_id)
             if not self._owned(row, work):
@@ -425,23 +579,31 @@ class NodeRecoveryLedger:
                         "successor_conversation_key": row["replacement_conversation_key"]}
             if row["state"] != "REPLACEMENT_PREPARED" or successor_evidence.get("result") != "OK":
                 raise ValueError("NODE_REPLACEMENT_NOT_READY")
-            watch = db.execute(
-                "SELECT state,conversation_key,context_json FROM delayed_send_watches "
-                "WHERE task_id=? ORDER BY generation DESC LIMIT 1",
-                (row["inheritance_task_id"],),
-            ).fetchone()
-            if watch is None or watch["conversation_key"] != row["replacement_conversation_key"]:
-                raise ValueError("NODE_REPLACEMENT_INHERITANCE_NOT_SENT")
-            binding = json.loads(watch["context_json"] or "{}")
-            # A successor can finish its first inheritance response before a
-            # Manager authors a next instruction.  That is still a confirmed
-            # inheritance delivery, not a failed or unknown send.  Keep the
-            # evidence requirement: only this explicit terminal state may
-            # join the existing watched/returned states.
-            if binding.get("work_id") != work.work_id or watch["state"] not in {
-                    "WATCHING", "SELF_SENT", "RETURNED_TO_MANAGER",
-                    "MANAGER_DECISION_REQUIRED"}:
-                raise ValueError("NODE_REPLACEMENT_INHERITANCE_NOT_READY")
+            context = json.loads(row["context_json"] or "{}")
+            atomic_id = str((context.get("replacement") or {}).get(
+                "atomic_inheritance_operation_id") or "")
+            if atomic_id:
+                # A verified atomic RCC new-chat operation already contains
+                # first submit, actual UUID and a persisted first AI answer.
+                # Do not fabricate a Watch retroactively or replay its first
+                # instruction. Its reply hash stays in the source Operation.
+                self._verified_atomic_bootstrap(
+                    db, work=work, operation_id=atomic_id,
+                    successor_conversation_key=row["replacement_conversation_key"],
+                )
+            else:
+                watch = db.execute(
+                    "SELECT state,conversation_key,context_json FROM delayed_send_watches "
+                    "WHERE task_id=? ORDER BY generation DESC LIMIT 1",
+                    (row["inheritance_task_id"],),
+                ).fetchone()
+                if watch is None or watch["conversation_key"] != row["replacement_conversation_key"]:
+                    raise ValueError("NODE_REPLACEMENT_INHERITANCE_NOT_SENT")
+                binding = json.loads(watch["context_json"] or "{}")
+                if binding.get("work_id") != work.work_id or watch["state"] not in {
+                        "WATCHING", "SELF_SENT", "RETURNED_TO_MANAGER",
+                        "MANAGER_DECISION_REQUIRED"}:
+                    raise ValueError("NODE_REPLACEMENT_INHERITANCE_NOT_READY")
             # Keep inheritance proof, advisory role/scope transfer, old-watch
             # retirement and recovery-case completion in one transaction.  A
             # role uniqueness failure therefore leaves the predecessor PAUSED
@@ -464,6 +626,7 @@ class NodeRecoveryLedger:
                 except (TypeError, ValueError):
                     pass
             is_supervisor = "supervisor" in roles
+            supervisor_binding_recovery = None
             # A global S can have watches from unrelated Work. Every binding
             # must move in the SAME transaction as the role transfer, and
             # ambiguous external sends cannot be silently retargeted.
@@ -495,6 +658,26 @@ class NodeRecoveryLedger:
                     ).fetchone()
                     if inflight:
                         raise ValueError("NODE_SUPERVISOR_UNCERTAIN_RETURN_RECONCILIATION_REQUIRED")
+                # Global S may span several independently owned Works. The
+                # original Work's principal cannot claim another owner's
+                # Watch/return by a local automatic replacement.
+                affected = {
+                    str(item["work_id"]): str(item["owner_principal_id"])
+                    for item in db.execute(
+                        "SELECT DISTINCT w.work_id,w.owner_principal_id "
+                        "FROM works w WHERE w.state='ACTIVE' AND ("
+                        "EXISTS (SELECT 1 FROM delayed_send_watches d "
+                        "WHERE json_extract(d.context_json,'$.work_id')=w.work_id "
+                        "AND json_extract(d.context_json,'$.supervisor_conversation_key')=?) "
+                        "OR EXISTS (SELECT 1 FROM chain_manager_return_checkpoints c "
+                        "WHERE c.work_id=w.work_id "
+                        "AND c.supervisor_conversation_key=? AND c.acknowledged_at=0))",
+                        (old_key, old_key),
+                    )
+                }
+                if any(owner != work.owner_principal_id
+                       for owner in affected.values()):
+                    raise ValueError("NODE_SUPERVISOR_GLOBAL_WORK_OWNER_CONFLICT")
                 open_watches = list(db.execute(
                     "SELECT task_id,generation,context_json FROM delayed_send_watches "
                     "WHERE json_extract(context_json,'$.supervisor_conversation_key')=? "
@@ -546,19 +729,48 @@ class NodeRecoveryLedger:
                             "UPDATE chain_manager_return_checkpoints SET "
                             "active_supervisor_conversation_key=supervisor_conversation_key"
                         )
-                    db.execute(
+                    updated_returns = db.execute(
                         "UPDATE chain_manager_return_checkpoints SET "
                         "active_supervisor_conversation_key=?,updated_at=? "
                         "WHERE acknowledged_at=0 "
                         "AND active_supervisor_conversation_key=?",
                         (new_key, when, old_key),
-                    )
+                    ).rowcount
+                else:
+                    updated_returns = 0
+                supervisor_binding_recovery = {
+                    "affected_works": sorted(affected),
+                    "updated_watches": len(changed_contexts),
+                    "updated_returns": updated_returns,
+                    "unresolved_delivery_claims": 0,
+                    "complete": True,
+                    "atomic": True,
+                }
             transferred = _transfer_conversation_state(
                 db,
                 predecessor=str(row["conversation_key"]),
                 successor=str(row["replacement_conversation_key"]),
                 when=when,
             )
+            binding_recovery = None
+            if (atomic_id and any(
+                    str(tag).casefold() == "manager"
+                    for tag in transferred.get("role_tags", []))):
+                proof = self._verified_atomic_bootstrap(
+                    db, work=work, operation_id=atomic_id,
+                    successor_conversation_key=row["replacement_conversation_key"],
+                )
+                binding_recovery = recovery_ledger.rebind_active_manager_atomic(
+                    work_id=work.work_id,
+                    manager_conversation_key=row["replacement_conversation_key"],
+                    manager_instance_id=str(proof["instance_id"]),
+                    succession_proofs=[{
+                        "predecessor_conversation_key": row["conversation_key"],
+                        "successor_conversation_key": row["replacement_conversation_key"],
+                        "bootstrap_operation_id": atomic_id,
+                    }],
+                    transaction=db,
+                )
             db.execute(
                 "UPDATE delayed_send_watches SET state='CANCELLED' WHERE state='PAUSED' "
                 "AND json_extract(context_json,'$.work_id')=? AND conversation_key=?",
@@ -569,7 +781,9 @@ class NodeRecoveryLedger:
         return {"case_id": case_id, "state": "REPLACED", "duplicate": False,
                 "successor_conversation_key": row["replacement_conversation_key"],
                 "inheritance_task_id": row["inheritance_task_id"],
-                "conversation_state": transferred}
+                "conversation_state": transferred,
+                "manager_binding_recovery": binding_recovery,
+                "supervisor_binding_recovery": supervisor_binding_recovery}
 
     def prepare_reset(self, *, work, case_id: str, node_evidence: dict[str, Any]) -> dict[str, Any]:
         when = time.time()

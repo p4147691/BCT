@@ -597,6 +597,7 @@ def main() -> int:
         from .automatic_chain_recovery import AutomaticChainNodeRecovery
         from .automatic_manager_rebinding import AutomaticManagerRebinding
         from .automatic_prepared_replacement import AutomaticPreparedReplacement
+        from .automatic_node_replacement import AutomaticNodeReplacement
         recovery = AutomaticChainNodeRecovery(
             store=bct.store, status_provider=status_snapshot,
         )
@@ -606,6 +607,9 @@ def main() -> int:
         prepared_replacement = AutomaticPreparedReplacement(
             store=bct.store, status_provider=status_snapshot,
         )
+        physical_replacement = AutomaticNodeReplacement(
+            bct=bct, status_provider=status_snapshot,
+        )
         while not recovery_stop.is_set():
             try:
                 outcome = recovery.run_once(limit=16)
@@ -614,6 +618,9 @@ def main() -> int:
                 # This never creates a new Chat or replays a Worker task.
                 outcome["manager_rebinding"] = manager_binding.run_once(limit=8)
                 outcome["prepared_replacement"] = prepared_replacement.run_once(limit=8)
+                # Complete exact-RCC proven NEW_CHAT_REQUIRED cases only. No
+                # browser send when prior operation is in-flight/UNKNOWN.
+                outcome["physical_replacement"] = physical_replacement.run_once(limit=2)
                 state["automatic_chain_recovery"] = {
                     "enabled": True,
                     "runs": int(state["automatic_chain_recovery"].get("runs", 0)) + 1,

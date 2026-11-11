@@ -220,6 +220,34 @@ class AutomaticChainNodeRecovery:
                 prior = self.ledger.get(work=work, case_id=case_id)
                 if evidence["result"] in {"OK", "WAIT"} and prior is None:
                     continue
+                if prior and prior["state"] == "PAUSED" and evidence["result"] == "OK":
+                    context = prior.get("context") or {}
+                    # A replacement first-submit may already have been sent.
+                    # Only its original auto-provision coordinator can inspect
+                    # that exact Operation receipt and safely restore the old
+                    # node without creating two concurrent Chat leaders.
+                    if context.get("automatic_new_chat_intent"):
+                        continue
+                    if isinstance(context.get("automatic_watch_restore"), list):
+                        resumed = self.ledger.restore_automatic_predecessor(
+                            work=work, case_id=case_id, evidence=evidence,
+                        )
+                        events.append({
+                            "case_id":case_id, "work_id":row["work_id"],
+                            "conversation_key":row["conversation_key"],
+                            "status":"RECOVERED_SAME_UUID",
+                            "restored_watches":resumed["restored_watches"],
+                            "role":row["role"],
+                            "next_action":"RESUME_PREVIOUS_WATCH",
+                        })
+                    continue
+                if prior and prior["state"] in {
+                    "PAUSED", "REPLACEMENT_PREPARED", "RESETTING", "RESET_UNKNOWN",
+                    "REPLACED", "RESET",
+                }:
+                    # A prepared external replacement must never be undone by
+                    # an unrelated Core observation after the replacement send.
+                    continue
                 # Do not create endless duplicate checks for a stable failed or
                 # already recovered state. Fresh evidence changes still reopen
                 # the same, scoped automatic recovery case.

@@ -1,9 +1,9 @@
 {
   "schema": "bct.component-library.bundle.v1",
-  "source_fingerprint": "993bf5ac9bc2cb7f51a3e0754ea615a9aa58d787101314a5e4ad972592e3f6d0",
+  "source_fingerprint": "e36ee8a6e964254a7039e76ee35e06c3f2599b83dfd35b7f595ed05033d5d628",
   "source_hashes": {
     "docs/CHAIN_MESSAGE_RECIPE_V2.md": "67793cf99755f2e094fbed7c01d85c23f185b18514fc720b0642389c285046be",
-    "docs/component-library.v1.json": "b40b939cee4480d5400624137ac09563c7b3cf6f1d52e6775c4be28337905f9a",
+    "docs/component-library.v1.json": "f9e818a303d3f3386b06ea79c70d5eeb5366c289f1591ea30effc66ae47eb04f",
     "modules/browser-bridge/extension/background.js": "b058aeb8fa8f37b8a21ae8b70be21d003e976a97e9e5ca884d7a98f5dced4472",
     "modules/browser-bridge/extension/chat_tools.js": "cc91898a0c30c58f5bee4e6b7fea991282ce5a21f100cfaeb220cc300e4ee85b",
     "modules/browser-bridge/extension/tool_protocol.js": "05e244e856af58705de1c1fc50a9a8d5e63b9ca2e8ba8674cabe8d9ea9a8563a",
@@ -19,13 +19,14 @@
     "modules/monitor/extension/monitor-window-hwnd-contract.js": "81b0050ba0231328ad3514b35e1d085e18afcf7315bf4674d3e5604a61b34e6e",
     "modules/rcc/extension/content/conversation_rename.js": "94199637687e133deb537d5011c260327b5a4cb06eaaffd673c1221f4a1c1027",
     "modules/rcc/extension/domain/conversation_rename_service.js": "a1462e7a55ce0922a5a56943b5d2c3b99710c5c0e941483550869254a8ecdaa5",
-    "src/bct/automatic_chain_recovery.py": "218d37f450ea4461ee17d28ee71e37d7ed382bbe2913ff62aedf2605f8afcdc1",
+    "src/bct/automatic_chain_recovery.py": "51f6a89c22893d078b5cdb533588b3676013c5525e5e89011fffad228397711c",
     "src/bct/automatic_manager_rebinding.py": "ceebd54e9292d14c7f2ddb00f3f026be9246550d2be2afa38536f0a33db789b2",
+    "src/bct/automatic_node_replacement.py": "5073167d8d8e22b261a725163e9cc25770717cac4946aa1dc5e1fd8ec4ac72e9",
     "src/bct/automatic_prepared_replacement.py": "89afd5da8e3a17e4c9ae06c19b18f7630c5f317fe6c3d094209e86aa24ad33ae",
     "src/bct/chain_direction.py": "69e40808ce756c014b795f9eaaf7f6d019cd72efce979c0bbb66770c236c423f",
     "src/bct/chain_entry_policy.py": "2f8b585702ed615deb83598fbb5755cb62315ad9e9454fe2caa2c8fdd28d7ecf",
     "src/bct/chain_execution_plan.py": "da98ae2aa5efa9593b9a748856e33fe9140d92c5bc45671105b402517988c61f",
-    "src/bct/chain_manager_recovery.py": "eae41e125d3771bc660484b3536940637b037b2dcb4382fec7c9bae69960f178",
+    "src/bct/chain_manager_recovery.py": "8af82a095e6a7928c96141a2ce8682d2c51d24f2f8688219e29117efdcc45b33",
     "src/bct/chain_recipe_blocks.py": "cffd9b97327cbe99dfe84eb8fb8f8a87973a6e3f7a5c8c8c08f0bf7badfd15fd",
     "src/bct/chain_recovery_context.py": "e698b740f472bf701ad7c786a675b1907a7c6f8136547747e8f2b5b9a70515c2",
     "src/bct/chat_input_queue.py": "0873721a88bdca3a84f16e5be9426a63360e98253ce02ceb6ec0dcf1fe9b3a87",
@@ -42,8 +43,8 @@
     "src/bct/features/owned_extension_action.py": "6c164bfb0cacf132940f16c15dfc9f653937b48a91d5e3e3ba648ad07e4bfa15",
     "src/bct/features/rcc.py": "f3b196df21df45ddf91897f893e84bf238e8738f18a366f1320a586fcf40a9a0",
     "src/bct/mcp_server.py": "5408749e6ee56bab64cced23b6f3889fdf002c363282a641e48d4bcc58551814",
-    "src/bct/node_recovery.py": "f375e905a7eb818d2bfa346a58b10b3cdfc5bf04d8147a869e6c3bb74cfa02d2",
-    "src/bct/runtime_server.py": "264cb197b0d2df2654d68570aa95889eb28c38717845a9bd09db338c67ac2711",
+    "src/bct/node_recovery.py": "0428ab8cc0ad5d7f0c4a744c178131a65c7e738677485fa1aa7c9fca381abc30",
+    "src/bct/runtime_server.py": "a7e8750c630c21162bcb49f273801fe0d8340848e3e5da8b6dcf57a4f44b21e6",
     "src/bct/send_delayed_message.py": "543b8877796862ae8e5e3f854ad0e05bb268881b53486feeeabab90a41c756e8",
     "src/bct/task_message.py": "c2dec08eb945f546ac548b8ce7d8da1ef39bdd774cd0ade25e046a53c58014ad"
   },
@@ -195,8 +196,8 @@
             "symbol": "AutomaticPreparedReplacement.run_once"
           },
           {
-            "path": "src/bct/automatic_prepared_replacement.py",
-            "symbol": "AutomaticPreparedReplacement.run_once"
+            "path": "src/bct/automatic_node_replacement.py",
+            "symbol": "AutomaticNodeReplacement.run_once"
           },
           {
             "path": "src/bct/node_recovery.py",
@@ -207,7 +208,7 @@
             "symbol": "automatic_chain_recovery_loop"
           }
         ],
-        "contract": "BCT Core automatically monitors every current exact A/B/C/S participant linked to active Chain Watches, unacknowledged Manager returns and saved live Direction relationships, even before the first Watch exists. One bounded fair scan reads the existing fresh RCC/Node Info snapshot, uses the original Work and assignment epoch to run durable Check/Recheck, preserves long GENERATING and UNKNOWN sensor conditions, and recognizes the same recovered UUID without replay or new Chat creation; finished Worker returns never trigger Worker replacement. User-requested recovery is a fallback, not a prerequisite. Global Supervisor replacements atomically rebind every Work-linked active Watch and unacknowledged return routing alias using one positively verified RCC instance/session/tab and actual successor UUID, preserving immutable original S and UNKNOWN, without adding a standby S. A formal, latest, SQLite-verifiable Manager role-transfer receipt with a positively connected exact successor can automatically and atomically rebind active Watch and unacknowledged return relations. An unavailable node without a confirmed successor remains RECOVERY_NEEDED; a fully prepared B/C/S replacement with a fresh exact UUID and observed inheritance response can be finalized automatically with NodeRecoveryLedger.commit_replace, but this partial recipe does not claim to create replacement Chats.",
+        "contract": "BCT Core automatically monitors every current exact A/B/C/S participant linked to active Chain Watches, unacknowledged Manager returns and saved live Direction relationships, even before the first Watch exists. One bounded fair scan reads the existing fresh RCC/Node Info snapshot, uses the original Work and assignment epoch to run durable Check/Recheck, preserves long GENERATING and UNKNOWN sensor conditions, and recognizes the same recovered UUID without replay or new Chat creation; finished Worker returns never trigger Worker replacement. User-requested recovery is a fallback, not a prerequisite. Global Supervisor replacements atomically rebind every Work-linked active Watch and unacknowledged return routing alias using one positively verified RCC instance/session/tab and actual successor UUID, preserving immutable original S and UNKNOWN, without adding a standby S. A formal, latest, SQLite-verifiable Manager role-transfer receipt with a positively connected exact successor can automatically and atomically rebind active Watch and unacknowledged return relations. An unavailable node without a confirmed successor remains RECOVERY_NEEDED; a fully prepared B/C/S replacement with a fresh exact UUID and observed inheritance response can be finalized automatically with NodeRecoveryLedger.commit_replace, and the original Core can create a replacement Chat automatically for a fresh, positively confirmed NEW_CHAT_REQUIRED original endpoint using one durable Work-scoped RCC new-chat-send/first-reply Operation, only if the original Work has existing browser authority. It verifies the actual UUID, exact RCC instance/session/tab, stored first reply hash, Role/Work/Task/Generation and atomic Replace without replaying UNKNOWN; all other missing/no-evidence nodes remain RECOVERY_NEEDED.",
         "effects": [
           "original-work-recovery-observations"
         ],

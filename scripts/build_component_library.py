@@ -19,6 +19,7 @@ FLOW_SOURCES = (
     "src/bct/chain_entry_policy.py", "src/bct/chain_recipe_blocks.py", "src/bct/chain_recovery_context.py",
     "src/bct/automatic_chain_recovery.py", "src/bct/automatic_manager_rebinding.py",
     "src/bct/automatic_prepared_replacement.py",
+    "src/bct/automatic_node_replacement.py",
     "src/bct/runtime_server.py",
     "src/bct/send_delayed_message.py", "src/bct/continuation_primitives.py",
     "src/bct/component_library.py", "src/bct/conversation_network.py",

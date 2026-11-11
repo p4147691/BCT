@@ -6,6 +6,7 @@ before any browser delivery so a recovered or successor Manager can read the
 exact state without replaying the Worker task.
 """
 from __future__ import annotations
+from contextlib import nullcontext
 
 import json
 import time
@@ -368,7 +369,7 @@ class ChainManagerRecoveryLedger:
     def rebind_active_manager_atomic(
         self, *, work_id: str, manager_conversation_key: str,
         manager_instance_id: str, succession_proofs: list[dict] | None = None,
-        require_latest_transfer: bool = False,
+        require_latest_transfer: bool = False, transaction=None,
     ) -> dict:
         """Rebind every active Watch and every unacknowledged return in one TX.
 
@@ -377,7 +378,11 @@ class ChainManagerRecoveryLedger:
         """
         proofs = succession_proofs or []
         when = time.time()
-        with self.store.transaction() as db:
+        # Node Recovery can share its existing SQLite transaction so the
+        # Manager role, Epoch-linked Watch and return binding move atomically.
+        # Existing direct callers still create their own transaction.
+        with (self.store.transaction()
+              if transaction is None else nullcontext(transaction)) as db:
             watches = list(db.execute(
                 "SELECT task_id,generation,context_json FROM delayed_send_watches "
                 "WHERE state IN ('WATCHING','RESERVED','PAUSED','MANAGER_RECOVERY_PENDING') "
