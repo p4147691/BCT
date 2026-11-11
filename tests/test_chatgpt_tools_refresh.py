@@ -1,6 +1,8 @@
 import json
 import subprocess
 import unittest
+import tomllib
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -17,6 +19,12 @@ class ToolsRefreshTests(unittest.TestCase):
         return self.f.prepare(work=self.work, arguments={
             "operation": "refresh_tools", "target": "bct_control", **extra,
         })
+
+    def test_refresh_helper_is_in_core_deployment_payload(self):
+        root = Path(__file__).resolve().parents[1]
+        policy = tomllib.loads((root / "bct.toml").read_text(encoding="utf-8"))
+        files = policy["deployment"]["profiles"]["bct_runtime_v1"]["files"]
+        self.assertIn("scripts/chatgpt_tools_refresh.cjs", files)
 
     def test_exact_target_and_arguments(self):
         q = self.refresh_request()

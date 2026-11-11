@@ -229,6 +229,7 @@ files = [
   "src/bct/features/browser_extension_manage.py",
   "src/bct/features/owned_extension_action.py",
   "scripts/browser_extension_manage.cjs",
+  "scripts/chatgpt_tools_refresh.cjs",
   "src/bct/features/process_session.py",
   "src/bct/features/snapshot.py",
   "src/bct/features/monitor.py",
