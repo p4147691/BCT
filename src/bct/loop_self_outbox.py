@@ -151,18 +151,31 @@ class LoopSelfOutbox:
                                 "status": "HELD", "reason": type(exc).__name__})
         return results
 
-    def list_delivered(self, *, limit=8):
+    def list_delivered(self, *, limit=8, after=None):
+        """Read a bounded rotating page without changing delivery evidence.
+
+        The immutable composite key is a scan cursor, never authorization.
+        Old source-mismatched responses remain DELIVERED but cannot monopolize
+        every pass. A restarted scanner begins at the first page safely.
+        """
         if not isinstance(limit,int) or not 1 <= limit <= 32:
             raise LoopStateError("LOOP_SELF_LIMIT_INVALID")
+        if after is not None and (not isinstance(after, tuple) or len(after) != 3
+                or not isinstance(after[0], str)
+                or type(after[1]) is not int or type(after[2]) is not int):
+            raise LoopStateError("LOOP_SELF_CURSOR_INVALID")
+        query = """SELECT o.* FROM loop_recipe_self_outbox o
+            JOIN loop_recipe_runs l ON l.work_id=o.work_id
+            WHERE o.state='DELIVERED' AND l.state='LOOP_STARTED'
+            AND o.conversation_key=l.owner"""
+        order = " ORDER BY o.work_id,o.epoch,o.step LIMIT ?"
         with self.store._readonly() as db:
-            return [dict(x) for x in db.execute(
-                """SELECT o.* FROM loop_recipe_self_outbox o
-                JOIN loop_recipe_runs l ON l.work_id=o.work_id
-                WHERE o.state='DELIVERED' AND l.state='LOOP_STARTED'
-                AND o.conversation_key=l.owner
-                ORDER BY o.updated_at,o.work_id LIMIT ?""",
-                (limit,),
-            ).fetchall()]
+            if after is not None:
+                rows = db.execute(query + " AND (o.work_id,o.epoch,o.step) > (?,?,?)" + order,
+                                  (*after, limit)).fetchall()
+                if rows:
+                    return [dict(x) for x in rows]
+            return [dict(x) for x in db.execute(query + order, (limit,)).fetchall()]
 
     def record_terminal_response(self, *, work_id, epoch, step, owner,
                                  response_turn_key, response_sha256,

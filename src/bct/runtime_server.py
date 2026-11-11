@@ -554,6 +554,7 @@ def main() -> int:
         from .loop_supervisor_handoff import LoopSupervisorHandoff
         review_handoff = LoopSupervisorHandoff(bct.store, bct.operations, bct.operations._features["browser"])
         previous_snapshot = None
+        delivered_cursor = None
         while not recovery_stop.is_set():
             try:
                 due = observer.scan(limit=8)
@@ -561,7 +562,10 @@ def main() -> int:
                     principal_id=MCP_PRINCIPAL_ID, limit=8,
                 )
                 pending = outbox.list_pending(limit=2)
-                delivered = outbox.list_delivered(limit=2)
+                delivered = outbox.list_delivered(limit=2, after=delivered_cursor)
+                if delivered:
+                    last = delivered[-1]
+                    delivered_cursor = (last["work_id"], last["epoch"], last["step"])
                 reviews = review_handoff.ledger.pending(limit=4)
                 review_outcomes = []
                 recovered = {"checked": 0, "results": [], "external_effect": "NONE"}

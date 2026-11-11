@@ -89,6 +89,47 @@ class LoopContinuationTests(unittest.TestCase):
         self.assertEqual(self.client.calls[0]["extra"]["conversationKey"], OWNER)
         self.assertEqual(self.out.get(work_id="w", epoch=1, step=1)["state"], "PENDING")
 
+    def test_rotating_scan_reaches_third_work_behind_two_stale_responses(self):
+        self.store.get_operation_for = lambda **kw: SimpleNamespace(
+            state=SimpleNamespace(value="FINISHED"), outcome=SimpleNamespace(value="APPLIED"))
+        originals = {}
+        for wid in ("a-old", "b-old"):
+            self.loop.start(work_id=wid, direction_id=wid, task_id=wid,
+                            owner=OWNER, plan_text="old plan", now=100)
+            self.out.queue(work_id=wid, epoch=1, step=0, owner=OWNER,
+                           message=wid, now=101)
+            self.out.reserve(work_id=wid, epoch=1, step=0, owner=OWNER, now=102)
+            self.out.reconcile(work_id=wid, epoch=1, step=0, principal_id="test", now=103)
+            originals[wid] = self.out.get(work_id=wid, epoch=1, step=0)
+        cursor = None
+        outcomes = []
+        pages = []
+        for _ in range(3):
+            rows = self.out.list_delivered(limit=2, after=cursor)
+            pages.append([r["work_id"] for r in rows])
+            if rows:
+                last = rows[-1]
+                cursor = (last["work_id"], last["epoch"], last["step"])
+            for row in rows:
+                outcomes.append(self.cont.observe_once(row=row, snapshot=snapshot(), now=116)["status"])
+        self.assertEqual(pages, [["a-old", "b-old"], ["w"], ["a-old", "b-old"]])
+        self.assertEqual(outcomes.count("NEXT_SELF_QUEUED"), 1)
+        self.assertEqual(outcomes.count("RESPONSE_SOURCE_UNVERIFIED"), 4)
+        self.assertEqual(self.out.get(work_id="w", epoch=1, step=0)["state"], "ACKED")
+        self.assertEqual(self.out.get(work_id="w", epoch=1, step=1)["state"], "PENDING")
+        for wid, original in originals.items():
+            self.assertEqual(self.out.get(work_id=wid, epoch=1, step=0), original)
+        # Restarting the reader cannot send or mutate any delivery evidence.
+        self.assertEqual([r["work_id"] for r in LoopSelfOutbox(self.store).list_delivered(limit=2)],
+                         ["a-old", "b-old"])
+
+    def test_scan_cursor_rejects_malformed_values(self):
+        from bct.loop_store import LoopStateError
+        for value in (["w", 1, 0], ("w", 1), ("w", True, 0), ("w", 1, "0")):
+            with self.assertRaisesRegex(LoopStateError, "LOOP_SELF_CURSOR_INVALID"):
+                self.out.list_delivered(limit=2, after=value)
+        self.assertEqual(self.out.get(work_id="w", epoch=1, step=0), self.row)
+
     def test_completed_run_stops_auto_response_polling(self):
         self.loop.complete(work_id="w",owner=OWNER,epoch=1,
                            verified=True,now=116)
