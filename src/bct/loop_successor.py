@@ -6,6 +6,7 @@ It must never infer a new UUID or replay an uncertain creation/send.
 """
 from __future__ import annotations
 import hashlib
+import json
 import re
 import time
 from bct.loop_store import LoopStore, LoopStateError
@@ -28,6 +29,11 @@ class LoopSuccessorLedger:
                 successor TEXT, response_turn_key TEXT,
                 response_sha TEXT, updated_at REAL NOT NULL,
                 handoff_text_sha TEXT)""")
+
+            db.execute("""CREATE TABLE IF NOT EXISTS loop_successor_history(
+                work_id TEXT NOT NULL, predecessor_epoch INTEGER NOT NULL,
+                case_json TEXT NOT NULL, archived_at REAL NOT NULL,
+                PRIMARY KEY(work_id, predecessor_epoch))""")
 
     def get(self,work_id):
         with self.store._readonly() as db:
@@ -73,6 +79,23 @@ class LoopSuccessorLedger:
         with self.store.transaction() as db:
             old=db.execute("SELECT * FROM loop_successor_cases WHERE work_id=?",
                            (work_id,)).fetchone()
+            current = db.execute("SELECT * FROM loop_recipe_runs WHERE work_id=?", (work_id,)).fetchone()
+            if (not current or current["owner"] != loop["owner"]
+                    or current["epoch"] != loop["epoch"] or current["lease_until"] > now
+                    or current["state"] != "LOOP_STARTED"
+                    or current["operation_state"] in {"UNKNOWN", "PREPARED"}):
+                raise LoopStateError("LOOP_SUCCESSOR_EPOCH_UNSAFE")
+            if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='loop_recipe_self_outbox'").fetchone():
+                if db.execute("SELECT 1 FROM loop_recipe_self_outbox WHERE work_id=? AND state IN ('UNCERTAIN','UNKNOWN') LIMIT 1",
+                              (work_id,)).fetchone():
+                    raise LoopStateError("LOOP_SELF_PRIOR_EFFECT_UNRESOLVED")
+            if old and old["state"] == "TAKEN_OVER":
+                if old["successor"] != loop["owner"] or old["predecessor_epoch"] >= loop["epoch"]:
+                    raise LoopStateError("LOOP_SUCCESSOR_CASE_CONFLICT")
+                db.execute("INSERT INTO loop_successor_history VALUES(?,?,?,?)",
+                           (work_id, old["predecessor_epoch"], json.dumps(dict(old), sort_keys=True), now))
+                db.execute("DELETE FROM loop_successor_cases WHERE work_id=?", (work_id,))
+                old = None
             if old:
                 if (old["predecessor"]!=loop["owner"] or
                     old["predecessor_epoch"]!=loop["epoch"] or
@@ -233,6 +256,8 @@ class LoopSuccessorLedger:
     def finish(self,*,work_id,now=None):
         """Atomic Loop Epoch transfer after all proven predecessor handoff gates."""
         now=time.time() if now is None else now
+        from bct.loop_self_outbox import LoopSelfOutbox
+        LoopSelfOutbox(self.store)
         with self.store.transaction() as db:
             case=db.execute("SELECT * FROM loop_successor_cases WHERE work_id=?",
                             (work_id,)).fetchone()
@@ -241,6 +266,7 @@ class LoopSuccessorLedger:
             loop=db.execute("SELECT * FROM loop_recipe_runs WHERE work_id=?",
                             (work_id,)).fetchone()
             if (not loop or loop["owner"]!=case["predecessor"] or
+                loop["state"]!="LOOP_STARTED" or
                 loop["epoch"]!=case["predecessor_epoch"] or
                 loop["lease_until"]>now or
                 loop["operation_state"] in {"PREPARED","UNKNOWN","APPLIED"}):
@@ -262,6 +288,9 @@ class LoopSuccessorLedger:
             ).fetchone()
             if not predecessor_fence:
                 raise LoopStateError("LOOP_SUCCESSOR_PREDECESSOR_NOT_FENCED")
+            if db.execute("""SELECT 1 FROM loop_recipe_self_outbox
+                    WHERE work_id=? AND state IN ('UNCERTAIN','UNKNOWN') LIMIT 1""", (work_id,)).fetchone():
+                raise LoopStateError("LOOP_SELF_PRIOR_EFFECT_UNRESOLVED")
             new_epoch=loop["epoch"]+1
             # Protect unsent intents; old external effects are never transferred.
             db.execute("""UPDATE loop_recipe_runs SET owner=?,epoch=?,
@@ -272,6 +301,24 @@ class LoopSuccessorLedger:
                     conversation_key=?,updated_at=? WHERE work_id=?
                     AND epoch=? AND state='PENDING'""",
                     (new_epoch,case["successor"],now,work_id,loop["epoch"]))
+            # Persist a new resume instruction with the Epoch transfer. This
+            # never replays the predecessor's send or task operation.
+            if not db.execute("SELECT 1 FROM loop_recipe_self_outbox WHERE work_id=? AND epoch=? AND state='PENDING'",
+                              (work_id, new_epoch)).fetchone():
+                message = (
+                    "[BCT LOOP RESUME AFTER VERIFIED SUCCESSION]\n"
+                    f"Work ID: {work_id}\nDirection ID: {loop['direction_id']}\n"
+                    f"Task ID: {loop['task_id']}\nOwner UUID: {case['successor']}\n"
+                    f"Epoch: {new_epoch}\nNext incomplete step: {loop['next_step']}\n"
+                    f"Plan SHA256: {loop['plan_sha256']}\n"
+                    "Read the saved plan, original operation receipts and current Epoch first. "
+                    "Continue only the next uncompleted step under this Epoch. Never replay "
+                    "APPLIED or UNKNOWN operations. Return to Manager if the receipts are uncertain."
+                )
+                op = "loop-self-" + hashlib.sha256(f"{work_id}:{new_epoch}:{loop['next_step']}".encode()).hexdigest()[:24]
+                db.execute("INSERT INTO loop_recipe_self_outbox VALUES(?,?,?,?,?,?,?,'PENDING',?,?)",
+                           (work_id,new_epoch,loop["next_step"],case["successor"],op,message,
+                            hashlib.sha256(message.encode()).hexdigest(),now,now))
             db.execute("""UPDATE loop_successor_cases SET state='TAKEN_OVER',
                 updated_at=? WHERE work_id=?""",(now,work_id))
             seq=db.execute("SELECT COALESCE(MAX(event_seq),0)+1 FROM loop_recipe_events WHERE work_id=?",
