@@ -106,7 +106,8 @@ class LoopSuccessorSupervisor:
                 outcomes.append({"work_id":work_id,"status":"PREFER_ORIGINAL_NODE"})
                 continue
             try:
-                if case is None:
+                if case is None or (case["state"] == "TAKEN_OVER"
+                                    and case["predecessor_epoch"] < run["epoch"]):
                     if prior_snapshot is None:
                         raise LoopStateError("LOOP_SUCCESSOR_RECHECK_REQUIRED")
                     instance,window=self._origin_route(snapshot,old)
