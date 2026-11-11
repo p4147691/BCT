@@ -1,0 +1,908 @@
+{
+  "schemaVersion": 1,
+  "kind": "RCC_REBUILD_V2_RC",
+  "candidate": "RCC_LOOP_FOCUS_SETTLE_20261111",
+  "sourceRoot": "modules/rcc/extension",
+  "candidateInventory": {
+    "fileCount": 58,
+    "files": [
+      {
+        "path": "background.js",
+        "size": 158,
+        "sha256": "585ae34ee0af8531362f384e4c11a903b1c23056ad61c15d0edec3c826fbe450"
+      },
+      {
+        "path": "background_loader.js",
+        "size": 1941,
+        "sha256": "0777a01f11c2cb2424c22d5155313bade31e858e390a4dc3e0984ebbf1c5bcfd"
+      },
+      {
+        "path": "boot/background_app.js",
+        "size": 1549,
+        "sha256": "f617a6eb8b5a48989d019b275aa2139b10f05a681a3da62c846627c72de8e88e"
+      },
+      {
+        "path": "boot/platform_context.js",
+        "size": 1965,
+        "sha256": "1b58dfdadc7091eb956dfbc7b1e0ab08b49a99e6b4618f4abca7c9baefd13852"
+      },
+      {
+        "path": "browser/read_adapter.js",
+        "size": 1911,
+        "sha256": "f9ba6e73a95fed8d622878792e3f752924fef5c9b3c6aed255178abe85ad6f88"
+      },
+      {
+        "path": "browser/tab_close_adapter.js",
+        "size": 2935,
+        "sha256": "a6a867c14312ac5e9b1ab5d4772b3b77a7b533597e5d411cd5046c76c3eea80b"
+      },
+      {
+        "path": "browser/tab_close_contract.js",
+        "size": 3508,
+        "sha256": "6ed39d6681b34f59bfc688014d8bc2dd17c8aa3b024389620b29037e01139094"
+      },
+      {
+        "path": "browser/tab_create_adapter.js",
+        "size": 3941,
+        "sha256": "a805cbf6cdf0d3d9f2b636b35b56e86bae559b7234c0cacf3aca2323011d0908"
+      },
+      {
+        "path": "browser/tab_create_contract.js",
+        "size": 3933,
+        "sha256": "eda1b67c38d0a921817db1c4a79617d51dd6214b879a79dda64366a44bb2531a"
+      },
+      {
+        "path": "browser/tab_group_adapter.js",
+        "size": 6824,
+        "sha256": "533c8bf34a4191c22e48a02ab6a719e21112939cf35c733f1cd89dd7f11e2d11"
+      },
+      {
+        "path": "browser/tab_group_contract.js",
+        "size": 5773,
+        "sha256": "d98df36688894c2861be8bb681a3896908006d35cfac53d45049b7c9b9ecebb6"
+      },
+      {
+        "path": "browser/tab_move_adapter.js",
+        "size": 3591,
+        "sha256": "d1c07aa32664046bf71e758712b6ff39950726235164434f40161864265c510b"
+      },
+      {
+        "path": "browser/tab_move_contract.js",
+        "size": 3281,
+        "sha256": "928f1e3f2a6f39dcd7dc98193e180f7031ff8945e356b0c01ae7c8281f726741"
+      },
+      {
+        "path": "browser/tab_reload_adapter.js",
+        "size": 5007,
+        "sha256": "c718794a1a2ed8bd7cef64497974cc7c2a25e77de0c9d63ff1f7434c25b803c3"
+      },
+      {
+        "path": "browser/tab_reload_contract.js",
+        "size": 3386,
+        "sha256": "c8edc11fe701d825dbbaa786d3ba645c5d392714e002961db182e29cd9e4677c"
+      },
+      {
+        "path": "browser/window_create_adapter.js",
+        "size": 3840,
+        "sha256": "b1434cb8edacc7c7a5f929d436281218e62635e445501da63b3f80291066edea"
+      },
+      {
+        "path": "browser/window_create_contract.js",
+        "size": 3295,
+        "sha256": "5ca8489ecb1712f839f7d02a9b26bdfee854262a4c25a437c18b72efd4b53fd1"
+      },
+      {
+        "path": "content.js",
+        "size": 454,
+        "sha256": "4dfc55e1a027919a34beee0df85e9578914b12ba7bc9d03f1fe5fc55f22374e2"
+      },
+      {
+        "path": "content/activity_reporter.js",
+        "size": 12987,
+        "sha256": "cb1d081207df53400778ba0a7785a40beb8d93c1ee513f9ea0dc7c702551be75"
+      },
+      {
+        "path": "content/content_router.js",
+        "size": 29934,
+        "sha256": "adb4c01bf4d44b48cc0f9d79485f3921fdc0b9f601e95319d90b43417aa61c92"
+      },
+      {
+        "path": "content/conversation_dom.js",
+        "size": 26012,
+        "sha256": "1659bd70601b875d3b4ba3ce6bcd0ebf1ed60c1ac7bc250224d786578ad82f4e"
+      },
+      {
+        "path": "content/conversation_rename.js",
+        "size": 36952,
+        "sha256": "94199637687e133deb537d5011c260327b5a4cb06eaaffd673c1221f4a1c1027"
+      },
+      {
+        "path": "content/orchestration_relay_executor.js",
+        "size": 6632,
+        "sha256": "f749789062315f31b8e88b616f60e931edad5eb59674be8f94853cf23c2188b5"
+      },
+      {
+        "path": "content/simple_relay_executor.js",
+        "size": 42845,
+        "sha256": "c2b0764a11e96e533d8709245468af992520520b95fdbf6a73baa9e0875492ea"
+      },
+      {
+        "path": "core/conversation.js",
+        "size": 3105,
+        "sha256": "6f0ba1f2238442af9974ffd57c9835b09f7ea231176f237164917f8338647d89"
+      },
+      {
+        "path": "core/identity.js",
+        "size": 2050,
+        "sha256": "75dc244d9d6fa723abf66fe00eb98e4129852159f9c712fa260d0fdd00f5b78e"
+      },
+      {
+        "path": "core/shadow.js",
+        "size": 3710,
+        "sha256": "c29651c0096f5aa7d424997025fd5e0fd6328b9392fbe2e40f8c44eaf4afd228"
+      },
+      {
+        "path": "core/state.js",
+        "size": 3106,
+        "sha256": "c963e185259139435875281cd13c6e920a7f862b839c514b6b8f4c32255686ac"
+      },
+      {
+        "path": "core/transport.js",
+        "size": 1985,
+        "sha256": "8b89dd65a24fa6dceb97d853c7d4e5da36c9f42d086ee3ddc0ea4e11d4307233"
+      },
+      {
+        "path": "domain/atomic_chat_service.js",
+        "size": 12134,
+        "sha256": "861e40a18a9af8d44bc7c2a91595ad3c553a2cadf9b3aea0ea550148fcfc7b24"
+      },
+      {
+        "path": "domain/conversation_rename_service.js",
+        "size": 24122,
+        "sha256": "a1462e7a55ce0922a5a56943b5d2c3b99710c5c0e941483550869254a8ecdaa5"
+      },
+      {
+        "path": "domain/delivery_ledger_service.js",
+        "size": 45861,
+        "sha256": "035e5442d9f87b578815d545ae6e7a5558537c6369d50da2c4e20377d73c6f02"
+      },
+      {
+        "path": "domain/diagnostic_support.js",
+        "size": 14210,
+        "sha256": "e3de3b0e0f1469feae77cc26c826e1722ae78b9995bb8940705f71ea68ab8791"
+      },
+      {
+        "path": "domain/endpoint_service.js",
+        "size": 9384,
+        "sha256": "b25d04fefb436739bb23529cfca8d2e9ecd02a17e55c826af5252e9a0703bf41"
+      },
+      {
+        "path": "domain/exact_tab_send_service.js",
+        "size": 8192,
+        "sha256": "a0b242edb2b57da249597964b1a94bf91caedf9bdba9565506aa0a0567ddb323"
+      },
+      {
+        "path": "domain/new_chat_service.js",
+        "size": 13577,
+        "sha256": "5c670686b8f03be0ca82ec65c63316bd5f55a460eb82726384f64ffd3a5f0d3a"
+      },
+      {
+        "path": "domain/node_favicon_notify_service.js",
+        "size": 3175,
+        "sha256": "29bf1bb7cf4bb753676c177e3fde1b9afebd0c26cdc358886957f6a4ad997af5"
+      },
+      {
+        "path": "domain/orchestration_relay_service.js",
+        "size": 13449,
+        "sha256": "e0a64017d5f54631935b21156be8e00e6207809532f0d9163f08b37ae510194c"
+      },
+      {
+        "path": "domain/readonly_diagnostics.js",
+        "size": 36727,
+        "sha256": "8720aebf05b6ba74202335902bcef0477daf8da21858ff4432245308a771eb41"
+      },
+      {
+        "path": "domain/runtime_message_service.js",
+        "size": 5483,
+        "sha256": "d9426dc1b6d4eb66d5ee6de5064a8515e9c9fb652938de884ecad4182033660b"
+      },
+      {
+        "path": "domain/simple_relay_receipts.js",
+        "size": 3312,
+        "sha256": "f46561ce7e73b7342a3fc18476229d4969977ff5b0a3dced20f5b1ad85e35689"
+      },
+      {
+        "path": "domain/simple_relay_service.js",
+        "size": 7869,
+        "sha256": "dbb0019ab1ad75aa5dd63598db69c1942d38e9ba15f20be521948f05cf5ea8d0"
+      },
+      {
+        "path": "domain/state_service.js",
+        "size": 2675,
+        "sha256": "3553f3e8447500de35b3eb6e9eea0e4b18c11f741c6969ef5186ed1548cf55ef"
+      },
+      {
+        "path": "domain/tab_group_service.js",
+        "size": 5063,
+        "sha256": "726ece0bc09f322f1a6b23e912109fd7a670f3d651f8056e9ce5df6af9ad5385"
+      },
+      {
+        "path": "legacy/command_policy.js",
+        "size": 8706,
+        "sha256": "1e64df69b1a9a51d155f13e1628c3195b9f3f16e84c8e9ef89c471183a539a37"
+      },
+      {
+        "path": "manifest.json",
+        "size": 1526,
+        "sha256": "21c801fbee54d8e8cc4e81c0bb3d1a12f2bebe5c1b1a697a13a00a5862b6c89e"
+      },
+      {
+        "path": "network/directory.js",
+        "size": 6440,
+        "sha256": "04bda2f4b770581d8ec1376652dfb7c7514a2a70e27d80ccc0c1d5be5dc4beb9"
+      },
+      {
+        "path": "platform/browser_gateway.js",
+        "size": 3470,
+        "sha256": "b36d0cb4a557fe8acf4c5045cf18e29d14484806e26389936e1f15a5edd0a6dc"
+      },
+      {
+        "path": "platform/chrome_state_repository.js",
+        "size": 1248,
+        "sha256": "b5adbc7ad4b01be74c26f4504ce33434866f5473384dda16ff6b77bb831f4c90"
+      },
+      {
+        "path": "platform/lifecycle.js",
+        "size": 1687,
+        "sha256": "78a716c5b8259a424c9c58b134425c26d764dd8698e1ff33e9b72a9bcc952113"
+      },
+      {
+        "path": "platform/native_transport.js",
+        "size": 1598,
+        "sha256": "0f3884617b398ffa844b355b438088204714e4ec43b49424c39c8b3aacb6bf75"
+      },
+      {
+        "path": "platform/observation_gateway.js",
+        "size": 949,
+        "sha256": "2574fa66cfacf2878e5387b72f7a918cd0d7b0292d1f5b94de66986ca49ed363"
+      },
+      {
+        "path": "popup.css",
+        "size": 1086,
+        "sha256": "2d9916e615639f64bcc894275a22fe21643c90fb9003d247b47c22ae1c6be6eb"
+      },
+      {
+        "path": "popup.html",
+        "size": 641,
+        "sha256": "2d281ff32e3676efdb778a269abb32eed0c52e90a80a656c88551637bb52f68d"
+      },
+      {
+        "path": "popup.js",
+        "size": 2252,
+        "sha256": "fa7547aae4484abef5896737587cb5d865d3e8c05e85008fc78666344b59316d"
+      },
+      {
+        "path": "relay/contract.js",
+        "size": 2859,
+        "sha256": "b3a5da62b00859b9386850b7601accab856e32b53eaa263f1d4de9135bc44205"
+      },
+      {
+        "path": "relay/envelope.js",
+        "size": 3163,
+        "sha256": "77a6d19cbb7fac2c7fb8bbe8e680607a9370a8d54d6b5f2aba84ffdcc6b17d10"
+      },
+      {
+        "path": "relay_core.js",
+        "size": 6801,
+        "sha256": "b3ad92bc20564a905bffc37f3e524e2c8e8c5ae71c02517a301cedd5cf1341cd"
+      }
+    ],
+    "aggregateSha256": "2a73b20116f40bcbfa99fdf2dc6b46ccccbd4c16decc5965788a9c240fc5d516"
+  },
+  "activeLoaderGraph": {
+    "background": [
+      "core/identity.js",
+      "core/state.js",
+      "core/conversation.js",
+      "core/transport.js",
+      "core/shadow.js",
+      "platform/chrome_state_repository.js",
+      "platform/browser_gateway.js",
+      "platform/native_transport.js",
+      "platform/observation_gateway.js",
+      "platform/lifecycle.js",
+      "browser/tab_create_contract.js",
+      "browser/tab_create_adapter.js",
+      "browser/window_create_contract.js",
+      "browser/window_create_adapter.js",
+      "browser/tab_move_contract.js",
+      "browser/tab_move_adapter.js",
+      "browser/tab_group_contract.js",
+      "browser/tab_group_adapter.js",
+      "browser/tab_close_contract.js",
+      "browser/tab_close_adapter.js",
+      "relay_core.js",
+      "network/directory.js",
+      "relay/contract.js",
+      "relay/envelope.js",
+      "legacy/command_policy.js",
+      "boot/platform_context.js",
+      "domain/state_service.js",
+      "domain/simple_relay_receipts.js",
+      "domain/endpoint_service.js",
+      "domain/diagnostic_support.js",
+      "domain/simple_relay_service.js",
+      "domain/delivery_ledger_service.js",
+      "domain/orchestration_relay_service.js",
+      "domain/new_chat_service.js",
+      "domain/atomic_chat_service.js",
+      "domain/tab_group_service.js",
+      "domain/exact_tab_send_service.js",
+      "domain/conversation_rename_service.js",
+      "domain/node_favicon_notify_service.js",
+      "domain/readonly_diagnostics.js",
+      "domain/runtime_message_service.js",
+      "boot/background_app.js",
+      "background.js"
+    ],
+    "content": [
+      "relay_core.js",
+      "content/conversation_dom.js",
+      "content/simple_relay_executor.js",
+      "content/orchestration_relay_executor.js",
+      "content/conversation_rename.js",
+      "content/content_router.js",
+      "content/activity_reporter.js",
+      "content.js"
+    ]
+  },
+  "dependencyRules": {
+    "direction": [
+      "boot -> domain -> platform",
+      "content_router -> content modules"
+    ],
+    "domainWithoutChromeApi": [
+      "domain/state_service.js",
+      "domain/simple_relay_receipts.js",
+      "domain/endpoint_service.js",
+      "domain/diagnostic_support.js",
+      "domain/simple_relay_service.js",
+      "domain/delivery_ledger_service.js",
+      "domain/orchestration_relay_service.js",
+      "domain/new_chat_service.js",
+      "domain/atomic_chat_service.js",
+      "domain/tab_group_service.js",
+      "domain/conversation_rename_service.js",
+      "domain/readonly_diagnostics.js",
+      "domain/runtime_message_service.js",
+      "domain/exact_tab_send_service.js"
+    ]
+  },
+  "optionalBrowserPayload": [
+    "browser/read_adapter.js",
+    "browser/tab_reload_contract.js",
+    "browser/tab_reload_adapter.js"
+  ],
+  "excludedLegacyPayload": [
+    "act_bridge.js",
+    "act_command_bridge.js",
+    "act_content.js",
+    "activity_bridge.js",
+    "simple_relay_v0.js"
+  ],
+  "contracts": {
+    "extensionId": "ocbidbaplechjjdacmokhnfbdmgjkphf",
+    "chromeApi": {
+      "permissions": [
+        "scripting",
+        "nativeMessaging",
+        "storage",
+        "tabs",
+        "tabGroups"
+      ],
+      "hostPermissions": [
+        "https://chatgpt.com/*",
+        "https://chat.openai.com/*"
+      ],
+      "boundary": "Content Script -> validated runtime message -> Service Worker -> Platform Adapter"
+    },
+    "messageMatrix": {
+      "nativeNewRelay": [
+        "simple-relay-bind",
+        "simple-relay-send",
+        "simple-relay-return",
+        "delivery-start",
+        "delivery-cancel",
+        "delivery-status",
+        "delivery-return",
+        "retire-composer-draft",
+        "retire-recovered-execution",
+        "new-chat-send"
+      ],
+      "nativeConversation": [
+        "rename-conversation",
+        "rename-dot",
+        "conversation-bind"
+      ],
+      "nativeAtomicChat": [
+        "create-chat-tab",
+        "create-chat-window",
+        "send-to-created-tab",
+        "move-tab",
+        "create-tab-group",
+        "add-tab-to-group",
+        "remove-tab-from-group",
+        "move-tab-group",
+        "update-tab-group",
+        "close-conversation-tab"
+      ],
+      "nativeOrchestration": [
+        "send"
+      ],
+      "nativeReadOnly": [
+        "ping",
+        "presence",
+        "state",
+        "result",
+        "rename-receipt",
+        "probe",
+        "probe-tabs",
+        "diagnose-activity",
+        "diagnose-composer",
+        "diagnose-conversation-ui",
+        "api-probe",
+        "main-capture-get",
+        "delivery-manager-status",
+        "delivery-response-read",
+        "delivery-recovery-inspect",
+        "tab-get",
+        "windows-list",
+        "window-get",
+        "tab-groups-list",
+        "tab-group-get",
+        "read-latest-assistant"
+      ],
+      "nativeMaintenance": [
+        "reload-extension"
+      ],
+      "nativeBlockedLegacy": [
+        "clear-relay-state",
+        "conversation-bootstrap-bind",
+        "ensure",
+        "main-capture-install",
+        "manager-promote",
+        "recover-created-result",
+        "recover-pending",
+        "register",
+        "reload-workers",
+        "result-ack",
+        "send-wakeback"
+      ],
+      "runtimeReadOnly": [
+        "relay:getPendingStatus",
+        "relay:getState",
+        "relay:activity"
+      ],
+      "runtimeOrchestration": [
+        "relay:orchestrationAuthorize",
+        "relay:orchestrationResult"
+      ],
+      "runtimeBlockedLegacy": [
+        "relay:actDirectTask",
+        "relay:actLocalExecution",
+        "relay:actWorkerOperation",
+        "relay:actNaturalCommand",
+        "relay:actBootstrapResync",
+        "relay:forceRefresh",
+        "relay:authorizeInjection",
+        "relay:consumeBindingLease",
+        "relay:register",
+        "relay:arm",
+        "relay:manualSend",
+        "relay:bootstrap",
+        "relay:hello",
+        "relay:returnDelivered",
+        "relay:deliveryReady",
+        "relay:autoDirective",
+        "relay:workerResult"
+      ],
+      "contentAccepted": [
+        "relay:activityProbe",
+        "relay:readLatestAssistant",
+        "relay:deliveryReadiness",
+        "relay:deliveryRecoveryProof",
+        "relay:exactReplyProof",
+        "relay:exactUserTurnProof",
+        "relay:newChatExecute",
+        "relay:newChatStatus",
+        "relay:orchestrationExecute",
+        "relay:probe",
+        "relay:recoverExecution",
+        "relay:renameConversation",
+        "relay:renameDot",
+        "relay:retireComposerDraft",
+        "relay:retireExecution",
+        "relay:simpleExecute",
+        "relay:simpleReadReply",
+        "relay:nodeLabelNotify"
+      ],
+      "popupAccepted": [
+        "relay:getState"
+      ],
+      "nativeNodeLabel": [
+        "node-label-notify"
+      ]
+    },
+    "storage": {
+      "chromeLocal": [
+        "registrations",
+        "settings",
+        "pending",
+        "results",
+        "processed",
+        "operations",
+        "relayResultReceiptsV1",
+        "renameReceiptsV1",
+        "bindingSubmitLeasesV1",
+        "simpleRelayV0Binding",
+        "simpleRelayV0Receipts",
+        "newChatReceiptsV1",
+        "tabGroupReceiptsV1",
+        "deliveryLedgerMirrorV1",
+        "exactTabSendReceiptsV1"
+      ],
+      "chromeSession": [
+        "rccEndpointSessionIdV1"
+      ],
+      "pageSession": [
+        "relayActiveExecutionV1",
+        "relayDeferredQueueV1",
+        "dwActTelemetryV1"
+      ]
+    },
+    "wire": {
+      "nativeHostName": "com.ai_workspace_relay.host",
+      "allowedOrigin": "chrome-extension://ocbidbaplechjjdacmokhnfbdmgjkphf/",
+      "nativeInbound": [
+        "host:command"
+      ],
+      "nativeOutbound": [
+        "host:ready",
+        "host:endpoints",
+        "host:ack",
+        "host:result"
+      ],
+      "content": [
+        "relay:recoverExecution",
+        "relay:activityProbe",
+        "relay:readLatestAssistant",
+        "relay:probe",
+        "relay:simpleExecute",
+        "relay:simpleReadReply",
+        "relay:orchestrationExecute",
+        "relay:newChatExecute",
+        "relay:newChatStatus",
+        "relay:renameConversation",
+        "relay:renameDot",
+        "relay:deliveryRecoveryProof",
+        "relay:exactUserTurnProof",
+        "relay:exactReplyProof",
+        "relay:deliveryReadiness",
+        "relay:retireComposerDraft",
+        "relay:retireExecution",
+        "relay:nodeLabelNotify"
+      ],
+      "runtime": [
+        "relay:getPendingStatus",
+        "relay:getState",
+        "relay:activity",
+        "relay:orchestrationAuthorize",
+        "relay:orchestrationResult"
+      ]
+    }
+  },
+  "rollbackPlan": "modules/rcc/release/ROLLBACK.md",
+  "rollbackPlanSha256": "4d86d4d1bad5b3f5847ea215b9a5daeaaf51bdc8021fb81cb818df2b5b305dc1",
+  "rollbackBaseline": {
+    "fileCount": 58,
+    "files": [
+      {
+        "path": "background.js",
+        "size": 158,
+        "sha256": "585ae34ee0af8531362f384e4c11a903b1c23056ad61c15d0edec3c826fbe450"
+      },
+      {
+        "path": "background_loader.js",
+        "size": 1941,
+        "sha256": "0777a01f11c2cb2424c22d5155313bade31e858e390a4dc3e0984ebbf1c5bcfd"
+      },
+      {
+        "path": "boot/background_app.js",
+        "size": 1549,
+        "sha256": "f617a6eb8b5a48989d019b275aa2139b10f05a681a3da62c846627c72de8e88e"
+      },
+      {
+        "path": "boot/platform_context.js",
+        "size": 1964,
+        "sha256": "c356ce6e9ee7faac2abdcc1042d9708c9ee1cf99ecc6a365f62bcd1283a7431f"
+      },
+      {
+        "path": "browser/read_adapter.js",
+        "size": 1911,
+        "sha256": "f9ba6e73a95fed8d622878792e3f752924fef5c9b3c6aed255178abe85ad6f88"
+      },
+      {
+        "path": "browser/tab_close_adapter.js",
+        "size": 2935,
+        "sha256": "a6a867c14312ac5e9b1ab5d4772b3b77a7b533597e5d411cd5046c76c3eea80b"
+      },
+      {
+        "path": "browser/tab_close_contract.js",
+        "size": 3508,
+        "sha256": "6ed39d6681b34f59bfc688014d8bc2dd17c8aa3b024389620b29037e01139094"
+      },
+      {
+        "path": "browser/tab_create_adapter.js",
+        "size": 3941,
+        "sha256": "a805cbf6cdf0d3d9f2b636b35b56e86bae559b7234c0cacf3aca2323011d0908"
+      },
+      {
+        "path": "browser/tab_create_contract.js",
+        "size": 3933,
+        "sha256": "eda1b67c38d0a921817db1c4a79617d51dd6214b879a79dda64366a44bb2531a"
+      },
+      {
+        "path": "browser/tab_group_adapter.js",
+        "size": 6824,
+        "sha256": "533c8bf34a4191c22e48a02ab6a719e21112939cf35c733f1cd89dd7f11e2d11"
+      },
+      {
+        "path": "browser/tab_group_contract.js",
+        "size": 5773,
+        "sha256": "d98df36688894c2861be8bb681a3896908006d35cfac53d45049b7c9b9ecebb6"
+      },
+      {
+        "path": "browser/tab_move_adapter.js",
+        "size": 3591,
+        "sha256": "d1c07aa32664046bf71e758712b6ff39950726235164434f40161864265c510b"
+      },
+      {
+        "path": "browser/tab_move_contract.js",
+        "size": 3281,
+        "sha256": "928f1e3f2a6f39dcd7dc98193e180f7031ff8945e356b0c01ae7c8281f726741"
+      },
+      {
+        "path": "browser/tab_reload_adapter.js",
+        "size": 5007,
+        "sha256": "c718794a1a2ed8bd7cef64497974cc7c2a25e77de0c9d63ff1f7434c25b803c3"
+      },
+      {
+        "path": "browser/tab_reload_contract.js",
+        "size": 3386,
+        "sha256": "c8edc11fe701d825dbbaa786d3ba645c5d392714e002961db182e29cd9e4677c"
+      },
+      {
+        "path": "browser/window_create_adapter.js",
+        "size": 3840,
+        "sha256": "b1434cb8edacc7c7a5f929d436281218e62635e445501da63b3f80291066edea"
+      },
+      {
+        "path": "browser/window_create_contract.js",
+        "size": 3295,
+        "sha256": "5ca8489ecb1712f839f7d02a9b26bdfee854262a4c25a437c18b72efd4b53fd1"
+      },
+      {
+        "path": "content.js",
+        "size": 454,
+        "sha256": "4dfc55e1a027919a34beee0df85e9578914b12ba7bc9d03f1fe5fc55f22374e2"
+      },
+      {
+        "path": "content/activity_reporter.js",
+        "size": 12987,
+        "sha256": "cb1d081207df53400778ba0a7785a40beb8d93c1ee513f9ea0dc7c702551be75"
+      },
+      {
+        "path": "content/content_router.js",
+        "size": 28702,
+        "sha256": "31b4e52fba75260b2a91a4c7cec858c71d730a465a2e199295252c7db6325ce0"
+      },
+      {
+        "path": "content/conversation_dom.js",
+        "size": 23049,
+        "sha256": "c0ec659fbf07302adec32027e4b5a0452d096357b633ad6c8843640afb83a699"
+      },
+      {
+        "path": "content/conversation_rename.js",
+        "size": 13745,
+        "sha256": "fa14a0d52eca1d16b51bb772727711b0662c0bb3859bd81e07a90998dac4f4fa"
+      },
+      {
+        "path": "content/orchestration_relay_executor.js",
+        "size": 6632,
+        "sha256": "f749789062315f31b8e88b616f60e931edad5eb59674be8f94853cf23c2188b5"
+      },
+      {
+        "path": "content/simple_relay_executor.js",
+        "size": 41826,
+        "sha256": "de73e4b56a5ddafeb8be728e46035b3f04b430392491bfab4bb8a678981a2d47"
+      },
+      {
+        "path": "core/conversation.js",
+        "size": 3105,
+        "sha256": "6f0ba1f2238442af9974ffd57c9835b09f7ea231176f237164917f8338647d89"
+      },
+      {
+        "path": "core/identity.js",
+        "size": 2050,
+        "sha256": "75dc244d9d6fa723abf66fe00eb98e4129852159f9c712fa260d0fdd00f5b78e"
+      },
+      {
+        "path": "core/shadow.js",
+        "size": 3710,
+        "sha256": "c29651c0096f5aa7d424997025fd5e0fd6328b9392fbe2e40f8c44eaf4afd228"
+      },
+      {
+        "path": "core/state.js",
+        "size": 3106,
+        "sha256": "c963e185259139435875281cd13c6e920a7f862b839c514b6b8f4c32255686ac"
+      },
+      {
+        "path": "core/transport.js",
+        "size": 1985,
+        "sha256": "8b89dd65a24fa6dceb97d853c7d4e5da36c9f42d086ee3ddc0ea4e11d4307233"
+      },
+      {
+        "path": "domain/atomic_chat_service.js",
+        "size": 12134,
+        "sha256": "861e40a18a9af8d44bc7c2a91595ad3c553a2cadf9b3aea0ea550148fcfc7b24"
+      },
+      {
+        "path": "domain/conversation_rename_service.js",
+        "size": 5015,
+        "sha256": "729f18567c9e1425c63cc89f7f37b725a56e09e121353c07ec43ca55de13dfdc"
+      },
+      {
+        "path": "domain/delivery_ledger_service.js",
+        "size": 45861,
+        "sha256": "035e5442d9f87b578815d545ae6e7a5558537c6369d50da2c4e20377d73c6f02"
+      },
+      {
+        "path": "domain/diagnostic_support.js",
+        "size": 12770,
+        "sha256": "e3afe41d8e01b71657d3ee2394b5ccdb4ace77e28d54104346d8feb97cad169f"
+      },
+      {
+        "path": "domain/endpoint_service.js",
+        "size": 9384,
+        "sha256": "b25d04fefb436739bb23529cfca8d2e9ecd02a17e55c826af5252e9a0703bf41"
+      },
+      {
+        "path": "domain/exact_tab_send_service.js",
+        "size": 8192,
+        "sha256": "a0b242edb2b57da249597964b1a94bf91caedf9bdba9565506aa0a0567ddb323"
+      },
+      {
+        "path": "domain/new_chat_service.js",
+        "size": 13577,
+        "sha256": "5c670686b8f03be0ca82ec65c63316bd5f55a460eb82726384f64ffd3a5f0d3a"
+      },
+      {
+        "path": "domain/node_favicon_notify_service.js",
+        "size": 3175,
+        "sha256": "29bf1bb7cf4bb753676c177e3fde1b9afebd0c26cdc358886957f6a4ad997af5"
+      },
+      {
+        "path": "domain/orchestration_relay_service.js",
+        "size": 13457,
+        "sha256": "96a0659b5e04e65fa959602dc6298f3db0542e46986f14541bddc2097ee68cf1"
+      },
+      {
+        "path": "domain/readonly_diagnostics.js",
+        "size": 36166,
+        "sha256": "88fb151def6941e2f2f704aa2b6a0dc2a6d18dd68f2809e020c4491ecc3c62ba"
+      },
+      {
+        "path": "domain/runtime_message_service.js",
+        "size": 5483,
+        "sha256": "d9426dc1b6d4eb66d5ee6de5064a8515e9c9fb652938de884ecad4182033660b"
+      },
+      {
+        "path": "domain/simple_relay_receipts.js",
+        "size": 3312,
+        "sha256": "f46561ce7e73b7342a3fc18476229d4969977ff5b0a3dced20f5b1ad85e35689"
+      },
+      {
+        "path": "domain/simple_relay_service.js",
+        "size": 7827,
+        "sha256": "a83a7377938dd49e3dde61e9c8b8f58bafa0c40d609828545a8be9db8fb8a669"
+      },
+      {
+        "path": "domain/state_service.js",
+        "size": 2675,
+        "sha256": "3553f3e8447500de35b3eb6e9eea0e4b18c11f741c6969ef5186ed1548cf55ef"
+      },
+      {
+        "path": "domain/tab_group_service.js",
+        "size": 5057,
+        "sha256": "89d78daffb25208e5206a7882fc43d880f9a560dd6ad8adfc2ccd1759fb9d91c"
+      },
+      {
+        "path": "legacy/command_policy.js",
+        "size": 4635,
+        "sha256": "fc87926f25548c7df3ff78712a2c75fa3d45d74ceb9a3b5cefd253a3e7464887"
+      },
+      {
+        "path": "manifest.json",
+        "size": 1555,
+        "sha256": "30430045f47e5037a98bec47dc7b119eba8344ea62ba2287447d3d90b5a68ee6"
+      },
+      {
+        "path": "network/directory.js",
+        "size": 6440,
+        "sha256": "04bda2f4b770581d8ec1376652dfb7c7514a2a70e27d80ccc0c1d5be5dc4beb9"
+      },
+      {
+        "path": "platform/browser_gateway.js",
+        "size": 3470,
+        "sha256": "b36d0cb4a557fe8acf4c5045cf18e29d14484806e26389936e1f15a5edd0a6dc"
+      },
+      {
+        "path": "platform/chrome_state_repository.js",
+        "size": 1248,
+        "sha256": "b5adbc7ad4b01be74c26f4504ce33434866f5473384dda16ff6b77bb831f4c90"
+      },
+      {
+        "path": "platform/lifecycle.js",
+        "size": 1687,
+        "sha256": "78a716c5b8259a424c9c58b134425c26d764dd8698e1ff33e9b72a9bcc952113"
+      },
+      {
+        "path": "platform/native_transport.js",
+        "size": 1598,
+        "sha256": "0f3884617b398ffa844b355b438088204714e4ec43b49424c39c8b3aacb6bf75"
+      },
+      {
+        "path": "platform/observation_gateway.js",
+        "size": 949,
+        "sha256": "2574fa66cfacf2878e5387b72f7a918cd0d7b0292d1f5b94de66986ca49ed363"
+      },
+      {
+        "path": "popup.css",
+        "size": 1086,
+        "sha256": "2d9916e615639f64bcc894275a22fe21643c90fb9003d247b47c22ae1c6be6eb"
+      },
+      {
+        "path": "popup.html",
+        "size": 641,
+        "sha256": "2d281ff32e3676efdb778a269abb32eed0c52e90a80a656c88551637bb52f68d"
+      },
+      {
+        "path": "popup.js",
+        "size": 2252,
+        "sha256": "fa7547aae4484abef5896737587cb5d865d3e8c05e85008fc78666344b59316d"
+      },
+      {
+        "path": "relay/contract.js",
+        "size": 2859,
+        "sha256": "b3a5da62b00859b9386850b7601accab856e32b53eaa263f1d4de9135bc44205"
+      },
+      {
+        "path": "relay/envelope.js",
+        "size": 3163,
+        "sha256": "77a6d19cbb7fac2c7fb8bbe8e680607a9370a8d54d6b5f2aba84ffdcc6b17d10"
+      },
+      {
+        "path": "relay_core.js",
+        "size": 6801,
+        "sha256": "b3ad92bc20564a905bffc37f3e524e2c8e8c5ae71c02517a301cedd5cf1341cd"
+      }
+    ],
+    "aggregateSha256": "ec256e89fdaf8ebd6bae5f6892ae3f108d660c1b235e9aa74a0fb371dbbe3ada"
+  },
+  "supersedes": {
+    "manifest": "modules/rcc/release/rcc_v2_rc.json",
+    "manifestSha256": "e792a81e8b628481e1765bcf9d77cd1e1988bced24f3d70fa89882a22439b34d",
+    "candidate": "RCC_COMPOSER_REBIND_20261110",
+    "candidateInventorySha256": "e054f0fae6598c64c2eb0e4ff397740ffa76acba50abe06dd2e78dfb288e1f02"
+  }
+}

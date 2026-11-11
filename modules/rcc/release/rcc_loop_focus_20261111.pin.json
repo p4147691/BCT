@@ -1,0 +1,16 @@
+{
+  "schema": 1,
+  "candidate": "RCC_LOOP_FOCUS_SETTLE_20261111",
+  "candidateManifest": "modules/rcc/release/rcc_loop_focus_20261111.json",
+  "candidateManifestSha256": "599f8d356ab43054103bfeafaba84177b22faeeda6b0b9239057bb837a992c2e",
+  "candidateInventoryAggregateSha256": "2a73b20116f40bcbfa99fdf2dc6b46ccccbd4c16decc5965788a9c240fc5d516",
+  "candidateFileCount": 58,
+  "changedPayload": "content/simple_relay_executor.js",
+  "changedPayloadSha256": "c2b0764a11e96e533d8709245468af992520520b95fdbf6a73baa9e0875492ea",
+  "changedPayloadBytes": 42845,
+  "historicalManifest": "modules/rcc/release/rcc_v2_rc.json",
+  "historicalManifestSha256": "e792a81e8b628481e1765bcf9d77cd1e1988bced24f3d70fa89882a22439b34d",
+  "historicalInventorySha256": "e054f0fae6598c64c2eb0e4ff397740ffa76acba50abe06dd2e78dfb288e1f02",
+  "installedExtensionVerification": "NOT_PERFORMED",
+  "liveDeployment": "PROHIBITED_PENDING_APPROVAL"
+}
