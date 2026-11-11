@@ -704,6 +704,66 @@
         "Monitor Codex surface display",
         "BCT codex_nodes projection"
       ]
+    },
+    {
+      "id": "bct.chatgpt_tools_refresh",
+      "kind": "partial_recipe",
+      "maturity": "isolated",
+      "implementation": [
+        {
+          "path": "src/bct/features/browser_extension_manage.py",
+          "symbol": "BrowserExtensionManageFeature.prepare / execute"
+        },
+        {
+          "path": "scripts/chatgpt_tools_refresh.cjs",
+          "symbol": "refresh / clickExactRefresh"
+        }
+      ],
+      "contract": "Fixed BCT Control refresh-button click in an owned background tab on an existing authorized CDP session. APPLIED proves click dispatch and cleanup only; client catalogue must be independently observed.",
+      "effects": [
+        "owned-background-tab-create-close",
+        "one-fixed-plugin-refresh-click"
+      ],
+      "safety": [
+        "exact-plugin-id-and-origin",
+        "unique-visible-enabled-button",
+        "existing-policy-only",
+        "unknown-no-replay",
+        "no-arbitrary-url-or-javascript",
+        "owned-tab-only-cleanup"
+      ],
+      "used_by": [
+        "bct_browser_extension_manage(operation=refresh_tools,target=bct_control)"
+      ],
+      "tests": [
+        "tests/test_chatgpt_tools_refresh.py",
+        "tests/test_chatgpt_tools_refresh.cjs"
+      ]
+    },
+    {
+      "id": "bct.extension_release_identity_gate",
+      "kind": "primitive",
+      "maturity": "isolated",
+      "implementation": [
+        {
+          "path": "scripts/check_extension_versions.py",
+          "symbol": "check / validate_identity"
+        }
+      ],
+      "contract": "Compare immutable Git revisions. Changed RCC or Monitor extension payloads require a higher Chrome version and matching version_name; RCC background/content build IDs must be new and identical.",
+      "effects": [],
+      "safety": [
+        "read-only-source-check",
+        "exact-base-and-head",
+        "fail-closed-missing-identity",
+        "no-live-version-claim"
+      ],
+      "used_by": [
+        "BCT CI scope job"
+      ],
+      "tests": [
+        "tests/test_extension_version_gate.py"
+      ]
     }
   ]
 }

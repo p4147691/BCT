@@ -1,9 +1,9 @@
 {
   "schema": "bct.component-library.bundle.v1",
-  "source_fingerprint": "04980a3b7cbea12a9a3ba718ea84a77f5dd7d8d8adf694f3f5b82a25a9f5623b",
+  "source_fingerprint": "68535444b846356e344ea286d55e403b347a5668467f6a6fd8f30288aff288d9",
   "source_hashes": {
     "docs/CHAIN_MESSAGE_RECIPE_V2.md": "c6a6a44f46083cb040530ee89f63a3bfeb9bcf4e24a7e76d7c01ed835d29bf15",
-    "docs/component-library.v1.json": "2257a9ae62902b710d7ea7bf3a4e3e367f22b73a30622b02262418a65d0cfecf",
+    "docs/component-library.v1.json": "a75f450e99e5cabdc0ebdd2fa7b490d53453074599129b5b5eb653a67d3334ea",
     "modules/browser-bridge/extension/background.js": "b058aeb8fa8f37b8a21ae8b70be21d003e976a97e9e5ca884d7a98f5dced4472",
     "modules/browser-bridge/extension/chat_tools.js": "cc91898a0c30c58f5bee4e6b7fea991282ce5a21f100cfaeb220cc300e4ee85b",
     "modules/browser-bridge/extension/tool_protocol.js": "05e244e856af58705de1c1fc50a9a8d5e63b9ca2e8ba8674cabe8d9ea9a8563a",
@@ -19,6 +19,8 @@
     "modules/monitor/extension/monitor-window-hwnd-contract.js": "81b0050ba0231328ad3514b35e1d085e18afcf7315bf4674d3e5604a61b34e6e",
     "modules/rcc/extension/content/conversation_rename.js": "94199637687e133deb537d5011c260327b5a4cb06eaaffd673c1221f4a1c1027",
     "modules/rcc/extension/domain/conversation_rename_service.js": "a1462e7a55ce0922a5a56943b5d2c3b99710c5c0e941483550869254a8ecdaa5",
+    "scripts/chatgpt_tools_refresh.cjs": "204b01c6821b3ffb332779e9e0f8b994ae26bf63d8628549dbc583361a4a8fb2",
+    "scripts/check_extension_versions.py": "0630d2804d2b800cce6556a2afd4f5d57a26b134b0a971e86b3ecc42d3c86a41",
     "src/bct/chain_direction.py": "84fffaf0e19513b5bda381fdc18ac83debe8a86a99d1a0139b6b46e06d632577",
     "src/bct/chain_entry_policy.py": "2f8b585702ed615deb83598fbb5755cb62315ad9e9454fe2caa2c8fdd28d7ecf",
     "src/bct/chain_execution_plan.py": "da98ae2aa5efa9593b9a748856e33fe9140d92c5bc45671105b402517988c61f",
@@ -34,10 +36,11 @@
     "src/bct/core/chat_stream_rcc_watch.py": "0db47e0b0991d5b5e406f3c60c60c2a5874fc2f5409b31dc0582313d624b6324",
     "src/bct/delivery_continuation_recovery.py": "2da105389388c6e1e3e405b178dc3ce85ff50fd874edfd322619d7e1f4aff4cb",
     "src/bct/dot_identity.py": "d6aef9d17828baf2aeadc4e7f568a47aaea91030f0d8d17ef3c16300c66e1026",
+    "src/bct/features/browser_extension_manage.py": "8bad4e1f81fa3cb977107dd08000a6f2a087fa483524545b37b292991185803e",
     "src/bct/features/conversation_network.py": "950299ce295bf82f6efd2c993d8bddae1ce56294b7312ed97765ac516725f6ce",
     "src/bct/features/owned_extension_action.py": "6c164bfb0cacf132940f16c15dfc9f653937b48a91d5e3e3ba648ad07e4bfa15",
     "src/bct/features/rcc.py": "f3b196df21df45ddf91897f893e84bf238e8738f18a366f1320a586fcf40a9a0",
-    "src/bct/mcp_server.py": "91b182646359c5c0f5268933e88f009c83c7c679f7f7143a61dfad85af6797d2",
+    "src/bct/mcp_server.py": "4de27cb4637e989f7e3eb628969a59c393dabdeb842a9702479cc1c96f637e3a",
     "src/bct/node_recovery.py": "1c84150ae1af8cc285432565097ac071a2af6c4b2534f1d19ac7f75d7bec2438",
     "src/bct/runtime_server.py": "b756e7be4063a46623196448fd229c9543df26b6ac1c6be814f57d33a367571f",
     "src/bct/send_delayed_message.py": "3ccd131cda4baaf798ecf0b29b54d0c9427c7a1f20f072138fc4194ed83c9c94",
@@ -1062,6 +1065,66 @@
         "used_by": [
           "Monitor Codex surface display",
           "BCT codex_nodes projection"
+        ]
+      },
+      {
+        "id": "bct.chatgpt_tools_refresh",
+        "kind": "partial_recipe",
+        "maturity": "isolated",
+        "implementation": [
+          {
+            "path": "src/bct/features/browser_extension_manage.py",
+            "symbol": "BrowserExtensionManageFeature.prepare / execute"
+          },
+          {
+            "path": "scripts/chatgpt_tools_refresh.cjs",
+            "symbol": "refresh / clickExactRefresh"
+          }
+        ],
+        "contract": "Fixed BCT Control refresh-button click in an owned background tab on an existing authorized CDP session. APPLIED proves click dispatch and cleanup only; client catalogue must be independently observed.",
+        "effects": [
+          "owned-background-tab-create-close",
+          "one-fixed-plugin-refresh-click"
+        ],
+        "safety": [
+          "exact-plugin-id-and-origin",
+          "unique-visible-enabled-button",
+          "existing-policy-only",
+          "unknown-no-replay",
+          "no-arbitrary-url-or-javascript",
+          "owned-tab-only-cleanup"
+        ],
+        "used_by": [
+          "bct_browser_extension_manage(operation=refresh_tools,target=bct_control)"
+        ],
+        "tests": [
+          "tests/test_chatgpt_tools_refresh.py",
+          "tests/test_chatgpt_tools_refresh.cjs"
+        ]
+      },
+      {
+        "id": "bct.extension_release_identity_gate",
+        "kind": "primitive",
+        "maturity": "isolated",
+        "implementation": [
+          {
+            "path": "scripts/check_extension_versions.py",
+            "symbol": "check / validate_identity"
+          }
+        ],
+        "contract": "Compare immutable Git revisions. Changed RCC or Monitor extension payloads require a higher Chrome version and matching version_name; RCC background/content build IDs must be new and identical.",
+        "effects": [],
+        "safety": [
+          "read-only-source-check",
+          "exact-base-and-head",
+          "fail-closed-missing-identity",
+          "no-live-version-claim"
+        ],
+        "used_by": [
+          "BCT CI scope job"
+        ],
+        "tests": [
+          "tests/test_extension_version_gate.py"
         ]
       }
     ]

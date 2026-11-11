@@ -64,7 +64,15 @@ _CAPABILITY_USAGE = {
     "conversation_network_update": "Update advisory conversation-network membership or role tags. For an existing member use arguments={\"operation\":\"role-patch\",\"project\":\"scope name or id\",\"node_label\":\"N14\",\"add\":[\"CI\"],\"remove\":[],\"expected_role_tags_sha256\":\"digest from bct_get_conversation_network\"}. To place an observed chat in a scope use operation=membership-assign with project, conversation_key, role_tags, and expected_scope_id (empty only when the chat is currently unassigned). This changes no tool permission or browser route; it applies to newly composed messages only.",
     "project_context": "Shared, bounded context records; this does not capture browser text or send a message. Use central-get/central-save for the one current project context, worklog-get/worklog-save for a project plus journal_work_id, and overview for central context plus compact worklog records. Saves require expected_revision and author. A work log must link its exact journal_work_id as links:[{type:'bct_work',id:'...'}].",
     "cdp_inspect": "Read-only existing Chrome tab listing via a single approved Chrome DevTools MCP connection. Use arguments={\\\"operation\\\":\\\"list_pages\\\"}. Requires a work with cdp_inspect permission and locally enabled CDP policy; does not send messages, create tabs, or bypass Chrome consent.",
-    "browser_extension_manage": "Read-only Chrome extension inventory via CDP. arguments={\\\"operation\\\":\\\"inventory\\\"} (or pages). Work-scoped; create/update/delete not enabled in this initial common MCP adapter. CDP only. Do not infer Tampermonkey CRUD support from this tool yet.",
+    "browser_extension_manage": (
+        "Bounded Chrome extension inventory/management. Read: operation=inventory|pages. "
+        "ChatGPT BCT Control tool refresh: arguments={\"operation\":\"refresh_tools\","
+        "\"target\":\"bct_control\"}. Uses one owned background tab in the existing "
+        "authorized CDP session, exact fixed plugin and unique enabled refresh button. "
+        "APPLIED proves one click and owned-tab cleanup, not client catalogue refresh; "
+        "verify a subsequent tools/list independently. No arbitrary URL, JS or plugin ID. "
+        "Never retry UNKNOWN under a new operation ID."
+    ),
     "owned_extension_action": (
         "Reload only a BCT-owned Chrome extension through an allowlisted existing contract. "
         "Monitor: arguments={\"target\":\"monitor\",\"action\":\"reload\"}. "
