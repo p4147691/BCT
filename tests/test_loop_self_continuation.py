@@ -9,7 +9,7 @@ from bct.loop_store import LoopStore
 from bct.loop_self_outbox import LoopSelfOutbox
 from bct.loop_self_continuation import LoopSelfContinuation
 from bct.send_delayed_message import _rcc_submitted_text_sha256
-from test_loop_self_dispatch import OWNER, snapshot
+from test_loop_self_dispatch import OWNER, snapshot, production_snapshot
 
 
 class FakeClient:
@@ -81,6 +81,13 @@ class LoopContinuationTests(unittest.TestCase):
         pending=self.out.get(work_id="w",epoch=2,step=1)
         self.assertEqual(pending["state"],"PENDING")
         self.assertEqual(pending["conversation_key"],OWNER)
+
+    def test_core_monitor_envelope_observes_and_queues_exact_self(self):
+        result = self.cont.observe_once(row=self.row, snapshot={"monitor": production_snapshot()}, now=116)
+        self.assertEqual(result["status"], "NEXT_SELF_QUEUED")
+        self.assertEqual(len(self.client.calls), 1)
+        self.assertEqual(self.client.calls[0]["extra"]["conversationKey"], OWNER)
+        self.assertEqual(self.out.get(work_id="w", epoch=1, step=1)["state"], "PENDING")
 
     def test_completed_run_stops_auto_response_polling(self):
         self.loop.complete(work_id="w",owner=OWNER,epoch=1,
