@@ -1971,9 +1971,45 @@ class SendDelayedMessageService:
             "window_id": watched_window,
         } if re.fullmatch(r"[a-f0-9]{32}", watched_session)
              and watched_tab > 0 and watched_window > 0 else None)
+        # Durable watch identity is a baseline, not a permanently pinned tab.
+        # Cache only an identity re-resolved by exact UUID after RCC explicitly
+        # rejects the old session/tab/window. Never retry a send or a timeout.
+        override_key = (row.get("task_id"), row.get("generation"), instance, worker)
+        overrides = getattr(self, "_watch_target_overrides", None)
+        if overrides is None:
+            overrides = {}
+            self._watch_target_overrides = overrides
+        active_target = overrides.get(override_key, exact_target)
         observed=self.latest(instance_id=instance,conversation_key=worker,
-                             verified_target=exact_target,
+                             verified_target=active_target,
                              timing_sink=getattr(self, "read_timing_sink", None))
+        stale_identity = (
+            isinstance(observed, dict) and observed.get("ok") is False
+            and (
+                (observed.get("error") == "READ_LATEST_ASSISTANT_IDENTITY_MISMATCH"
+                 and observed.get("observationState") == "NOT_APPLIED")
+                or observed.get("error") == "TAB_GROUP_SESSION_ID_MISMATCH"
+            )
+        )
+        if active_target is not None and stale_identity:
+            try:
+                session, tab, window = self._locate(instance, worker)
+            except (ValueError, KeyError, TypeError):
+                return reject("RCC_WATCH_IDENTITY_UNRESOLVED")
+            replacement = {
+                "instance_id": instance, "conversation_key": worker,
+                "session_id": session, "tab_id": tab, "window_id": window,
+            }
+            if replacement == active_target:
+                return reject("RCC_WATCH_IDENTITY_NOT_CHANGED")
+            # Same UUID is independently unique in RCC state. A follow-up
+            # read is observation-only; the durable watch receipt stays intact.
+            overrides[override_key] = replacement
+            observed = self.latest(
+                instance_id=instance, conversation_key=worker,
+                verified_target=replacement,
+                timing_sink=getattr(self, "read_timing_sink", None),
+            )
         if observed.get("ok") is not True:
             return reject("RCC_READ_UNAVAILABLE")
         current_count=observed.get("responseTurnCount")
