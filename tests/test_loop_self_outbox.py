@@ -65,6 +65,21 @@ class LoopSelfOutboxTests(unittest.TestCase):
         self.assertEqual(settled["state"],"DELIVERED")
         self.assertEqual(self.outbox.list_uncertain(),[])
 
+    def test_reconcile_preserves_concurrent_ack(self):
+        self.queue()
+        self.outbox.reserve(work_id="work",epoch=1,step=0,owner=OWNER,now=111)
+        def receipt_after_ack(**kw):
+            with self.store.transaction() as db:
+                db.execute("UPDATE loop_recipe_self_outbox SET state='ACKED'")
+            return SimpleNamespace(state=SimpleNamespace(value="FINISHED"),
+                                   outcome=SimpleNamespace(value="APPLIED"))
+        self.store.get_operation_for=receipt_after_ack
+        settled=self.outbox.reconcile(work_id="work",epoch=1,step=0,
+                                     principal_id="principal",now=112)
+        self.assertEqual(settled["state"],"ACKED")
+        self.assertEqual(self.outbox.list_delivered(),[])
+        self.assertEqual(self.outbox.list_pending(),[])
+
     def test_successor_does_not_duplicate_unknown_self_wake(self):
         self.queue()
         self.outbox.reserve(work_id="work",epoch=1,step=0,owner=OWNER,now=111)
