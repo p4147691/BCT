@@ -195,6 +195,45 @@ vm.runInContext(
 );
 const wrongDraftFocusCheck = wrongDraftContext.ensureCurrentEditorFocusAtEndForTest(expected);
 
+// The real ChatGPT composer is a contenteditable DIV, not a textarea.
+// A delayed ProseMirror focus must preserve one collapsed end caret.
+let proseFocusCalls = 0;
+let proseWaits = 0;
+const proseDocument = {activeElement: null, createRange() {
+  return {
+    selectNodeContents(editor) { this.endContainer = editor; },
+    collapse(atStart) { this.collapsed = !atStart; }
+  };
+}};
+const proseSelection = {
+  rangeCount: 0, range: null,
+  removeAllRanges() { this.rangeCount = 0; this.range = null; },
+  addRange(range) { this.rangeCount = 1; this.range = range; },
+  getRangeAt() { return this.range; },
+};
+const proseEditor = {
+  tagName: 'DIV', isConnected: true, text: expected,
+  focus() {
+    proseFocusCalls += 1;
+    if (proseFocusCalls >= 5) proseDocument.activeElement = this;
+  },
+  contains(node) { return node === this; },
+};
+const proseContext = vm.createContext({
+  document: proseDocument,
+  window: {getSelection() { return proseSelection; }},
+  RelayCore: {normalizeMessageText: value => String(value).replace(/\r\n?/g, '\n').trim()},
+  editorDraftText: editor => editor.text,
+  getEditor: () => proseEditor,
+  setTimeout(callback, delay) { assert.equal(delay, 40); proseWaits += 1; callback(); return 0; },
+});
+vm.runInContext(
+  slice(source, 'function focusEditorAtEnd(', 'function wakeEditorWithTrailingSpace(')
+    + ';globalThis.ensureCurrentEditorFocusAtEndForTest = ensureCurrentEditorFocusAtEnd;',
+  proseContext
+);
+const proseFocusCheck = proseContext.ensureCurrentEditorFocusAtEndForTest(expected);
+
 // The composer wake pulse must never become part of the submitted payload.
 // A previous implementation appended one space and immediately compared the
 // draft with the unmodified expected text, producing a false UNKNOWN before
@@ -284,6 +323,12 @@ assert.equal(
 );
 
 (async () => {
+  assert.equal(await proseFocusCheck, proseEditor,
+    'delayed contenteditable focus preserves a collapsed end caret');
+  assert.equal(proseFocusCalls, 5);
+  assert.equal(proseWaits, 4);
+  assert.equal(proseSelection.rangeCount, 1);
+  assert.equal(proseSelection.getRangeAt(0).collapsed, true);
   assert.equal(await lateFocusCheck, lateTextarea,
     'existing-chat focus settling after four tasks permits exact draft only');
   assert.equal(lateCalls, 5);
