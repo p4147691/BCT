@@ -89,6 +89,66 @@ class LoopRecoveryExecutorTests(unittest.TestCase):
         self.assertEqual(self.loop.get("w")["next_step"],0)
         self.assertEqual(self.loop.get("w")["operation_id"],"op")
 
+    def test_disconnected_applied_receipt_advances_once_without_claim_or_lease(self):
+        for state in ("PREPARED", "UNKNOWN", "APPLIED"):
+            with self.subTest(state=state):
+                with self.store.transaction() as db:
+                    db.execute("UPDATE loop_recipe_runs SET operation_id='op',operation_state=?,next_step=0 WHERE work_id='w'", (state,))
+                before = self.loop.get("w")
+                reopened = Store(self.path)
+                calls = []
+                def receipt(**kwargs):
+                    calls.append(kwargs)
+                    return SimpleNamespace(state=SimpleNamespace(value="FINISHED"),
+                                           outcome=SimpleNamespace(value="APPLIED"))
+                reopened.get_operation_for = receipt
+                recovery = LoopRecoveryExecutor(reopened, principal_id="principal", owner_ready=lambda _: False)
+                self.assertEqual(recovery.run_once(now=161)["results"][0]["status"], "STEP_CONFIRMED")
+                after = self.loop.get("w")
+                self.assertEqual(after["next_step"], 1)
+                self.assertIsNone(after["operation_state"])
+                self.assertEqual(after["epoch"], before["epoch"])
+                self.assertEqual(after["lease_until"], before["lease_until"])
+                recovery.run_once(now=162)
+                self.assertEqual(self.loop.get("w")["next_step"], 1)
+                self.assertEqual(calls, [dict(operation_id="op", work_id="w", principal_id="principal")])
+
+    def test_disconnected_unknown_and_not_applied_receipts_do_not_advance(self):
+        for outcome in ("UNKNOWN", "NOT_APPLIED"):
+            with self.subTest(outcome=outcome):
+                with self.store.transaction() as db:
+                    db.execute("UPDATE loop_recipe_runs SET operation_id='op',operation_state='PREPARED' WHERE work_id='w'")
+                reopened = Store(self.path)
+                reopened.get_operation_for = lambda **_: SimpleNamespace(
+                    state=SimpleNamespace(value="FINISHED"), outcome=SimpleNamespace(value=outcome))
+                recovery = LoopRecoveryExecutor(reopened, principal_id="principal", owner_ready=lambda _: False)
+                recovery.run_once(now=161)
+                self.assertEqual(self.loop.get("w")["next_step"], 0)
+                self.assertEqual(self.loop.get("w")["operation_state"], outcome)
+                self.assertEqual(self.loop.get("w")["epoch"], 1)
+                self.assertEqual(self.loop.get("w")["lease_until"], 160)
+
+    def test_disconnected_receipt_read_race_cannot_advance_new_epoch(self):
+        self.loop.prepare_operation(work_id="w", owner="node-a", epoch=1, operation_id="op", now=101)
+        reopened = Store(self.path)
+        def receipt(**_):
+            self.loop.claim(work_id="w", owner="node-a", epoch=1, now=161)
+            return SimpleNamespace(state=SimpleNamespace(value="FINISHED"),
+                                   outcome=SimpleNamespace(value="APPLIED"))
+        reopened.get_operation_for = receipt
+        recovery = LoopRecoveryExecutor(reopened, principal_id="principal", owner_ready=lambda _: False)
+        result = recovery.run_once(now=161)
+        self.assertEqual(result["results"][0]["reason"], "LOOP_EXPIRED_OPERATION_FENCED")
+        self.assertEqual(self.loop.get("w")["next_step"], 0)
+        self.assertEqual(self.loop.get("w")["epoch"], 2)
+
+    def test_disconnected_missing_receipt_stays_prepared(self):
+        self.loop.prepare_operation(work_id="w", owner="node-a", epoch=1, operation_id="op", now=101)
+        result = self.executor(False).run_once(now=161)
+        self.assertEqual(result["results"][0]["reason"], "LOOP_RECEIPT_NOT_FOUND")
+        self.assertEqual(self.loop.get("w")["operation_state"], "PREPARED")
+        self.assertEqual(self.loop.get("w")["epoch"], 1)
+
 
 if __name__=="__main__":
     unittest.main()
