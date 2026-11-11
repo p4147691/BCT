@@ -1609,17 +1609,96 @@ class SendDelayedMessageService:
         target = matches[0]
         return (session_id, int(target["tabId"]), int(target["windowId"]))
 
-    def latest(self, *, instance_id: str, conversation_key: str):
+    def latest(self, *, instance_id: str, conversation_key: str,
+               verified_target: dict | None = None,
+               timing_sink=None):
+        """Read one exact chat without a global scan when its identity is verified.
+
+        The caller must supply a same-instance, same-conversation, session-bound
+        target from a verified BCT receipt. RCC still checks this exact identity.
+        Missing or mismatched fields fail closed; no heuristic rediscovery occurs.
+        """
         import secrets
-        session, tab, window = self._locate(instance_id, conversation_key)
-        return self.browser_feature.client.request(
-            instance_id=instance_id,
-            request_id="delayed-read-" + secrets.token_hex(12),
-            command="read-latest-assistant",
-            extra={"instanceId":instance_id, "sessionId":session,
-                   "tabId":tab,"windowId":window,"conversationKey":conversation_key},
-            timeout_s=5.0,
-        )
+        started = time.perf_counter()
+        if verified_target is None:
+            session, tab, window = self._locate(instance_id, conversation_key)
+            route = "global_discovery"
+            discovery_ms = (time.perf_counter() - started) * 1000
+        else:
+            if (not isinstance(verified_target, dict)
+                    or verified_target.get("instance_id") != instance_id
+                    or verified_target.get("conversation_key") != conversation_key
+                    or not re.fullmatch(r"[a-f0-9]{32}",
+                                        str(verified_target.get("session_id") or ""))):
+                raise ValueError("DELAYED_VERIFIED_TARGET_MISMATCH")
+            try:
+                tab = int(verified_target["tab_id"])
+                window = int(verified_target["window_id"])
+            except (KeyError, TypeError, ValueError):
+                raise ValueError("DELAYED_VERIFIED_TARGET_MISMATCH") from None
+            if tab <= 0 or window <= 0:
+                raise ValueError("DELAYED_VERIFIED_TARGET_MISMATCH")
+            session = verified_target["session_id"]
+            route = "exact_target"
+            discovery_ms = 0.0
+        request_started = time.perf_counter()
+        try:
+            return self.browser_feature.client.request(
+                instance_id=instance_id,
+                request_id="delayed-read-" + secrets.token_hex(12),
+                command="read-latest-assistant",
+                extra={"instanceId":instance_id, "sessionId":session,
+                       "tabId":tab,"windowId":window,"conversationKey":conversation_key},
+                timeout_s=5.0,
+            )
+        finally:
+            if timing_sink is not None:
+                timing_sink({
+                    "route": route,
+                    "discovery_ms": round(discovery_ms, 3),
+                    "rcc_roundtrip_ms": round(
+                        (time.perf_counter() - request_started) * 1000, 3),
+                    "total_ms": round((time.perf_counter() - started) * 1000, 3),
+                    "direct_read_call_count": 1,
+                    "discovery_call_count": 0 if route == "exact_target" else None,
+                })
+
+    def latest_many(self, requests: list[dict], *, max_workers: int = 4) -> list[dict]:
+        """Parallelize independent read-only exact-target requests, never effects.
+
+        Results retain caller order. Invalid/duplicate identities fail before
+        starting threads; failures propagate rather than silently retrying.
+        """
+        from concurrent.futures import ThreadPoolExecutor
+        if not 1 <= max_workers <= 8:
+            raise ValueError("DELAYED_PARALLEL_WORKERS_INVALID")
+        identities = set()
+        for item in requests:
+            if not isinstance(item, dict):
+                raise ValueError("DELAYED_PARALLEL_TARGET_INVALID")
+            instance = item.get("instance_id")
+            key = item.get("conversation_key")
+            target = item.get("verified_target")
+            if not isinstance(target, dict) or not instance or not key:
+                raise ValueError("DELAYED_PARALLEL_TARGET_INVALID")
+            identity = (instance, key)
+            if identity in identities:
+                raise ValueError("DELAYED_PARALLEL_DUPLICATE_TARGET")
+            identities.add(identity)
+            if (target.get("instance_id") != instance
+                    or target.get("conversation_key") != key):
+                raise ValueError("DELAYED_VERIFIED_TARGET_MISMATCH")
+        if not requests:
+            return []
+        with ThreadPoolExecutor(max_workers=min(max_workers, len(requests))) as pool:
+            futures = [
+                pool.submit(self.latest, instance_id=item["instance_id"],
+                            conversation_key=item["conversation_key"],
+                            verified_target=item["verified_target"],
+                            timing_sink=item.get("timing_sink"))
+                for item in requests
+            ]
+            return [future.result() for future in futures]
 
     def _activity_for(self, row: dict) -> dict:
         """Read the existing RCC DOM activity signal for one exact watched chat."""
