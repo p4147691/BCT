@@ -177,6 +177,9 @@ def dispatch_send_delayed_message(
     *, watch: Watch, alarm: Alarm, decision: ContinuationDecision,
     manager_conversation_key: str, register_next_watch: Callable[[Watch], None],
     send_message: Callable[[str, str, str], str],
+    resolve_manager_return: Callable[
+        [Watch, Alarm, ContinuationDecision], tuple[str, str, str]
+    ] | None = None,
 ) -> Continuation:
     """Perform the message-only action of the Send Delayed Message recipe.
 
@@ -198,9 +201,16 @@ def dispatch_send_delayed_message(
         receipt = send_message(watch.conversation_key, action.payload,
                                "delayed-self-" + key)
         return Continuation("SELF_SENT", next_watch, receipt)
-    receipt = send_message(manager_conversation_key, action.payload,
+    destination = manager_conversation_key
+    result_status = "RETURNED_TO_MANAGER"
+    payload = action.payload
+    if resolve_manager_return is not None:
+        destination, result_status, payload = resolve_manager_return(
+            watch, alarm, decision,
+        )
+    receipt = send_message(destination, payload,
                            "delayed-manager-" + key)
-    return Continuation("RETURNED_TO_MANAGER", None, receipt)
+    return Continuation(result_status, None, receipt)
 
 
 def continue_send_delayed_message(
@@ -354,7 +364,10 @@ class DurableWatchLedger:
             # provenance. Do not rewrite their receipt shape by carrying empty
             # placeholders, while preserving an actually declared/direct path
             # across BB generations.
-            for key in ("execution_path", "chain_direction_id"):
+            for key in (
+                "execution_path", "chain_direction_id",
+                "supervisor_conversation_key", "supervisor_instance_id",
+            ):
                 if parent_context.get(key):
                     carried[key] = parent_context[key]
             db.execute(
@@ -384,6 +397,8 @@ class DurableWatchLedger:
                     assignment_epoch: int, instance_id: str,
                     conversation_key: str, manager_conversation_key: str,
                     manager_instance_id: str, baseline: dict,
+                    supervisor_conversation_key: str = "",
+                    supervisor_instance_id: str = "",
                     registration_receipt: str, planned_send_operation_id: str = "",
                     planned_send_text: str = "",
                     execution_path: str = "", chain_direction_id: str = "",
@@ -431,6 +446,18 @@ class DurableWatchLedger:
             "execution_path": execution_path,
             "chain_direction_id": chain_direction_id,
         }
+        if supervisor_conversation_key or supervisor_instance_id:
+            uuid_pat = r"[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}"
+            if (not re.fullmatch(uuid_pat, supervisor_conversation_key)
+                    or not supervisor_instance_id):
+                raise ValueError("DELAYED_SUPERVISOR_IDENTITY_INVALID")
+            if supervisor_conversation_key in {
+                    conversation_key, manager_conversation_key}:
+                raise ValueError("DELAYED_SUPERVISOR_IDENTITY_CONFLICT")
+            context.update({
+                "supervisor_conversation_key": supervisor_conversation_key,
+                "supervisor_instance_id": supervisor_instance_id,
+            })
         if watched_session_id and watched_tab_id > 0 and watched_window_id > 0:
             context.update({
                 "watched_session_id": watched_session_id,
@@ -498,7 +525,8 @@ class DurableWatchLedger:
                     key: old[key] for key in
                     ("source_send_operation_id", "source_send_sha256",
                      "recipe", "max_generations", "execution_path",
-                     "chain_direction_id") if key in old
+                     "chain_direction_id", "supervisor_conversation_key",
+                     "supervisor_instance_id") if key in old
                 })
                 db.execute(
                     "UPDATE delayed_send_watches SET response_turn_id=?, "
@@ -516,6 +544,10 @@ class DurableWatchLedger:
                     and old.get("work_id") == work_id
                     and old.get("manager_conversation_key") == manager_conversation_key
                     and old.get("max_generations", 0) == max_generations
+                    and old.get("supervisor_conversation_key", "")
+                        == supervisor_conversation_key
+                    and old.get("supervisor_instance_id", "")
+                        == supervisor_instance_id
                 )
                 planned_binding_changed = bool(
                     planned and old.get("source_send_operation_id") != planned_send_operation_id
@@ -665,6 +697,101 @@ class DurableWatchLedger:
                 "manager_action": context.get("manager_action", ""),
             })
         return notices
+
+    def bind_recovery_collector(
+        self, *, work_id: str, direction_id: str,
+        manager_conversation_key: str, supervisor_conversation_key: str,
+        supervisor_instance_id: str,
+    ) -> dict:
+        """Attach S to already-active Chain watches without sending anything."""
+        updated = 0
+        already_bound = 0
+        with self.store.transaction() as db:
+            rows = db.execute(
+                "SELECT task_id,generation,context_json FROM delayed_send_watches "
+                "WHERE state='WATCHING' "
+                "AND json_extract(context_json,'$.work_id')=? "
+                "AND json_extract(context_json,'$.chain_direction_id')=?",
+                (work_id, direction_id),
+            ).fetchall()
+            for row in rows:
+                context = json.loads(row["context_json"] or "{}")
+                if context.get("manager_conversation_key") != manager_conversation_key:
+                    raise ValueError("DELAYED_RECOVERY_MANAGER_CONFLICT")
+                existing_key = str(context.get("supervisor_conversation_key") or "")
+                existing_instance = str(context.get("supervisor_instance_id") or "")
+                if existing_key or existing_instance:
+                    if (existing_key != supervisor_conversation_key
+                            or existing_instance != supervisor_instance_id):
+                        raise ValueError("DELAYED_RECOVERY_SUPERVISOR_CONFLICT")
+                    already_bound += 1
+                    continue
+                context["supervisor_conversation_key"] = supervisor_conversation_key
+                context["supervisor_instance_id"] = supervisor_instance_id
+                db.execute(
+                    "UPDATE delayed_send_watches SET context_json=? "
+                    "WHERE task_id=? AND generation=? AND state='WATCHING'",
+                    (json.dumps(context, sort_keys=True), row["task_id"],
+                     row["generation"]),
+                )
+                updated += 1
+        return {
+            "work_id": work_id, "direction_id": direction_id,
+            "updated_watches": updated, "already_bound_watches": already_bound,
+            "effects": "DURABLE_BINDING_ONLY_NO_MESSAGE",
+        }
+
+    def resume_manager(self, *, work_id: str,
+                       manager_conversation_key: str,
+                       manager_instance_id: str,
+                       succession_proofs: list[dict] | None = None) -> dict:
+        """Rebind active watches after an explicit, externally verified A succession."""
+        updated = 0
+        with self.store.transaction() as db:
+            rows = db.execute(
+                "SELECT task_id,generation,context_json FROM delayed_send_watches "
+                "WHERE state='WATCHING' "
+                "AND json_extract(context_json,'$.work_id')=? "
+                "AND json_extract(context_json,'$.supervisor_conversation_key')!=''",
+                (work_id,),
+            ).fetchall()
+            for row in rows:
+                context = json.loads(row["context_json"] or "{}")
+                previous = str(context.get("manager_conversation_key") or "")
+                if previous == manager_conversation_key and str(
+                        context.get("manager_instance_id") or "") == manager_instance_id:
+                    continue
+                if previous != manager_conversation_key and not any(
+                        str(proof.get("predecessor_conversation_key") or "") == previous
+                        and str(proof.get("successor_conversation_key") or "")
+                            == manager_conversation_key
+                        for proof in (succession_proofs or [])):
+                    raise ValueError("DELAYED_MANAGER_SUCCESSION_PROOF_REQUIRED")
+                history = context.get("manager_recovery_history")
+                if not isinstance(history, list):
+                    history = []
+                history.append({
+                    "from_manager_conversation_key": previous,
+                    "to_manager_conversation_key": manager_conversation_key,
+                    "at": time.time(),
+                    "succession_proofs": succession_proofs or [],
+                })
+                context["manager_recovery_history"] = history[-8:]
+                context["manager_conversation_key"] = manager_conversation_key
+                context["manager_instance_id"] = manager_instance_id
+                db.execute(
+                    "UPDATE delayed_send_watches SET context_json=? "
+                    "WHERE task_id=? AND generation=? AND state='WATCHING'",
+                    (json.dumps(context, sort_keys=True), row["task_id"],
+                     row["generation"]),
+                )
+                updated += 1
+        return {
+            "work_id": work_id,
+            "manager_conversation_key": manager_conversation_key,
+            "updated_watches": updated,
+            "effects": "DURABLE_BINDING_ONLY_NO_MESSAGE",
+        }
 
     def bind_self_source_send(self, *, task_id: str, next_generation: int,
                               operation_id: str, message_sha256: str) -> None:
@@ -1160,7 +1287,9 @@ class DurableWatchLedger:
         return value
 
     def mark_result(self, watch: Watch, status: str) -> None:
-        if status not in {"SELF_SENT","RETURNED_TO_MANAGER","UNKNOWN"}:
+        if status not in {
+                "SELF_SENT", "RETURNED_TO_MANAGER",
+                "COLLECTED_BY_SUPERVISOR", "UNKNOWN"}:
             raise ValueError("DELAYED_RESULT_INVALID")
         with self.store.transaction() as db:
             db.execute(
@@ -1194,10 +1323,12 @@ class DurableWatchLedger:
 
 class SendDelayedMessageRunner:
     """Connect existing RCC read/send callbacks to durable continuation state."""
-    def __init__(self, ledger: DurableWatchLedger, *, read_response, send_message):
+    def __init__(self, ledger: DurableWatchLedger, *, read_response, send_message,
+                 resolve_manager_return=None):
         self.ledger = ledger
         self.read_response = read_response
         self.send_message = send_message
+        self.resolve_manager_return = resolve_manager_return
 
     def poll_once(self, watch: Watch, *, manager_conversation_key: str) -> Continuation:
         """Run Watch·Alarm Continuation R for one watched response."""
@@ -1205,6 +1336,7 @@ class SendDelayedMessageRunner:
             ledger=self.ledger, watch=watch, read_response=self.read_response,
             manager_conversation_key=manager_conversation_key,
             send_message=self.send_message,
+            resolve_manager_return=self.resolve_manager_return,
         )
 
 
@@ -1220,6 +1352,7 @@ class WatchAlarmResult:
 def watch_alarm_continuation_recipe(
     *, ledger: DurableWatchLedger, watch: Watch, read_response,
     manager_conversation_key: str, send_message: Callable[[str, str, str], str],
+    resolve_manager_return=None,
 ) -> Continuation:
     """Watch·Alarm Continuation R: compose Watch·Alarm R and Continuation R."""
     watch_alarm = watch_alarm_recipe(
@@ -1233,6 +1366,7 @@ def watch_alarm_continuation_recipe(
         response_sha256=watch_alarm.response_sha256,
         manager_conversation_key=manager_conversation_key,
         send_message=send_message,
+        resolve_manager_return=resolve_manager_return,
     )
 
 
@@ -1306,6 +1440,7 @@ def continuation_recipe(
     *, ledger: DurableWatchLedger, watch: Watch, alarm: Alarm | None,
     response_turn_key: str, response_sha256: str, manager_conversation_key: str,
     send_message: Callable[[str, str, str], str],
+    resolve_manager_return=None,
 ) -> Continuation:
     """Continuation R: interpret an Alarm and run the legacy follow-up."""
     if alarm is None:
@@ -1345,6 +1480,7 @@ def continuation_recipe(
             manager_conversation_key=manager_conversation_key,
             register_next_watch=lambda next_watch: ledger.reserve_next(watch, next_watch),
             send_message=send_message,
+            resolve_manager_return=resolve_manager_return,
         )
     except ValueError as exc:
         if str(exc) == "DELAYED_RCC_SEND_NOT_APPLIED":
@@ -1579,6 +1715,8 @@ class SendDelayedMessageService:
     def prearm(self, *, task_id: str, work, instance_id: str,
                conversation_key: str, manager_conversation_key: str,
                manager_instance_id: str, operation_id: str,
+               supervisor_conversation_key: str = "",
+               supervisor_instance_id: str = "",
                planned_send_operation_id: str = "",
                planned_send_text: str = "",
                bootstrap_create_operation_id: str = "",
@@ -1597,8 +1735,18 @@ class SendDelayedMessageService:
                             or str(previous.get("conversation_key") or ""))
         manager_conversation_key = (manager_conversation_key
                                     or str(previous.get("manager_conversation_key") or ""))
+        supervisor_conversation_key = (
+            supervisor_conversation_key
+            or str(previous.get("supervisor_conversation_key") or "")
+        )
+        supervisor_instance_id = (
+            supervisor_instance_id
+            or str(previous.get("supervisor_instance_id") or "")
+        )
         validate_instance_id(instance_id)
         validate_instance_id(manager_instance_id)
+        if supervisor_instance_id:
+            validate_instance_id(supervisor_instance_id)
         uuid_pat = r"[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}"
         if not re.fullmatch(uuid_pat, conversation_key) or not re.fullmatch(
                 uuid_pat, manager_conversation_key):
@@ -1662,6 +1810,8 @@ class SendDelayedMessageService:
                 instance_id=instance_id, conversation_key=conversation_key,
                 manager_conversation_key=manager_conversation_key,
                 manager_instance_id=manager_instance_id,
+                supervisor_conversation_key=supervisor_conversation_key,
+                supervisor_instance_id=supervisor_instance_id,
                 baseline={
                     "responseTurnCount": 0, "generating": False,
                     "responseTurnKey": "", "responseSha256": "",
@@ -1703,6 +1853,8 @@ class SendDelayedMessageService:
             instance_id=instance_id, conversation_key=conversation_key,
             manager_conversation_key=manager_conversation_key,
             manager_instance_id=manager_instance_id,baseline=observed,
+            supervisor_conversation_key=supervisor_conversation_key,
+            supervisor_instance_id=supervisor_instance_id,
             registration_receipt=operation_id,
             planned_send_operation_id=planned_send_operation_id,
             planned_send_text=planned_send_text,
@@ -1870,6 +2022,135 @@ class SendDelayedMessageService:
             response_turn_id=row["response_turn_id"],input_ready=True,
         )
 
+    def _manager_availability(self, row: dict) -> str:
+        """Classify only exact, positive manager-stop evidence.
+
+        UNKNOWN deliberately remains on the primary Manager route.  Falling
+        back after an ambiguous observation could duplicate an already-visible
+        external effect.
+        """
+        ctx = row["context"]
+        manager = str(ctx.get("manager_conversation_key") or "")
+        instance = str(ctx.get("manager_instance_id") or "")
+        try:
+            from bct.node_recovery import NodeRecoveryLedger
+            NodeRecoveryLedger(self.store).assert_send_allowed(
+                work_id=str(ctx.get("work_id") or ""),
+                conversation_key=manager,
+            )
+        except ValueError:
+            return "UNAVAILABLE"
+        try:
+            response = self.browser_feature.client.request(
+                instance_id=instance,
+                request_id="chain-manager-state-" + hashlib.sha256(
+                    f"{row['task_id']}|{row['generation']}|{manager}".encode()
+                ).hexdigest()[:24],
+                command="state", timeout_s=2.0,
+            )
+        except Exception:
+            return "UNKNOWN"
+        state = response.get("state") if isinstance(response, dict) else None
+        endpoints = state.get("endpoints") if isinstance(state, dict) else None
+        if not isinstance(endpoints, list):
+            return "UNKNOWN"
+        matches = [item for item in endpoints if isinstance(item, dict)
+                   and str(item.get("conversationKey") or "").lower() == manager]
+        if len(matches) != 1:
+            return "UNKNOWN"
+        endpoint = matches[0]
+        connection = endpoint.get("connection") \
+            if isinstance(endpoint.get("connection"), dict) else {}
+        telemetry = endpoint.get("telemetry") \
+            if isinstance(endpoint.get("telemetry"), dict) else {}
+        attention = telemetry.get("user_attention") \
+            if isinstance(telemetry.get("user_attention"), dict) else {}
+        stopped = str(attention.get("kind") or "").strip().upper()
+        if connection.get("disconnected") is True or stopped in {
+                "CONNECTION_DISCONNECTED", "NEW_CHAT_REQUIRED",
+                "RECOVERY_REQUIRED"}:
+            return "UNAVAILABLE"
+        return "AVAILABLE"
+
+    def _resolve_manager_return(self, row: dict, watch: Watch, alarm: Alarm,
+                                decision: ContinuationDecision) -> tuple[str, str, str]:
+        ctx = row["context"]
+        manager = str(ctx.get("manager_conversation_key") or "")
+        supervisor = str(ctx.get("supervisor_conversation_key") or "")
+        direction_id = str(ctx.get("chain_direction_id") or "")
+        if not direction_id or not supervisor:
+            return manager, "RETURNED_TO_MANAGER", decision.payload
+        from bct.chain_manager_recovery import (
+            ChainManagerRecoveryLedger, supervisor_collection_message,
+        )
+        ChainManagerRecoveryLedger(self.store).record_pending(
+            task_id=watch.task_id,
+            generation=watch.generation,
+            work_id=str(ctx["work_id"]),
+            direction_id=direction_id,
+            worker_conversation_key=watch.conversation_key,
+            manager_conversation_key=manager,
+            supervisor_conversation_key=supervisor,
+            response_turn_key=alarm.evidence.response_turn_id,
+            response_sha256=hashlib.sha256(
+                alarm.evidence.response_text.encode("utf-8")
+            ).hexdigest(),
+            return_payload=decision.payload,
+        )
+        if self._manager_availability(row) != "UNAVAILABLE":
+            return manager, "RETURNED_TO_MANAGER", decision.payload
+        return (
+            supervisor,
+            "COLLECTED_BY_SUPERVISOR",
+            supervisor_collection_message(
+                task_id=watch.task_id,
+                generation=watch.generation,
+                worker_conversation_key=watch.conversation_key,
+                manager_conversation_key=manager,
+                payload=decision.payload,
+            ),
+        )
+
+    def _send_and_record(self, row: dict, *, destination: str, message: str,
+                         operation_id: str) -> str:
+        ctx = row["context"]
+        checkpoint = bool(
+            ctx.get("chain_direction_id")
+            and ctx.get("supervisor_conversation_key")
+            and destination in {
+                ctx.get("manager_conversation_key"),
+                ctx.get("supervisor_conversation_key"),
+            }
+        )
+        try:
+            receipt = self._send_for(
+                row, destination=destination, message=message,
+                operation_id=operation_id,
+            )
+        except ValueError as exc:
+            if checkpoint:
+                from bct.chain_manager_recovery import ChainManagerRecoveryLedger
+                failure = "NOT_APPLIED" if str(exc) == "DELAYED_RCC_SEND_NOT_APPLIED" else "UNKNOWN"
+                ChainManagerRecoveryLedger(self.store).mark_delivery(
+                    task_id=row["task_id"], generation=row["generation"],
+                    state=failure, destination_conversation_key=destination,
+                    operation_id=operation_id,
+                )
+            raise
+        if checkpoint:
+            from bct.chain_manager_recovery import ChainManagerRecoveryLedger
+            state = (
+                "COLLECTED_BY_SUPERVISOR"
+                if destination == ctx.get("supervisor_conversation_key")
+                else "RETURNED_TO_MANAGER"
+            )
+            ChainManagerRecoveryLedger(self.store).mark_delivery(
+                task_id=row["task_id"], generation=row["generation"],
+                state=state, destination_conversation_key=destination,
+                operation_id=operation_id, receipt=receipt,
+            )
+        return receipt
+
     def _send_for(self, row: dict, *, destination: str, message: str,
                   operation_id: str) -> str:
         from bct.core.models import Principal, Outcome
@@ -1884,8 +2165,12 @@ class SendDelayedMessageService:
                 or work.owner_principal_id!=ctx["principal_id"]
                 or not any(capability_matches(action, "browser") for action in work.actions)):
             raise ValueError("DELAYED_WORK_CHANGED")
-        instance=(ctx["instance_id"] if destination==row["conversation_key"]
-                  else ctx["manager_instance_id"])
+        if destination == row["conversation_key"]:
+            instance = ctx["instance_id"]
+        elif destination == ctx.get("supervisor_conversation_key"):
+            instance = ctx["supervisor_instance_id"]
+        else:
+            instance = ctx["manager_instance_id"]
         session,tab,window=self._locate(instance,destination)
         if destination==row["conversation_key"]:
             # This plan belongs to the response that caused this exact SELF
@@ -1958,8 +2243,10 @@ class SendDelayedMessageService:
                 runner=SendDelayedMessageRunner(
                     self.ledger,
                     read_response=lambda _watch:observation,
-                    send_message=lambda dest,body,key:self._send_for(
+                    send_message=lambda dest,body,key:self._send_and_record(
                         row,destination=dest,message=body,operation_id=key),
+                    resolve_manager_return=lambda w,a,d:self._resolve_manager_return(
+                        row, w, a, d),
                 )
                 result=runner.poll_once(
                     watch,manager_conversation_key=ctx["manager_conversation_key"])

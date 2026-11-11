@@ -1,5 +1,6 @@
 import unittest
 import hashlib
+import json
 import tempfile
 from pathlib import Path
 from bct.core.models import Outcome, Work
@@ -9,7 +10,7 @@ from bct.send_delayed_message import (
     Watch, continue_send_delayed_message, continue_send_delayed_message_from_rcc, extract_next_instruction, next_instruction_action,
     next_instruction_decision, InstructionError, DurableWatchLedger,
     SendDelayedMessageRunner, normalize_rcc_latest_assistant, RccLatestAssistantReader,
-    watch_diagnostic_for_status,
+    SendDelayedMessageService, watch_diagnostic_for_status,
 )
 
 
@@ -98,6 +99,131 @@ class SendDelayedMessageTests(unittest.TestCase):
                               response_turn_id="turn-2")
             self.assertEqual("turn-2",bound.response_turn_id)
             self.assertEqual("WATCHING",DurableWatchLedger(store).get("task-1",2)["state"])
+
+    def test_existing_chain_watch_binds_collector_and_resumes_manager_without_send(self):
+        manager = "11111111-1111-4111-8111-111111111111"
+        successor = "22222222-2222-4222-8222-222222222222"
+        supervisor = "33333333-3333-4333-8333-333333333333"
+        with tempfile.TemporaryDirectory() as root:
+            store = Store(Path(root) / "state.sqlite")
+            ledger = DurableWatchLedger(store)
+            with store.transaction() as db:
+                db.execute(
+                    "INSERT INTO delayed_send_watches("
+                    "task_id,generation,conversation_key,response_turn_id,"
+                    "source_send_receipt,state,context_json) VALUES(?,?,?,?,?,?,?)",
+                    (
+                        "active-chain-task", 1,
+                        "44444444-4444-4444-8444-444444444444",
+                        "turn-1", "send-1", "WATCHING",
+                        json.dumps({
+                            "work_id": "work-1",
+                            "chain_direction_id": "direction-1",
+                            "manager_conversation_key": manager,
+                            "manager_instance_id": "instance-old",
+                        }, sort_keys=True),
+                    ),
+                )
+            bound = ledger.bind_recovery_collector(
+                work_id="work-1", direction_id="direction-1",
+                manager_conversation_key=manager,
+                supervisor_conversation_key=supervisor,
+                supervisor_instance_id="instance-supervisor",
+            )
+            self.assertEqual(1, bound["updated_watches"])
+            self.assertEqual(
+                1,
+                ledger.bind_recovery_collector(
+                    work_id="work-1", direction_id="direction-1",
+                    manager_conversation_key=manager,
+                    supervisor_conversation_key=supervisor,
+                    supervisor_instance_id="instance-supervisor",
+                )["already_bound_watches"],
+            )
+            with self.assertRaisesRegex(ValueError, "SUCCESSION_PROOF_REQUIRED"):
+                ledger.resume_manager(
+                    work_id="work-1", manager_conversation_key=successor,
+                    manager_instance_id="instance-new",
+                )
+            resumed = ledger.resume_manager(
+                work_id="work-1", manager_conversation_key=successor,
+                manager_instance_id="instance-new",
+                succession_proofs=[{
+                    "transfer_id": "transfer-1",
+                    "predecessor_conversation_key": manager,
+                    "successor_conversation_key": successor,
+                }],
+            )
+            self.assertEqual(1, resumed["updated_watches"])
+            context = json.loads(
+                ledger.get("active-chain-task", 1)["context_json"]
+            )
+            self.assertEqual(successor, context["manager_conversation_key"])
+            self.assertEqual(supervisor, context["supervisor_conversation_key"])
+            self.assertEqual(manager, context["manager_recovery_history"][0][
+                "from_manager_conversation_key"
+            ])
+
+    def test_ambiguous_manager_state_checkpoints_but_never_falls_back_to_supervisor(self):
+        from bct.continuation_primitives import (
+            ContinuationDecision, ContinuationRoute, response_ready_alarm,
+        )
+        from bct.chain_manager_recovery import ChainManagerRecoveryLedger
+        with tempfile.TemporaryDirectory() as root:
+            store = Store(Path(root) / "state.sqlite")
+            service = SendDelayedMessageService(
+                store=store, browser_feature=None, operations=None,
+            )
+            service._manager_availability = lambda row: "UNKNOWN"
+            manager = "11111111-1111-4111-8111-111111111111"
+            supervisor = "33333333-3333-4333-8333-333333333333"
+            worker = "44444444-4444-4444-8444-444444444444"
+            watch = Watch("ambiguous-manager-task", 1, worker, "turn-1", "send-1")
+            alarm = response_ready_alarm(
+                watch_ref="ambiguous-manager-task:1", subject_ref=worker,
+                expected_response_turn_id="turn-1", response_turn_id="turn-1",
+                response_text="NEXT TASK — MANAGER\nExact result.",
+                response_complete=True, input_ready=True,
+            )
+            destination, status, payload = service._resolve_manager_return(
+                {
+                    "context": {
+                        "work_id": "work-1",
+                        "chain_direction_id": "direction-1",
+                        "manager_conversation_key": manager,
+                        "supervisor_conversation_key": supervisor,
+                    }
+                },
+                watch, alarm,
+                ContinuationDecision(ContinuationRoute.MANAGER, "Exact result."),
+            )
+            self.assertEqual(manager, destination)
+            self.assertEqual("RETURNED_TO_MANAGER", status)
+            self.assertEqual("Exact result.", payload)
+            self.assertEqual(
+                "PENDING",
+                ChainManagerRecoveryLedger(store).get(
+                    task_id=watch.task_id, generation=1,
+                )["delivery_state"],
+            )
+
+    def test_recovery_inbox_read_does_not_create_its_table(self):
+        from bct.chain_manager_recovery import ChainManagerRecoveryLedger
+        with tempfile.TemporaryDirectory() as root:
+            store = Store(Path(root) / "state.sqlite")
+            ledger = ChainManagerRecoveryLedger(store, initialize=False)
+            self.assertEqual([], ledger.inbox(
+                work_id="work-1",
+                report_target_conversation_key=(
+                    "11111111-1111-4111-8111-111111111111"
+                ),
+            ))
+            with store._readonly() as db:
+                created = db.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' "
+                    "AND name='chain_manager_return_checkpoints'"
+                ).fetchone()
+            self.assertIsNone(created)
 
     def test_runner_reads_and_sends_using_durable_watch(self):
         with tempfile.TemporaryDirectory() as root:

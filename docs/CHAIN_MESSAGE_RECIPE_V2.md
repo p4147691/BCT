@@ -111,12 +111,31 @@ B/C/X/S가 자기 범위의 구체적인 계획을 세움
   ├─ SELF → 같은 대상에 다음 턴 전달, 기존 계획·맥락 연결
   └─ MANAGER → A에게 결과 반환
                  ↓
+A 장애 중 Manager 반환 보존
+  ├─ Direction의 전역 Supervisor UUID를 첫 Watch부터 recovery collector로 결속
+  ├─ Worker의 MANAGER 반환을 원 Work/Direction/Task/generation에 먼저 체크포인트 저장
+  ├─ A가 정확히 연결 중이면 A에게 그대로 반환
+  ├─ A의 PAUSED/연결 끊김이 확인된 경우에만 S에게 인계 정보로 전달
+  │    └─ S는 판단·완료·재지시하지 않고 반환 원문과 식별값만 보관
+  ├─ A 상태가 애매하거나 전송 효과가 UNKNOWN이면 S로 우회 재전송하지 않음
+  ├─ S 또는 복구된/후임 A는 action="recovery_inbox"로 마지막 실행 결과와
+  │    동일 전송 영수증을 읽음
+  ├─ 기존 진행 Watch는 action="bind_recovery_collector"로 전송 없이 보강
+  ├─ 기존 A 복구 또는 대화망에서 정식 Manager 승계가 확인된 뒤
+  │    action="resume_manager"로 활성 Watch와 미확인 체크포인트의 A 결속만 변경
+  └─ A가 각 체크포인트를 읽고 action="ack_recovery"한 뒤 State R에서 다음
+       Direction을 판단함. ACK 전에는 복구 완료로 보지 않음
+                 ↓
 계속할 경우 A가 bct_chain_recipe(action="prepare",
  source_kind="MANAGER_RETURN", source_task_id=..., source_generation=...) 재호출
 현재 현실부터 다시 읽고 다음 방향을 판단
   └─ 선언된 Direction에서 온 정확한 반환이면 다음 save는 원래 Direction에
      `MANAGER_RETURN` 연결을 자동 기록한다. 읽기는 반복해도 전송·생성은 반복하지 않는다.
 ```
+
+`recovery_inbox`, `bind_recovery_collector`, `resume_manager`, `ack_recovery`는 원 Worker
+작업이나 UNKNOWN 효과를 재실행하지 않는다. 누락 상태 확인은 원 작업 재지시가 아닌 별도의
+읽기 전용 확인 Direction으로 작성한다.
 
 ### 추가 분기와 원래 체인 복귀
 

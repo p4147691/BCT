@@ -946,6 +946,7 @@ class BrowserFeature:
     ) -> FeatureRequest:
         allowed = {"command","task_id","instance_id","conversation_key",
                    "manager_conversation_key","manager_instance_id",
+                   "supervisor_conversation_key","supervisor_instance_id",
                    "planned_send_operation_id", "planned_send_text",
                    "bootstrap_create_operation_id",
                    "exclusive_conversation_watch", "max_generations",
@@ -992,6 +993,10 @@ class BrowserFeature:
              "manager_conversation_key":str(
                  arguments.get("manager_conversation_key") or "").strip().lower(),
              "manager_instance_id":str(arguments.get("manager_instance_id") or "").strip(),
+             "supervisor_conversation_key":str(
+                 arguments.get("supervisor_conversation_key") or "").strip().lower(),
+             "supervisor_instance_id":str(
+                 arguments.get("supervisor_instance_id") or "").strip(),
              "planned_send_operation_id":plan_id,"planned_send_text":plan_text,
              "bootstrap_create_operation_id":bootstrap_create_id,
              "execution_path":execution_path,"chain_direction_id":direction_id,
@@ -2388,6 +2393,9 @@ class BrowserFeature:
                     conversation_key=values["conversation_key"],
                     manager_conversation_key=values["manager_conversation_key"],
                     manager_instance_id=values["manager_instance_id"],
+                    supervisor_conversation_key=values.get(
+                        "supervisor_conversation_key", ""),
+                    supervisor_instance_id=values.get("supervisor_instance_id", ""),
                     operation_id=request.operation_id,
                     planned_send_operation_id=values.get("planned_send_operation_id",""),
                     planned_send_text=values.get("planned_send_text",""),
