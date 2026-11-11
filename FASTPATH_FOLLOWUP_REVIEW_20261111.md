@@ -22,4 +22,5 @@
 - Existing MCP bct_browser generic-object schema remains unchanged. No new MCP tool; refresh only needed for MCP surface changes (none here), but reconnect/verify catalogue reflects new Core when deployed.
 - RCC extension wire commands unchanged; no extension installation required for this candidate. The physical target’s RCC release compatibility must be checked by requester before enablement.
 - Shared AGENTS.md unchanged. A user-facing quick guide could be updated only after owner review. No runtime directives or common declaration changed.
+- PR #471, CI run #42936475113 for 1a2c2d83 failed scope/STALE_COMPONENT_LIBRARY before Core tests. Root cause: shipped component-library source hashes were stale after rcc.py and send_delayed_message.py changes. Rebuilt the generated bundle in isolation after checking input provenance; diff is only bundle fingerprint and two source hashes, no manual content or unrelated source changes. A new exact SHA CI run is required.
 - PR/CI and independent Supervisor review must cite exact SHA. No main/LIVE/RCC install/MCP refresh without later approval.
