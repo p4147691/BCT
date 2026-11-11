@@ -909,6 +909,18 @@ def build_mcp(
     ) -> dict[str, Any]:
         """Validate optional machine-checked Direction details without writing them."""
         if assessment is None:
+            # A fresh USER NEW_TASK without structured recipients cannot ever
+            # enter Send Direction R. Reject before persisting an orphaned
+            # NOT_PLANNED Direction. Preserve legacy Manager-return compatibility.
+            if decision == "NEW_TASK" and source_kind == "USER":
+                from bct.chain_direction import direction_assessment_contract
+                reason = "CHAIN_DIRECTION_ASSESSMENT_REQUIRED"
+                return {
+                    "status": "INVALID_REQUEST", "reason": reason,
+                    "assessment_contract": direction_assessment_contract(
+                        {}, reason=reason,
+                    ),
+                }
             return {"status": "NOT_PROVIDED", "assessment": None}
         from bct.chain_direction import direction_assessment_contract, validate_direction_assessment
         try:
