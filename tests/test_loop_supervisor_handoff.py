@@ -17,6 +17,22 @@ SUPERVISOR = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
 SHA = "a" * 40
 
 
+def load_retained_plan(store, **values):
+    """Load a pre-restoration record, not authorize a new Supervisor plan.
+
+    These transport/receipt tests cover already-retained data. New Loop plan
+    creation is intentionally rejected by the restored common Chain ledger.
+    """
+    from bct.chain_execution_plan import ChainExecutionPlanLedger
+    ledger=ChainExecutionPlanLedger(store)
+    with store.transaction() as db:
+        db.execute("INSERT INTO chain_execution_plans VALUES(?,?,?,?,?,?,?,?)",
+            (values["plan_id"],values["work_id"],values["direction_id"],values["task_id"],
+             values["generation"],values["plan_text"],
+             hashlib.sha256(values["plan_text"].encode()).hexdigest(),0))
+    return ledger.get(plan_id=values["plan_id"])
+
+
 def topology():
     m = {"instance_id":"a"*32,"node_info":{"roles":["Manager"],"network_id":"solo"}}
     s = {"instance_id":"a"*32,"node_info":{"roles":["Supervisor"],"network_id":""}}
@@ -151,7 +167,7 @@ class LoopReviewTests(unittest.TestCase):
         adapter.run_once(snapshot=snapshot(owner=SUPERVISOR))
         return adapter,receipts
 
-    def test_reprocess_original_final_progress_without_replay_or_check_overwrite(self):
+    def test_restored_parser_preserves_original_hold_and_receipts(self):
         import json
         from bct.chain_execution_plan import ChainExecutionPlanLedger
         adapter, receipts = self.delivered()
@@ -164,7 +180,7 @@ class LoopReviewTests(unittest.TestCase):
         key = hashlib.sha256(f"{ctx['task_id']}|1|exact-review-response".encode()).hexdigest()[:24]
         receipts["delayed-manager-"+key] = SimpleNamespace(state=SimpleNamespace(value="FINISHED"),outcome=SimpleNamespace(value="APPLIED"))
         plans = ChainExecutionPlanLedger(self.store)
-        plans.save(plan_id="review-plan",work_id="work",direction_id="dir",task_id=ctx["task_id"],generation=1,plan_text="Verify candidate")
+        load_retained_plan(self.store,plan_id="review-plan",work_id="work",direction_id="dir",task_id=ctx["task_id"],generation=1,plan_text="Verify candidate")
         plans.record_execute_plan_check(work_id="work",direction_id="dir",task_id=ctx["task_id"],generation=1,
             response_sha256=digest,assessment={"plan_id":"review-plan","reported_revision":0,"completed_steps":6,"total_steps":7,"issues":[]})
         original = plans.get_latest_execute_plan_check(work_id="work",direction_id="dir",task_id=ctx["task_id"])
@@ -173,35 +189,27 @@ class LoopReviewTests(unittest.TestCase):
             with self.assertRaisesRegex(LoopStateError,"RETURN_PROOF_REQUIRED"):
                 self.ledger.reconcile_return(work_id="work",owner=OWNER,epoch=1,response_sha256="0"*64)
             result = self.ledger.reconcile_return(work_id="work",owner=OWNER,epoch=1,response_sha256=digest)
-            self.assertEqual(result["state"],"ACCEPTED")
-            self.assertEqual(self.loop.get("work")["state"],"COMPLETED")
-            self.assertEqual(adapter.run_once(snapshot={}),[])
+            self.assertEqual(result["state"],"REVIEW_HOLD")
+            self.assertEqual(self.loop.get("work")["state"],"REVIEW_PENDING")
         self.assertEqual(plans.get_latest_execute_plan_check(work_id="work",direction_id="dir",task_id=ctx["task_id"]),original)
-        history = self.ledger.history("work")
-        self.assertEqual(len(history),1)
-        proof = json.loads(history[0]["payload_json"])["proof"]
-        self.assertEqual(proof["assessment"]["completed_steps"],7)
-        self.assertEqual(proof["original_check"]["completed_steps"],6)
+        self.assertEqual(self.ledger.history("work"),[])
         self.assertEqual(self.ledger.get("work")["task_id"],ctx["task_id"])
 
-    def test_final_progress_parser_rejects_inconsistent_or_regressing_updates(self):
+    def test_common_progress_parser_restored_to_first_declaration(self):
         from bct.chain_execution_plan import check_execute_plan
-        plan = {"plan_id":"p", "revision":0}
-        good = "PLAN REVISION: 0\nPROGRESS: 6/7 — checking\nPLAN REVISION: 0\nPROGRESS: 7/7 — done"
-        checked = check_execute_plan(plan=plan,response_text=good)
-        self.assertEqual(checked["completed_steps"],7)
+        plan={"plan_id":"p","revision":0}
+        text="PLAN REVISION: 0\nPROGRESS: 6/7 — checking\nPLAN REVISION: 0\nPROGRESS: 7/7 — done"
+        checked=check_execute_plan(plan=plan,response_text=text)
+        self.assertEqual(checked["completed_steps"],6)
+        self.assertEqual(check_execute_plan(plan=plan,response_text=text.replace("\n","\r\n")),checked)
         self.assertFalse(checked["issues"])
-        self.assertEqual(check_execute_plan(plan=plan,response_text=good.replace("\n", "\r\n")),checked)
-        for bad in (good + "\nPROGRESS: unreadable", good + "\nPLAN REVISION: unknown", good.replace("6/7", "7/8"), good.replace("7/7 — done", "5/7 — done"),
-                    good.replace("6/7", "8/7"), good.replace("PLAN REVISION: 0", "PLAN REVISION: 1", 1)):
-            self.assertTrue(check_execute_plan(plan=plan,response_text=bad)["issues"],bad)
 
     def test_acceptance_requires_exact_sha_and_return_receipt(self):
         adapter,receipts=self.delivered()
         ctx=self.returned_context("LOOP ACCEPTANCE: PASS\nLOOP CANDIDATE SHA: "+SHA)
         key=hashlib.sha256(f"{ctx['task_id']}|1|exact-review-response".encode()).hexdigest()[:24]
         from bct.chain_execution_plan import ChainExecutionPlanLedger
-        ChainExecutionPlanLedger(self.store).save(plan_id="review-plan",work_id="work",direction_id="dir",task_id=ctx["task_id"],generation=1,plan_text="Verify candidate")
+        load_retained_plan(self.store,plan_id="review-plan",work_id="work",direction_id="dir",task_id=ctx["task_id"],generation=1,plan_text="Verify candidate")
         ChainExecutionPlanLedger(self.store).record_execute_plan_check(work_id="work", direction_id="dir",
             task_id=ctx["task_id"],generation=1,response_sha256="a"*64,
             assessment={"plan_id":"review-plan","reported_revision":0,"completed_steps":1,"total_steps":1,"issues":[]})
@@ -297,7 +305,7 @@ class ComposedReviewTransportTests(unittest.TestCase):
             outcomes=adapter.run_once(snapshot={"monitor":view})
             self.assertEqual(outcomes[0]["state"],"DELIVERED",outcomes)
             review=adapter.ledger.get("review-work")
-            ChainExecutionPlanLedger(bct.store).save(plan_id="review-plan",work_id="review-work",
+            load_retained_plan(bct.store,plan_id="review-plan",work_id="review-work",
                 direction_id="review-direction",task_id=review["task_id"],generation=1,plan_text="Independently verify source")
             verdict = "HOLD" if first_hold else "PASS"
             rcc.reply(supervisor,"PLAN REVISION: 0\nPROGRESS: 1/1 — source checked\nNEXT TASK — MANAGER\nLOOP ACCEPTANCE: "+verdict+"\nLOOP CANDIDATE SHA: "+SHA)
@@ -322,7 +330,7 @@ class ComposedReviewTransportTests(unittest.TestCase):
                 loop.advance(work_id="review-work",owner=owner,epoch=2,next_step=2)
                 adapter.ledger.request(work_id="review-work",owner=owner,epoch=2,candidate_sha="b"*40,evidence_text="corrected source")
                 self.assertEqual(adapter.run_once(snapshot={"monitor":view})[0]["state"],"DELIVERED")
-                ChainExecutionPlanLedger(bct.store).save(plan_id="review-plan-2",work_id="review-work",
+                load_retained_plan(bct.store,plan_id="review-plan-2",work_id="review-work",
                     direction_id="review-direction",task_id=resumed["task_id"],generation=1,plan_text="Review corrected candidate")
                 rcc.reply(supervisor,"PLAN REVISION: 0\nPROGRESS: 1/1 — correction independently verified\nNEXT TASK — MANAGER\nLOOP ACCEPTANCE: PASS\nLOOP CANDIDATE SHA: "+"b"*40)
                 self.assertEqual(adapter.service.poll_once()["events"][0]["status"],"RETURNED_TO_MANAGER")

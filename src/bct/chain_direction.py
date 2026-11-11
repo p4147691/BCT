@@ -673,14 +673,11 @@ class ChainDirectionLedger:
             raise ValueError("CHAIN_DIRECTION_LIST_LIMIT_INVALID")
         try:
             with store._readonly() as db:
-                loop_filter = ""
-                if db.execute("SELECT 1 FROM sqlite_master WHERE name='loop_recipe_runs'").fetchone():
-                    loop_filter = " AND NOT EXISTS (SELECT 1 FROM loop_recipe_runs l WHERE l.work_id=d.work_id AND l.direction_id=d.direction_id)"
                 rows = db.execute("""
                     SELECT d.* FROM chain_directions AS d
                     JOIN works AS w ON w.work_id=d.work_id
                     WHERE w.owner_principal_id=? AND d.recipe_state='READY'
-                    """ + loop_filter + """ ORDER BY d.updated_at DESC LIMIT ?
+                    ORDER BY d.updated_at DESC LIMIT ?
                 """, (principal_id, limit)).fetchall()
         except sqlite3.OperationalError:
             # Status remains a read-only observation for stores created before

@@ -425,6 +425,11 @@ Chain/Set Direction의 prepare 응답에 `manual_guidance`로 자동 포함한�
 
 ## 단일 Manager Loop의 독립 Supervisor 인계 (후보)
 
+현재 Chain 공통 코드 복원에 따라 새 `bct_loop_recipe(start)`는 기록 생성 전에
+`LOOP_NEW_START_DISABLED_CHAIN_RESTORED`로 거절한다. 아래 Loop 내용은 기존 기록의
+구조 설명이며 신규 실행 가능 안내가 아니다. 기존 기록·UNKNOWN·영수증은 보존한다.
+복원된 Chain 계획 함수는 새 Loop/Loop 검수 계획 저장을 허용하지 않는다.
+
 Loop 실행 노드는 자기 대화망의 Manager 하나이며 Worker나 손자 노드를 만들지 않는다.
 별도 전역 Supervisor의 정확 UUID를 `bct_loop_recipe(start)`의 `supervisor`와
 `review_instruction`으로 결속하거나, 기존 Loop에는 `configure_review`로 결속한다.

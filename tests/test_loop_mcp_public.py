@@ -12,10 +12,12 @@ from bct.mcp_server import build_mcp, MCP_PRINCIPAL_ID
 
 class LoopMcpContractTests(unittest.IsolatedAsyncioTestCase):
     async def test_pull_requester_and_new_node_policy_public_contract(self):
-        started = await self.result("start", direction_id="loop-mcp-direction",
-            task_id="loop-mcp-task", owner="node-a", plan_text="plan", requester_ref="dot-origin:42")
-        self.assertEqual(started["status"], "OK", started)
-        self.assertEqual(started["loop"]["allow_new_nodes"], 0)
+        # Historical record fixture: public start is intentionally disabled.
+        from bct.loop_store import LoopStore
+        from bct.loop_result import LoopResultLedger
+        LoopStore(self.store).start(work_id="loop-mcp-work",direction_id="loop-mcp-direction",
+            task_id="loop-mcp-task",owner="node-a",plan_text="plan",allow_new_nodes=False)
+        LoopResultLedger(self.store).configure(work_id="loop-mcp-work",owner="node-a",requester_ref="dot-origin:42")
         report = (await self.result("status"))["result_report"]
         self.assertEqual(report["requester_ref"], "dot-origin:42")
         self.assertIsNone(report["conversation_key"])
@@ -29,7 +31,7 @@ class LoopMcpContractTests(unittest.IsolatedAsyncioTestCase):
         from test_loop_self_dispatch import OWNER
         result = await self.result("start",direction_id="loop-mcp-direction",task_id="loop-mcp-task",
             owner=OWNER,plan_text="plan",requester_ref="origin",requester_conversation_key=OWNER)
-        self.assertEqual(result["reason"], "LOOP_RESULT_SELF_RETURN_FORBIDDEN")
+        self.assertEqual(result["reason"], "LOOP_NEW_START_DISABLED_CHAIN_RESTORED")
         self.assertIsNone((await self.result("status"))["loop"])
 
     async def asyncSetUp(self):
@@ -59,35 +61,39 @@ class LoopMcpContractTests(unittest.IsolatedAsyncioTestCase):
             getattr(value,"structuredContent",None) or value
         )
 
-    async def test_public_start_preserves_chain_state_and_plan(self):
-        response=await self.result(
-            "start",direction_id="loop-mcp-direction",
-            task_id="loop-mcp-task",owner="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-            plan_text="first verified step",
-        )
-        self.assertEqual(response["status"],"OK")
-        self.assertEqual(response["loop"]["state"],"LOOP_STARTED")
-        self.assertEqual(response["plan"]["task_id"],"loop-mcp-task")
-        original=ChainDirectionLedger(self.store).get(
-            direction_id="loop-mcp-direction"
-        )
-        self.assertEqual(original["chain_state"],"NOT_PLANNED")
-        again=await self.result(
-            "start",direction_id="loop-mcp-direction",
-            task_id="loop-mcp-task",owner="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-            plan_text="first verified step",
-        )
-        self.assertEqual(again["status"],"OK")
-        self.assertTrue(again["plan"]["duplicate"])
+    async def test_public_start_is_blocked_before_any_partial_record(self):
+        before=ChainDirectionLedger(self.store).get(direction_id="loop-mcp-direction")
+        for _ in range(2):
+            response=await self.result("start",direction_id="loop-mcp-direction",task_id="loop-mcp-task",
+                owner="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",plan_text="plan")
+            self.assertEqual(response["reason"],"LOOP_NEW_START_DISABLED_CHAIN_RESTORED")
+        self.assertEqual(ChainDirectionLedger(self.store).get(direction_id="loop-mcp-direction"),before)
+        with self.store._readonly() as db:
+            for name in ("loop_recipe_runs","chain_execution_plans","loop_review_handoffs","loop_result_reports"):
+                if db.execute("SELECT 1 FROM sqlite_master WHERE name=?",(name,)).fetchone():
+                    self.assertEqual(db.execute("SELECT count(*) FROM "+name).fetchone()[0],0)
+
+    async def test_disabled_start_preserves_existing_unknown_record(self):
+        from bct.loop_store import LoopStore
+        ledger=LoopStore(self.store)
+        owner="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        ledger.start(work_id="loop-mcp-work",direction_id="loop-mcp-direction",
+                     task_id="old-task",owner=owner,plan_text="historical plan")
+        ledger.prepare_operation(work_id="loop-mcp-work",owner=owner,epoch=1,operation_id="original-unknown")
+        ledger.reconcile(work_id="loop-mcp-work",owner=owner,epoch=1,operation_id="original-unknown",result="UNKNOWN")
+        before=ledger.get("loop-mcp-work")
+        result=await self.result("start",direction_id="new-direction",task_id="replacement",owner=owner,
+            plan_text="must not be saved",direction_text="must not be saved")
+        self.assertEqual(result["reason"],"LOOP_NEW_START_DISABLED_CHAIN_RESTORED")
+        self.assertEqual(ledger.get("loop-mcp-work"),before)
+        self.assertIsNone(ChainDirectionLedger(self.store).get(direction_id="new-direction"))
+        self.assertEqual((await self.result("status"))["loop"],before)
 
     async def test_public_verified_completion_is_terminal(self):
         from bct.loop_store import LoopStore
         owner="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
-        await self.result(
-            "start",direction_id="loop-mcp-direction",
-            task_id="loop-mcp-task",owner=owner,
-            plan_text="first verified step",
-        )
+        LoopStore(self.store).start(work_id="loop-mcp-work",direction_id="loop-mcp-direction",
+            task_id="loop-mcp-task",owner=owner,plan_text="historical plan")
         without_proof=await self.result(
             "complete",owner=owner,epoch=1,verified=False,
         )
@@ -348,7 +354,7 @@ class LoopMcpContractTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(value["status"],"INVALID_REQUEST")
 
-    async def test_single_manager_start_creates_direction_without_worker(self):
+    async def test_single_manager_start_creates_no_direction_or_loop(self):
         from unittest.mock import patch
         from test_loop_supervisor_handoff import OWNER, SUPERVISOR, topology
         routes = topology()
@@ -359,19 +365,14 @@ class LoopMcpContractTests(unittest.IsolatedAsyncioTestCase):
             result=await self.result("start",direction_id="solo-direction",task_id="solo-task",
                 owner=OWNER,plan_text="Bounded source-only task",direction_text="Implement and independently review",
                 supervisor=SUPERVISOR,review_instruction="Exact source review only")
-        self.assertEqual(result["status"],"OK",result)
-        self.assertEqual(result["review"]["state"],"CONFIGURED")
-        direction=ChainDirectionLedger(self.store).get(direction_id="solo-direction")
-        self.assertEqual(direction["chain_state"],"NOT_PLANNED")
-        self.assertEqual(direction["assessment"],{})
-        status=await self.result("status")
-        self.assertEqual(status["review"]["supervisor"],SUPERVISOR)
-        self.assertEqual(status["plan"]["task_id"],"solo-task")
+        self.assertEqual(result["reason"],"LOOP_NEW_START_DISABLED_CHAIN_RESTORED")
+        self.assertIsNone(ChainDirectionLedger(self.store).get(direction_id="solo-direction"))
+        self.assertIsNone((await self.result("status"))["loop"])
 
     async def test_single_manager_start_without_reviewer_does_not_create_direction(self):
         result=await self.result("start",direction_id="missing-reviewer",task_id="solo-task",
             owner="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",plan_text="plan",direction_text="new direct direction")
-        self.assertEqual(result["reason"],"LOOP_REVIEW_BINDING_REQUIRED")
+        self.assertEqual(result["reason"],"LOOP_NEW_START_DISABLED_CHAIN_RESTORED")
         self.assertIsNone(ChainDirectionLedger(self.store).get(direction_id="missing-reviewer"))
 
 
