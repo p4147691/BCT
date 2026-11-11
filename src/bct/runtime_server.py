@@ -408,7 +408,7 @@ def main() -> int:
         "delivery_continuation_recovery": {
             "enabled": True, "runs": 0,
         },
-        "loop_recipe_recovery": {"enabled": True, "runs": 0, "mode": "EXACT_SELF_AND_RECONCILE"},
+        "loop_recipe_recovery": {"enabled": True, "runs": 0, "mode": "EXACT_SELF_AND_SUCCESSOR_RECOVERY"},
         "bottleneck_ack": bottleneck_ack.status(),
         "chat_stream_rcc_watch": {"state": "IDLE", "polls": 0, "last_events": 0},
         "delayed_send_watch": {"state": "IDLE", "polls": 0, "last_events": 0},
@@ -539,6 +539,7 @@ def main() -> int:
         from .loop_self_outbox import LoopSelfOutbox
         from .loop_self_dispatch import LoopSelfDispatcher
         from .loop_self_continuation import LoopSelfContinuation
+        from .loop_successor_supervisor import LoopSuccessorSupervisor
         from .mcp_server import MCP_PRINCIPAL_ID
         observer = LoopRecoveryScanner(bct.store)
         outbox = LoopSelfOutbox(bct.store)
@@ -546,6 +547,11 @@ def main() -> int:
         continuation = LoopSelfContinuation(
             bct.store, bct.operations._features["browser"],
         )
+        successor = LoopSuccessorSupervisor(
+            bct.store, bct.operations, bct.operations._features["browser"],
+            principal_id=MCP_PRINCIPAL_ID,
+        )
+        previous_snapshot = None
         while not recovery_stop.is_set():
             try:
                 due = observer.scan(limit=8)
@@ -554,13 +560,15 @@ def main() -> int:
                 recovered = {"checked": 0, "results": [], "external_effect": "NONE"}
                 delivery = []
                 continuations = []
+                succession = {"checked": 0, "outcomes": []}
                 monitor = None
                 if due or pending or delivered:
                     monitor = build_monitor_state(
                         store=bct.store, service_state=state,
                         data_root=runtime_root.parent / "data",
                     )
-                    nodes = status_view(monitor, "node").get("current_nodes", {})
+                    snapshot = {"monitor": monitor}
+                    nodes = status_view(snapshot, "node").get("current_nodes", {})
                     allowed = set()
                     if nodes.get("observation", {}).get("state") == "FRESH":
                         for node in nodes.get("items", []):
@@ -581,7 +589,7 @@ def main() -> int:
                             result = dispatcher.send_once(
                                 work_id=item["work_id"], epoch=item["epoch"],
                                 step=item["step"], owner=item["conversation_key"],
-                                snapshot=monitor,
+                                snapshot=snapshot,
                             )
                         except Exception as exc:
                             # No blanket retry. A post-reservation failure
@@ -593,25 +601,32 @@ def main() -> int:
                     for item in delivered:
                         try:
                             result = continuation.observe_once(
-                                row=item, snapshot=monitor,
+                                row=item, snapshot=snapshot,
                             )
                         except Exception as exc:
                             result = {"status": "HELD",
                                       "reason": type(exc).__name__,
                                       "operation_id": item["operation_id"]}
                         continuations.append(result)
+                    if due:
+                        succession = successor.run_once(
+                            snapshot=snapshot, prior_snapshot=previous_snapshot,
+                            now=time.time(), limit=2,
+                        )
+                    previous_snapshot = snapshot
                 state["loop_recipe_recovery"] = {
-                    "enabled": True, "mode": "EXACT_SELF_AND_RECONCILE",
+                    "enabled": True, "mode": "EXACT_SELF_AND_SUCCESSOR_RECOVERY",
                     "runs": int(state["loop_recipe_recovery"].get("runs", 0)) + 1,
                     "due": len(due), "pending": len(pending),
                     "delivered_waiting_response": len(delivered),
                     "last_outcome": recovered, "last_delivery": delivery,
                     "last_continuations": continuations,
+                    "last_succession": succession,
                     "last_error": None, "last_run_at": time.time(),
                 }
             except Exception as exc:
                 state["loop_recipe_recovery"] = {
-                    "enabled": True, "mode": "EXACT_SELF_AND_RECONCILE",
+                    "enabled": True, "mode": "EXACT_SELF_AND_SUCCESSOR_RECOVERY",
                     "runs": int(state["loop_recipe_recovery"].get("runs", 0)) + 1,
                     "last_error": type(exc).__name__,
                     "last_run_at": time.time(),
