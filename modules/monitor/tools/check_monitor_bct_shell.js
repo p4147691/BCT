@@ -211,10 +211,11 @@ vm.runInContext(source, context);
   assert.doesNotMatch(monitorSource, /id="monitorBctRecover" type="button" disabled/);
   assert.doesNotMatch(monitorSource, /id="monitorMcpTunnelRecover" type="button" disabled/);
   assert.doesNotMatch(monitorSource, /id="monitorBctControlRefresh" type="button" disabled/);
-  assert.match(monitorSource, />BC 도구 새로고침<\/button>/);
+  assert.match(monitorSource, />BCT 도구 새로고침<\/button>/);
   assert.match(monitorSource, /type:"recoverBctCore"/);
   assert.match(monitorSource, /type:"recoverMcpTunnel"/);
-  assert.match(monitorSource, /type:"monitor-refresh-exact-chatgpt-tab"/);
+  assert.doesNotMatch(monitorSource, /type:"monitor-refresh-exact-chatgpt-tab"/);
+  assert.match(monitorSource, /monitorBctShell\.refreshTools\(\)/);
   assert.match(monitorSource, /monitorWorkers\.dataset\.columns = "3"/);
   assert.match(monitorCss, /\.monitor-bct-node-list\s*\{[\s\S]*?grid-template-columns:repeat\(3,minmax\(0,1fr\)\)!important/);
   assert.doesNotMatch(monitorCss, /\.monitor-bct-window-card|\.monitor-bct-window-tab-rows/,

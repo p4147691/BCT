@@ -54,6 +54,16 @@ class BrowserExtensionManageFeature:
         if not isinstance(arguments, dict):
             raise PreconditionError("BROWSER_EXTENSION_ARGUMENTS_INVALID")
         operation = arguments.get("operation")
+        if operation == "refresh_tools":
+            if arguments != {"operation": "refresh_tools", "target": "bct_control"}:
+                raise PreconditionError("PLUGIN_REFRESH_ARGUMENTS_NOT_ALLOWED")
+            if self._settings() is None:
+                raise PreconditionError("EXTENSION_MANAGER_NOT_ENABLED")
+            return FeatureRequest(
+                self.capability, "chatgpt-plugin:bct-control", dict(arguments),
+                ("cdp:authorized-existing-chrome", "chatgpt-plugin:bct-control"),
+                {"mutating": True},
+            )
         if operation in self._READ_ONLY and set(arguments) == {"operation"}:
             return FeatureRequest(
                 self.capability, "cdp:authorized-existing-chrome",
@@ -129,7 +139,9 @@ class BrowserExtensionManageFeature:
         settings = self._settings()
         if settings is None:
             raise ConfirmedFailure("EXTENSION_MANAGER_NOT_ENABLED", release_claims=True)
-        if not self.script.is_file():
+        script = (self.script.with_name("chatgpt_tools_refresh.cjs")
+                  if operation == "refresh_tools" else self.script)
+        if not script.is_file():
             raise ConfirmedFailure("EXTENSION_MANAGER_ADAPTER_MISSING", release_claims=True)
         if not Path(settings["node_executable"]).is_file() or not Path(settings["puppeteer_module"]).is_dir():
             raise ConfirmedFailure("EXTENSION_MANAGER_DEPENDENCY_MISSING", release_claims=True)
@@ -143,7 +155,7 @@ class BrowserExtensionManageFeature:
         }
         try:
             completed = subprocess.run(
-                [settings["node_executable"], str(self.script)],
+                [settings["node_executable"], str(script)],
                 input=json.dumps(payload, ensure_ascii=False), capture_output=True,
                 text=True, encoding="utf-8", errors="replace",
                 timeout=90, check=False, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
@@ -160,6 +172,19 @@ class BrowserExtensionManageFeature:
                 raise RuntimeError("BROWSER_EXTENSION_EFFECT_UNCERTAIN:" + str(result.get("code"))[:160])
             raise ConfirmedFailure("BROWSER_EXTENSION_NO_EFFECT:" + str(result.get("code"))[:160],
                                    release_claims=True)
+        if operation == "refresh_tools":
+            if (result.get("operation") != operation
+                    or result.get("target") != "bct_control"
+                    or result.get("click_dispatched") is not True
+                    or result.get("owned_tab_closed") is not True):
+                raise RuntimeError("PLUGIN_REFRESH_RESULT_UNCERTAIN")
+            return FeatureResult(
+                Outcome.APPLIED,
+                {"operation": operation, "target": "bct_control",
+                 "click_dispatched": True, "owned_tab_closed": True,
+                 "client_catalog_verified": False},
+                output={"result": result},
+            )
         clean = {key: value for key, value in result.items() if key != "source"}
         return FeatureResult(
             Outcome.APPLIED,

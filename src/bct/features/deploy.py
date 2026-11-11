@@ -1460,10 +1460,25 @@ class ServiceControlFeature:
         profile = self.profiles.get(profile_name)
         action = str(arguments.get("action") or "")
         expected_release = str(arguments.get("expected_release_sha") or "").lower()
-        if action not in {"status", "start", "restart", "stop"}:
+        if action not in {"status", "start", "restart", "stop", "recover"}:
             raise PreconditionError("SERVICE_ACTION_INVALID")
         if not _SHA.fullmatch(expected_release):
             raise PreconditionError("SERVICE_RELEASE_SHA_INVALID")
+        if action == "recover":
+            from bct.bounded_service_recovery import TASKS
+            target = arguments.get("target")
+            if (set(arguments) != {"profile", "action", "target", "expected_release_sha"}
+                    or not isinstance(target, str) or target not in TASKS
+                    or profile.name != "bct_runtime_v1"
+                    or profile.service_name != "bct-core" or profile.port != 18790):
+                raise PreconditionError("SERVICE_RECOVERY_TARGET_NOT_ALLOWED")
+            return FeatureRequest(
+                self.capability, TASKS[target],
+                {"profile": profile.name, "action": action, "target": target,
+                 "expected_release_sha": expected_release},
+                (f"scheduled-task:{TASKS[target].casefold()}",),
+                {"expected_release_sha": expected_release, "mutating": True},
+            )
         return FeatureRequest(
             self.capability,
             profile.service_name,
@@ -1483,8 +1498,15 @@ class ServiceControlFeature:
             port=profile.port,
         )
         action = request.arguments["action"]
-        if action in {"start", "restart"}:
+        if action in {"start", "restart", "recover"}:
             _validate_profile_start_allowed(self.profiles, profile)
+        if action == "recover":
+            from bct.bounded_service_recovery import BoundedServiceRecovery
+            result = BoundedServiceRecovery().recover(request.arguments["target"])
+            return FeatureResult(Outcome.APPLIED, {
+                "profile": profile.name, "action": action,
+                "release_sha": current["source_head"], **result,
+            })
         if action == "status":
             result = controller.inspect()
         elif action == "start":

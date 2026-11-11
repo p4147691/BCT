@@ -103,7 +103,7 @@ monitorRoot.innerHTML = `
 
 
 
-    <div class="monitor-title-block"><div class="monitor-title-line"><strong id="monitorTitle">BWM</strong><span id="monitorVersion" class="monitor-version" role="status"></span><span id="monitorService" style="display:none">호환 계층 확인 중…</span></div><div class="monitor-utility-actions" role="toolbar" aria-label="BWM 복구 도구"><button id="monitorExtensionReload" type="button" title="이미 설치된 BWM 코드를 다시 읽습니다. GitHub 소스나 설치본을 배포하지는 않습니다.">확장 리로드</button><button id="monitorRccReload" type="button" title="현재 관측된 정확한 RCC 인스턴스 하나를 BCT 영수증 경로로 다시 로드합니다.">RCC 리로드</button><button id="monitorBctRecover" type="button" title="Windows의 BCT Core Supervisor 공식 작업을 실행하고 READY를 확인합니다.">BCT 시작·복구</button><button id="monitorMcpTunnelRecover" type="button" title="Windows의 BCT Tunnel Supervisor 공식 작업을 실행하고 health/ready를 확인합니다.">MCP 터널 복구</button><button id="monitorBctControlRefresh" type="button" title="선택한 정확한 ChatGPT 대화 탭을 다시 불러와 BC 도구 연결을 새로 읽습니다.">BC 도구 새로고침</button><button id="monitorCommandCatalogOpen" type="button" title="RCC 확장 내부 명령과 BCT 조합 명령의 목록·설명을 읽기 전용 창으로 엽니다.">명령 목록</button></div></div>
+    <div class="monitor-title-block"><div class="monitor-title-line"><strong id="monitorTitle">BWM</strong><span id="monitorVersion" class="monitor-version" role="status"></span><span id="monitorService" style="display:none">호환 계층 확인 중…</span></div><div class="monitor-utility-actions" role="toolbar" aria-label="BWM 복구 도구"><button id="monitorExtensionReload" type="button" title="이미 설치된 BWM 코드를 다시 읽습니다. GitHub 소스나 설치본을 배포하지는 않습니다.">확장 리로드</button><button id="monitorRccReload" type="button" title="현재 관측된 정확한 RCC 인스턴스 하나를 BCT 영수증 경로로 다시 로드합니다.">RCC 리로드</button><button id="monitorBctRecover" type="button" title="Windows의 BCT Core Supervisor 공식 작업을 실행하고 READY를 확인합니다.">BCT 시작·복구</button><button id="monitorMcpTunnelRecover" type="button" title="Windows의 BCT Tunnel Supervisor 공식 작업을 실행하고 health/ready를 확인합니다.">MCP 터널 복구</button><button id="monitorBctControlRefresh" type="button" title="BCT Control 플러그인 설정의 도구 새로 고침을 한 번 요청합니다. 현재 대화의 도구 목록 반영은 별도로 확인합니다.">BCT 도구 새로고침</button><button id="monitorCommandCatalogOpen" type="button" title="RCC 확장 내부 명령과 BCT 조합 명령의 목록·설명을 읽기 전용 창으로 엽니다.">명령 목록</button></div></div>
 
 
 
@@ -8441,21 +8441,13 @@ monitorMcpTunnelRecover?.addEventListener("click", () => {
 });
 
 monitorBctControlRefresh?.addEventListener("click", () => {
-  void runMonitorUtilityAction(monitorBctControlRefresh, "선택한 ChatGPT 탭의 BC 도구 연결을 새로 읽는 중…", async () => {
-    const node = monitorExactSelectedChatNode();
-    if (!node?.conversationKey) throw new Error("BC_REFRESH_SELECT_EXACT_CHAT_NODE_FIRST");
-    if (node.generating === true) throw new Error("BC_REFRESH_CHAT_IS_GENERATING");
-    const result = await chrome.runtime.sendMessage({
-      type:"monitor-refresh-exact-chatgpt-tab",
-      tabId:node.tabId,
-      windowId:node.windowId,
-      conversationKey:node.conversationKey,
-    });
-    if (!result?.ok || result?.reloaded !== true) throw new Error(result?.error || "BC_REFRESH_UNVERIFIED");
-    setMonitorStatus(`${node.nodeLabel || "선택 노드"} ChatGPT 탭을 다시 불러왔습니다. BC 도구가 다시 연결됩니다.`, true, 5000);
+  void runMonitorUtilityAction(monitorBctControlRefresh, "BCT Control 플러그인의 도구 목록 새로고침을 요청 중…", async () => {
+    const result = await monitorBctShell.refreshTools();
+    setMonitorStatus(`플러그인 새로고침 클릭 수락 · 영수증 ${result.operationId} · 현재 대화의 도구 목록 반영은 별도 확인이 필요합니다.`, true, 12000);
     return result;
-  }).catch((error) => setMonitorStatus(`BC 도구 새로고침 실패 · ${error?.message || error}`, false, 6500));
+  }).catch((error) => setMonitorStatus(`BCT 도구 새로고침 미확인 · ${error?.message || error} · 같은 요청을 다시 누르지 말고 영수증을 확인하세요.`, false, 12000));
 });
+
 if (monitorNodeSync) monitorNodeSync.addEventListener("click", async () => {
   if (monitorNodeSync.disabled) return;
   monitorNodeSync.disabled = true;

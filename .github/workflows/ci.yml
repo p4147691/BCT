@@ -27,6 +27,30 @@ jobs:
       - name: Check shared manual and component library freshness
         run: python scripts/build_component_library.py
 
+      - name: Reject reused extension release identities
+        shell: pwsh
+        run: |
+          $base = 'HEAD^'
+          if ('${{ github.event_name }}' -eq 'pull_request') {
+            $base = '${{ github.event.pull_request.base.sha }}'
+          } elseif ('${{ github.event_name }}' -eq 'push') {
+            $base = '${{ github.event.before }}'
+          }
+          if ($base -match '^0+$') { throw 'Exact baseline required for version gate.' }
+          if ($base -ne 'HEAD^') { git fetch --no-tags --depth=1 origin $base }
+          python scripts/check_extension_versions.py --base $base --head HEAD
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Validate tools refresh adapter contracts
+        run: node --test tests/test_chatgpt_tools_refresh.cjs
+
+      - name: Validate Monitor plugin refresh boundary
+        run: |
+          python modules/monitor/tools/build_monitor_bundle.py --check
+          node modules/monitor/tools/check_monitor_plugin_tools_refresh.cjs
+          node modules/monitor/tools/check_monitor_bct_shell.js
+          node modules/monitor/tools/check_monitor_recovery_actions.js
+
       - name: Resolve exact validation scope
         id: plan
         shell: pwsh

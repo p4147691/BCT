@@ -16,6 +16,7 @@
     reorderConversations: "http://127.0.0.1:18790/monitor/conversation-network/reorder",
     retireConversationNode: "http://127.0.0.1:18790/monitor/conversation-node/retire",
     rccReload: "http://127.0.0.1:18790/monitor/rcc/reload",
+    toolsRefresh: "http://127.0.0.1:18790/monitor/bct-tools/refresh",
     status: "http://127.0.0.1:18790/monitor",
     localLlm: "http://127.0.0.1:18790/monitor#local-llm",
   });
@@ -332,6 +333,31 @@
       return Object.freeze({ receipt, operationId: generated, instanceId: instance });
     }
 
+    async function refreshTools(operationId = "") {
+      if (typeof fetcher !== "function") throw new Error("BCT_TOOLS_REFRESH_FETCH_UNAVAILABLE");
+      const generated = String(operationId || `monitor.tools-refresh.${randomId?.() || ""}`);
+      if (!/^[A-Za-z0-9_.:-]{1,80}$/.test(generated))
+        throw new Error("BCT_TOOLS_REFRESH_OPERATION_ID_INVALID");
+      let receipt;
+      try {
+      const response = await fetcher(URLS.toolsRefresh, {
+        method: "POST", headers: {"Content-Type": "application/json"}, cache: "no-store",
+        body: JSON.stringify({operation_id: generated}),
+      });
+      receipt = await response?.json?.().catch(() => null);
+      if (!response?.ok || receipt?.outcome !== "APPLIED" ||
+          receipt?.evidence?.click_dispatched !== true ||
+          receipt?.evidence?.owned_tab_closed !== true) {
+        throw new Error(`BCT_TOOLS_REFRESH_UNVERIFIED:${generated}:${receipt?.error || receipt?.outcome || "UNKNOWN"}`);
+      }
+      } catch (cause) {
+        const error = new Error(`BCT_TOOLS_REFRESH_UNVERIFIED:${generated}:${cause?.message || "UNKNOWN"}`);
+        error.operationId = generated;
+        throw error;
+      }
+      return Object.freeze({receipt, operationId: generated, clientCatalogVerified: false});
+    }
+
     async function updateConversationScope(node, values = {}) {
       if (typeof fetcher !== "function") throw new Error("BCT_CONVERSATION_SCOPE_FETCH_UNAVAILABLE");
       if (node?.dotKey) {
@@ -499,6 +525,7 @@
       reorderConversations,
       retireConversationNode,
       reloadRcc,
+      refreshTools,
       openStatus: () => open(URLS.status, { width: 1120, height: 820 }),
       openLocalLlm: () => open(URLS.localLlm, { width: 1200, height: 820 }),
     });

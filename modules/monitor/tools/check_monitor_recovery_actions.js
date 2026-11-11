@@ -33,7 +33,8 @@ assert.match(tabClose, /receipt\("CLOSED", target, \{ verified: true, closed: tr
 
 assert.match(monitor, /monitorBctShell\.reloadRcc\(instanceId\)/);
 assert.match(monitor, /node\.generating === true/);
-assert.match(monitor, /BC_REFRESH_SELECT_EXACT_CHAT_NODE_FIRST/);
+assert.match(monitor, /monitorBctShell\.refreshTools\(\)/);
+assert.doesNotMatch(monitor, /type:"monitor-refresh-exact-chatgpt-tab"/);
 assert.match(monitor, /RCC_RELOAD_EXACT_INSTANCE_REQUIRED/);
 assert.match(monitor, /RCC 리로드 요청 수락/);
 assert.match(monitor, /RCC 리로드 완료 · 새 연결 확인됨/);
