@@ -3198,8 +3198,22 @@ class OrchestrationService:
             }
         finally:
             db.close()
+        # A successor Manager must see every original Task/Generation and
+        # outstanding wake without a truncated 100-item status summary.
+        # The inventory is read-only; this is never permission to replay
+        # previously submitted or UNKNOWN effects.
+        from ..manager_successor_inventory import manager_successor_inventory
+        recovery_inventory = (
+            manager_successor_inventory(
+                self.store, work_id=work.work_id, session_id=session_id,
+                expected_epoch=int(session["manager_epoch"]), limit=50,
+            )
+            if (int(session["manager_epoch"]) > 1
+                and str(session["state"]) in {"ACTIVE", "PARTIAL"}) else None
+        )
         return {
             "session": self._session_value(session),
+            "manager_recovery_inventory": recovery_inventory,
             "assignments": assignments,
             "attachments": attachments,
             "session_nodes": session_nodes,

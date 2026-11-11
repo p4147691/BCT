@@ -1,9 +1,9 @@
 {
   "schema": "bct.component-library.bundle.v1",
-  "source_fingerprint": "ce8547aa869bbb866442187e740fe20c2e00db62e7cda67e7fc19dc6dc01ca0b",
+  "source_fingerprint": "f98aaa00abfd0adbc75a7b95e31d9a47bb631b93421a323f2b3a3c9f5a6edf27",
   "source_hashes": {
     "docs/CHAIN_MESSAGE_RECIPE_V2.md": "67793cf99755f2e094fbed7c01d85c23f185b18514fc720b0642389c285046be",
-    "docs/component-library.v1.json": "4b13ef79da120ce0393337e318b177accfc4531c81a37821b524aa3745ec6213",
+    "docs/component-library.v1.json": "bb50289037d70aa0ffd9c0b32b85c7b922899976f9b55434b3181906fb4904c4",
     "modules/browser-bridge/extension/background.js": "b058aeb8fa8f37b8a21ae8b70be21d003e976a97e9e5ca884d7a98f5dced4472",
     "modules/browser-bridge/extension/chat_tools.js": "cc91898a0c30c58f5bee4e6b7fea991282ce5a21f100cfaeb220cc300e4ee85b",
     "modules/browser-bridge/extension/tool_protocol.js": "05e244e856af58705de1c1fc50a9a8d5e63b9ca2e8ba8674cabe8d9ea9a8563a",
@@ -42,6 +42,7 @@
     "src/bct/features/conversation_network.py": "950299ce295bf82f6efd2c993d8bddae1ce56294b7312ed97765ac516725f6ce",
     "src/bct/features/owned_extension_action.py": "6c164bfb0cacf132940f16c15dfc9f653937b48a91d5e3e3ba648ad07e4bfa15",
     "src/bct/features/rcc.py": "f3b196df21df45ddf91897f893e84bf238e8738f18a366f1320a586fcf40a9a0",
+    "src/bct/manager_successor_inventory.py": "12841f672cb9ec2dd910ba4e5a77c7b77e8e9f5105b8e7fef4f3f14bd59469e6",
     "src/bct/mcp_server.py": "5408749e6ee56bab64cced23b6f3889fdf002c363282a641e48d4bcc58551814",
     "src/bct/node_recovery.py": "0428ab8cc0ad5d7f0c4a744c178131a65c7e738677485fa1aa7c9fca381abc30",
     "src/bct/runtime_server.py": "a7e8750c630c21162bcb49f273801fe0d8340848e3e5da8b6dcf57a4f44b21e6",
@@ -190,6 +191,10 @@
           {
             "path": "src/bct/automatic_manager_rebinding.py",
             "symbol": "AutomaticManagerRebinding.run_once"
+          },
+          {
+            "path": "src/bct/manager_successor_inventory.py",
+            "symbol": "manager_successor_inventory"
           },
           {
             "path": "src/bct/automatic_prepared_replacement.py",

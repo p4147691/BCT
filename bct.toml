@@ -169,6 +169,7 @@ files = [
   "src/bct/chain_manager_recovery.py",
   "src/bct/manager_decision_recovery.py",
   "src/bct/manager_succession_recovery.py",
+  "src/bct/manager_successor_inventory.py",
   "src/bct/worker_dispatch_recovery.py",
   "src/bct/delivery_continuation_recovery.py",
   "src/bct/github_manager_wake.py",

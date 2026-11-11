@@ -1065,6 +1065,142 @@ class OrchestrationTests(unittest.TestCase):
                              work=work, session_id="session",
                          )["manager_handoffs"][0]["state"])
 
+    def _seed_manager_resume_task(self, *, assignment, generation, state,
+                                  attempt_state, dispatch_operation_id=None):
+        with self.bct.store.transaction() as db:
+            db.execute(
+                "INSERT INTO orchestration_assignments "
+                "(assignment_id,session_id,created_manager_epoch,request_digest,"
+                "request_json,roots_json,actions_json,acceptance_json,state,"
+                "current_generation,terminal_result_json,created_at,updated_at) "
+                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (assignment,"session",1,"a"*64,"{}","[]","[]","{}",state,
+                 generation,"{}",1.0,1.0),
+            )
+            worker = self.attachment("worker-b")
+            db.execute(
+                "INSERT INTO orchestration_assignment_attempts "
+                "(assignment_id,generation,manager_epoch,worker_node_id,"
+                "attachment_id,attachment_generation,state,dispatch_message_id,"
+                "dispatch_operation_id,created_at,updated_at) "
+                "VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                (assignment,generation,1,"worker-b",
+                 worker["attachment_id"],worker["generation"],attempt_state,
+                 None,dispatch_operation_id,1.0,1.0),
+            )
+
+    def test_successor_inventory_lists_original_generations_and_no_replay(self):
+        from bct.manager_successor_inventory import manager_successor_inventory
+        work = self.bct.store.get_work("work")
+        self._seed_manager_resume_task(
+            assignment="queued-generation",generation=3,
+            state="QUEUED",attempt_state="QUEUED",
+        )
+        self._seed_manager_resume_task(
+            assignment="unknown-generation",generation=8,
+            state="DISPATCHING",attempt_state="DISPATCH_UNKNOWN",
+            dispatch_operation_id="original-unknown-send",
+        )
+        epoch = self.bct.orchestration.takeover_manager(
+            work=work, session_id="session", expected_epoch=1,
+            manager_node_id="backup", reason="confirmed previous Manager unavailable",
+        )
+        self.assertEqual(2,epoch["manager_epoch"])
+        view = self.bct.orchestration.snapshot(work=work,session_id="session")
+        inventory=view["manager_recovery_inventory"]
+        self.assertEqual(2,inventory["manager_epoch"])
+        self.assertEqual("backup",inventory["manager_node_id"])
+        tasks={x["assignment_id"]:x for x in inventory["tasks"]}
+        self.assertEqual(3,tasks["queued-generation"]["generation"])
+        self.assertEqual(2,tasks["queued-generation"]["attempt_manager_epoch"])
+        self.assertEqual("ADOPT_QUEUED_GENERATION_ONLY_IF_NOT_DISPATCHED",
+                         tasks["queued-generation"]["next_safe_step"])
+        unknown=tasks["unknown-generation"]
+        self.assertEqual(8,unknown["generation"])
+        self.assertEqual(1,unknown["attempt_manager_epoch"])
+        self.assertEqual("original-unknown-send",unknown["dispatch_operation_id"])
+        self.assertEqual("RECONCILE_EXACT_DISPATCH_OPERATION_NO_REPLAY",
+                         unknown["next_safe_step"])
+        self.assertEqual("READ_ONLY_NO_SEND_NO_REPLACE",inventory["effects"])
+        with self.assertRaisesRegex(ValueError,"EPOCH_NOT_CURRENT"):
+            manager_successor_inventory(
+                self.bct.store,work_id=work.work_id,
+                session_id="session",expected_epoch=1,
+            )
+
+    def test_successor_inventory_links_chain_watch_and_original_unacked_return(self):
+        from bct.manager_successor_inventory import manager_successor_inventory
+        from bct.chain_manager_recovery import ChainManagerRecoveryLedger
+        from bct.send_delayed_message import DurableWatchLedger
+        work=self.bct.store.get_work("work")
+        DurableWatchLedger(self.bct.store)
+        ledger=ChainManagerRecoveryLedger(self.bct.store)
+        manager=self.attachment("manager")
+        backup=self.attachment("backup")
+        with self.bct.store.transaction() as db:
+            db.execute(
+                "INSERT INTO delayed_send_watches "
+                "(task_id,generation,conversation_key,response_turn_id,"
+                "source_send_receipt,state,context_json) VALUES(?,3,?,?,?, ?,?)",
+                ("original-chain-task","conversation-b","original-response",
+                 "original-send","MANAGER_RECOVERY_PENDING",json.dumps({
+                     "work_id":"work","chain_direction_id":"old-direction",
+                     "manager_conversation_key":manager["conversation_key"],
+                 })),
+            )
+        ledger.record_pending(
+            task_id="original-chain-task",generation=3,work_id="work",
+            direction_id="old-direction",
+            worker_conversation_key="conversation-b",
+            manager_conversation_key=manager["conversation_key"],
+            supervisor_conversation_key="",
+            response_turn_key="original-response",response_sha256="a"*64,
+            return_payload="An already completed Worker result",
+        )
+        self.bct.orchestration.takeover_manager(
+            work=work,session_id="session",expected_epoch=1,
+            manager_node_id="backup",reason="confirmed original Manager unavailable",
+        )
+        inventory=manager_successor_inventory(
+            self.bct.store,work_id="work",session_id="session",expected_epoch=2,
+        )
+        self.assertEqual(1,inventory["total_chain_watches"])
+        self.assertEqual("MANAGER_RECOVERY_PENDING",
+                         inventory["chain_watches"][0]["state"])
+        self.assertEqual(3,inventory["chain_watches"][0]["generation"])
+        self.assertEqual(1,inventory["total_unacknowledged_returns"])
+        self.assertEqual("PENDING",inventory["unacknowledged_returns"][0][
+            "delivery_state"])
+        self.assertEqual("original-chain-task",
+                         inventory["unacknowledged_returns"][0]["task_id"])
+        self.assertFalse(any(
+            x["next_safe_step"]=="REPLAY_WORKER"
+            for x in inventory["tasks"]
+        ))
+        self.assertEqual("READ_ONLY_NO_SEND_NO_REPLACE",inventory["effects"])
+
+    def test_successor_inventory_is_bounded_and_never_claims_full_listing(self):
+        from bct.manager_successor_inventory import manager_successor_inventory
+        work=self.bct.store.get_work("work")
+        for i in range(9):
+            self._seed_manager_resume_task(
+                assignment="queued-%02d"%i,generation=i+1,
+                state="QUEUED",attempt_state="QUEUED",
+            )
+        self.bct.orchestration.takeover_manager(
+            work=work,session_id="session",expected_epoch=1,
+            manager_node_id="backup",reason="confirmed failure",
+        )
+        summary=manager_successor_inventory(
+            self.bct.store,work_id=work.work_id,
+            session_id="session",expected_epoch=2,limit=4,
+        )
+        self.assertEqual(9,summary["total_tasks"])
+        self.assertEqual(4,len(summary["tasks"]))
+        self.assertFalse(summary["tasks_complete_listing"])
+        self.assertEqual(1,summary["tasks"][0]["generation"])
+        self.assertTrue(summary["wakes_complete_listing"])
+
     def test_manager_generating_for_long_time_is_never_auto_replaced(self):
         from bct.manager_succession_recovery import ManagerSuccessionRecovery
         work = self.bct.store.get_work("work")
