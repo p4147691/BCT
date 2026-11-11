@@ -68,6 +68,23 @@ class SuccessorTests(unittest.TestCase):
                                    snapshot_b=snapshot(observed_at=103),instance_id=INSTANCE,
                                    window_id=34,now=161)
 
+    def test_explicit_no_new_nodes_prevents_successor_intent(self):
+        self.loop.configure_recovery(work_id="w",owner=OLD,epoch=1,allow_new_nodes=False)
+        with self.assertRaisesRegex(LoopStateError,"LOOP_NEW_NODES_DISALLOWED"):
+            self.prepare()
+        self.assertIsNone(self.ledger.get("w"))
+
+    def test_no_new_nodes_is_rechecked_at_effect_reservation(self):
+        self.prepare()
+        self.loop.configure_recovery(work_id="w",owner=OLD,epoch=1,allow_new_nodes=False)
+        with self.assertRaisesRegex(LoopStateError,"LOOP_NEW_NODES_DISALLOWED"):
+            self.ledger.reserve_effect(work_id="w",kind="create")
+        self.assertEqual(self.ledger.get("w")["state"], "CREATE_INTENT")
+
+    def test_legacy_policy_remains_unset_until_explicitly_configured(self):
+        self.assertIsNone(self.loop.get("w")["allow_new_nodes"])
+        self.assertEqual(self.prepare()["state"], "CREATE_INTENT")
+
     def test_two_fresh_disconnections_required(self):
         with self.assertRaisesRegex(LoopStateError,"LOOP_SUCCESSOR_NOT_PROVEN_UNAVAILABLE"):
             self.ledger.prepare(work_id="w",snapshot_a=snapshot(observed_at=100),

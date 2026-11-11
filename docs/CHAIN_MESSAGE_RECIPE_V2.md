@@ -459,3 +459,33 @@ Supervisor 전역 역할을 다시 확인한다. 이 결속 이전은 역할을 
 미반환 전송은 이 경로를 사용할 수 없다. 이전 DELIVERED SELF는 ACK를 가장하지 않고
 RETIRED_FOR_REVIEW로 보존하여 재개 후 옛 응답을 다시 실행하지 않는다.
 로컬 mock 테스트는 실제 RCC/운영 인계·독립 검수·배포 성공의 증거가 아니다.
+
+
+### Loop 원 요청자 결과 보고와 노드 생성 제한
+
+독립 Supervisor 수락과 원 요청자/사용자 보고는 별도 사실이다. 검수 완료 시 기존
+`loop.state=COMPLETED` 의미는 유지하되, 같은 트랜잭션에서 정확 후보 SHA, 검수 응답
+SHA, 원 반환 Operation과 검수 결과를 `result_report.result`에 저장한다.
+`user_notification=UNVERIFIED`는 BCT가 dot의 사용자 메시지 전달을 증명하지 못한다는 뜻이다.
+
+`requester_ref`는 원 요청의 명시적인 상관 참조이며 RCC UUID나 외부 채널 주소가 아니다.
+`start` 또는 `configure_requester`에 이 참조만 주면 `REQUESTER_PULL` 모드이다.
+수락 뒤 `READY_FOR_REQUESTER` 결과를 `bct_loop_recipe(status)`에서 읽고 원 요청자 dot이
+사용자 보고를 맡는다. 경로를 모른다고 Manager·Supervisor·임의 UUID로 보내지 않는다.
+미결속 기존 작업도 수락 결과를 이 상태로 보존하며, 미전송 결과에 원 요청자를 한 번 결속할 수 있다.
+
+`requester_conversation_key`까지 명시한 경우에만 기존 RCC 대화에 선택적으로 보고한다.
+결속 때 정확한 최신 UUID/attachment를 확인하고, 전송 직전 다시 최신·idle 상태를 확인한다.
+Loop Manager나 검수 Supervisor로 자기 반환하지 않는다. 결속·결과·원 Operation은 불변이며
+새 requester로 바꿔 재전송할 수 없다. `PENDING`에서 선예약 후 `DISPATCHING`으로 이동하고,
+원 영수증의 정확 대상·본문 해시·Operation·instance가 APPLIED일 때만
+`DELIVERED_TO_CONVERSATION`이다. 이는 사용자 통지나 읽음/ACK를 뜻하지 않는다.
+없거나 불명확한 영수증은 `UNKNOWN`; 확정 미실행은 `NOT_APPLIED`로 보존하며 자동 재전송하지 않는다.
+
+신규 공개 Loop 시작의 `allow_new_nodes` 기본값은 false이다. 같은 Manager의 SELF 복구는
+계속 허용되지만 후계 노드 생성과 초기 메시지 선예약은 이 제한을 확인한다.
+기존 실행의 미설정 정책은 역사적 동작을 보존한다. 현재 owner/epoch의 명시적인
+`configure_recovery(allow_new_nodes=false)`로 기존 실행에도 금지를 기록할 수 있다.
+Loop가 이미 소유한 Direction은 `pending_chain_starts`에 표시하지 않는다.
+불확실한 영수증 안내는 단일 Manager에게 자기 자신으로 반환하라고 하지 않고 원 영수증
+조정과 미해결 상태 보존, 결속된 요청자 보고 경로 사용을 안내한다.

@@ -11,6 +11,27 @@ from bct.mcp_server import build_mcp, MCP_PRINCIPAL_ID
 
 
 class LoopMcpContractTests(unittest.IsolatedAsyncioTestCase):
+    async def test_pull_requester_and_new_node_policy_public_contract(self):
+        started = await self.result("start", direction_id="loop-mcp-direction",
+            task_id="loop-mcp-task", owner="node-a", plan_text="plan", requester_ref="dot-origin:42")
+        self.assertEqual(started["status"], "OK", started)
+        self.assertEqual(started["loop"]["allow_new_nodes"], 0)
+        report = (await self.result("status"))["result_report"]
+        self.assertEqual(report["requester_ref"], "dot-origin:42")
+        self.assertIsNone(report["conversation_key"])
+        self.assertEqual(report["state"], "WAITING_ACCEPTANCE")
+        changed = await self.result("configure_recovery", owner="node-a", epoch=1, allow_new_nodes=True)
+        self.assertEqual(changed["loop"]["allow_new_nodes"], 1)
+        blocked = await self.result("configure_requester", owner="node-a", requester_ref="different")
+        self.assertEqual(blocked["reason"], "LOOP_REQUESTER_BINDING_CONFLICT")
+
+    async def test_start_rejects_self_requester_before_creating_loop(self):
+        from test_loop_self_dispatch import OWNER
+        result = await self.result("start",direction_id="loop-mcp-direction",task_id="loop-mcp-task",
+            owner=OWNER,plan_text="plan",requester_ref="origin",requester_conversation_key=OWNER)
+        self.assertEqual(result["reason"], "LOOP_RESULT_SELF_RETURN_FORBIDDEN")
+        self.assertIsNone((await self.result("status"))["loop"])
+
     async def asyncSetUp(self):
         self.tmp=tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
@@ -261,6 +282,62 @@ class LoopMcpContractTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["reason"], "LOOP_REVIEW_PENDING", result)
         self.assertEqual(ledger.get("loop-mcp-work")["epoch"], 1)
         self.assertEqual(ledger.get("loop-mcp-work")["state"], "REVIEW_PENDING")
+
+    def expired_completed_cursor(self, snapshot_provider):
+        from bct.loop_store import LoopStore
+        from bct.loop_supervisor_handoff import LoopReviewLedger
+        from test_loop_supervisor_handoff import OWNER, SUPERVISOR, topology
+        from unittest.mock import patch
+        ledger = LoopStore(self.store)
+        ledger.start(work_id="loop-mcp-work", direction_id="loop-mcp-direction",
+                     task_id="loop-mcp-task", owner=OWNER, plan_text="plan", now=100)
+        ledger.prepare_operation(work_id="loop-mcp-work", owner=OWNER, epoch=1, operation_id="read", now=101)
+        ledger.reconcile(work_id="loop-mcp-work", owner=OWNER, epoch=1, operation_id="read", result="APPLIED", now=102)
+        ledger.advance(work_id="loop-mcp-work", owner=OWNER, epoch=1, next_step=1, now=103)
+        routes = topology()
+        with patch("bct.loop_supervisor_handoff.resolve_direction_target", side_effect=lambda **kw: routes[kw["conversation_key"]]):
+            LoopReviewLedger(self.store).configure(work_id="loop-mcp-work", owner=OWNER,
+                supervisor=SUPERVISOR, instruction="Independent review", snapshot={})
+        self.server = build_mcp(SimpleNamespace(store=self.store,
+            operations=SimpleNamespace(capabilities=("read", "browser"))), status_provider=snapshot_provider)
+        return ledger
+
+    async def test_complete_renews_expired_busy_owner_then_requests_review(self):
+        from test_loop_self_dispatch import OWNER, production_snapshot
+        ledger = self.expired_completed_cursor(lambda: {"monitor": production_snapshot(generating=True)})
+        result = await self.result("complete", owner=OWNER, epoch=1, verified=True,
+            candidate_sha="a" * 40, evidence_text="Original applied receipts")
+        self.assertEqual(result["status"], "REVIEW_PENDING", result)
+        self.assertEqual(result["review"]["epoch"], 2)
+        self.assertEqual(ledger.get("loop-mcp-work")["state"], "REVIEW_PENDING")
+        self.assertEqual(ledger.get("loop-mcp-work")["operation_id"], "read")
+
+    async def test_complete_stale_observation_does_not_renew_or_send(self):
+        from test_loop_self_dispatch import OWNER
+        from unittest.mock import AsyncMock, patch
+        ledger = self.expired_completed_cursor(lambda: {"monitor": None})
+        before = ledger.get("loop-mcp-work")
+        with patch("bct.mcp_server.asyncio.sleep", new_callable=AsyncMock):
+            result = await self.result("complete", owner=OWNER, epoch=1, verified=True,
+                candidate_sha="a" * 40, evidence_text="Original applied receipts")
+        self.assertEqual(result["reason"], "LOOP_NODE_OBSERVATION_STALE")
+        self.assertEqual(ledger.get("loop-mcp-work"), before)
+
+    async def test_complete_renewal_cannot_hide_unknown_or_change_owner_epoch(self):
+        from test_loop_self_dispatch import OWNER, production_snapshot
+        from unittest.mock import Mock
+        observation = Mock(return_value={"monitor": production_snapshot(generating=True)})
+        ledger = self.expired_completed_cursor(observation)
+        for owner, epoch, state in ((OWNER, 1, "UNKNOWN"), (OWNER, 9, None),
+                                   ("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", 1, None)):
+            with self.store.transaction() as db:
+                db.execute("UPDATE loop_recipe_runs SET operation_state=? WHERE work_id='loop-mcp-work'", (state,))
+            before = ledger.get("loop-mcp-work")
+            result = await self.result("complete", owner=owner, epoch=epoch, verified=True,
+                candidate_sha="a" * 40, evidence_text="Original applied receipts")
+            self.assertEqual(result["status"], "INVALID_REQUEST")
+            self.assertEqual(ledger.get("loop-mcp-work"), before)
+        observation.assert_not_called()
 
     async def test_public_workless_start_rejected(self):
         result=await self.server.call_tool("bct_loop_recipe",{

@@ -62,6 +62,8 @@ class LoopSuccessorLedger:
         loop=LoopStore(self.store).get(work_id)
         if loop is None or loop["state"]!="LOOP_STARTED":
             raise LoopStateError("LOOP_SUCCESSOR_WORK_NOT_RUNNING")
+        if loop.get("allow_new_nodes") == 0:
+            raise LoopStateError("LOOP_NEW_NODES_DISALLOWED")
         if loop["lease_until"]>now:
             raise LoopStateError("LOOP_SUCCESSOR_LEASE_ACTIVE")
         if loop["operation_state"] in {"UNKNOWN","PREPARED"}:
@@ -83,7 +85,8 @@ class LoopSuccessorLedger:
             if (not current or current["owner"] != loop["owner"]
                     or current["epoch"] != loop["epoch"] or current["lease_until"] > now
                     or current["state"] != "LOOP_STARTED"
-                    or current["operation_state"] in {"UNKNOWN", "PREPARED"}):
+                    or current["operation_state"] in {"UNKNOWN", "PREPARED"}
+                    or current["allow_new_nodes"] == 0):
                 raise LoopStateError("LOOP_SUCCESSOR_EPOCH_UNSAFE")
             if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='loop_recipe_self_outbox'").fetchone():
                 if db.execute("SELECT 1 FROM loop_recipe_self_outbox WHERE work_id=? AND state IN ('UNCERTAIN','UNKNOWN') LIMIT 1",
@@ -120,6 +123,9 @@ class LoopSuccessorLedger:
             raise LoopStateError("LOOP_SUCCESSOR_EFFECT_INVALID")
         expected,selected=states[kind]
         with self.store.transaction() as db:
+            loop = db.execute("SELECT allow_new_nodes FROM loop_recipe_runs WHERE work_id=?", (work_id,)).fetchone()
+            if not loop or loop["allow_new_nodes"] == 0:
+                raise LoopStateError("LOOP_NEW_NODES_DISALLOWED")
             row=db.execute("SELECT * FROM loop_successor_cases WHERE work_id=?",
                            (work_id,)).fetchone()
             if not row or row["state"]!=expected:
@@ -317,7 +323,10 @@ class LoopSuccessorLedger:
                     f"Plan SHA256: {loop['plan_sha256']}\n"
                     "Read the saved plan, original operation receipts and current Epoch first. "
                     "Continue only the next uncompleted step under this Epoch. Never replay "
-                    "APPLIED or UNKNOWN operations. Return to Manager if the receipts are uncertain."
+                    "APPLIED or UNKNOWN operations. You are the single Loop Manager/worker. "
+                    "Do not return to yourself or create child nodes. Reconcile the original receipts "
+                    "with bct_loop_recipe; if still uncertain, preserve the hold and report the blocker "
+                    "to the original requester through its configured reporting path."
                 )
                 op = "loop-self-" + hashlib.sha256(f"{work_id}:{new_epoch}:{loop['next_step']}".encode()).hexdigest()[:24]
                 db.execute("INSERT INTO loop_recipe_self_outbox VALUES(?,?,?,?,?,?,?,'PENDING',?,?)",

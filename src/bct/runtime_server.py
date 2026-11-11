@@ -553,6 +553,8 @@ def main() -> int:
         )
         from .loop_supervisor_handoff import LoopSupervisorHandoff
         review_handoff = LoopSupervisorHandoff(bct.store, bct.operations, bct.operations._features["browser"])
+        from .loop_result import LoopResultDispatcher
+        result_dispatcher = LoopResultDispatcher(bct.store, bct.operations)
         previous_snapshot = None
         delivered_cursor = None
         while not recovery_stop.is_set():
@@ -567,13 +569,15 @@ def main() -> int:
                     last = delivered[-1]
                     delivered_cursor = (last["work_id"], last["epoch"], last["step"])
                 reviews = review_handoff.ledger.pending(limit=4)
+                reports = result_dispatcher.ledger.pending(limit=4)
+                report_outcomes = []
                 review_outcomes = []
                 recovered = {"checked": 0, "results": [], "external_effect": "NONE"}
                 delivery = []
                 continuations = []
                 succession = {"checked": 0, "outcomes": []}
                 monitor = None
-                if due or pending or delivered or reviews:
+                if due or pending or delivered or reviews or reports:
                     monitor = build_monitor_state(
                         store=bct.store, service_state=state,
                         data_root=runtime_root.parent / "data",
@@ -625,6 +629,7 @@ def main() -> int:
                             now=time.time(), limit=2,
                         )
                     review_outcomes = review_handoff.run_once(snapshot=snapshot, limit=4)
+                    report_outcomes = result_dispatcher.run_once(snapshot=snapshot, limit=4)
                     previous_snapshot = snapshot
                 state["loop_recipe_recovery"] = {
                     "enabled": True, "mode": "EXACT_SELF_AND_SUCCESSOR_RECOVERY",
@@ -636,6 +641,7 @@ def main() -> int:
                     "last_receipt_reconciliation": reconciled,
                     "last_succession": succession,
                     "last_review_handoffs": review_outcomes,
+                    "last_result_reports": report_outcomes,
                     "last_error": None, "last_run_at": time.time(),
                 }
             except Exception as exc:

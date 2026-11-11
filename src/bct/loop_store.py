@@ -29,6 +29,11 @@ class LoopStore:
                 plan_sha256 TEXT NOT NULL, next_step INTEGER NOT NULL DEFAULT 0,
                 operation_id TEXT, operation_state TEXT,
                 last_error TEXT, updated_at REAL NOT NULL)""")
+            columns = {row[1] for row in db.execute("PRAGMA table_info(loop_recipe_runs)")}
+            if "allow_new_nodes" not in columns:
+                # NULL preserves historical recovery behavior; public new starts
+                # declare the current single-node default explicitly as false.
+                db.execute("ALTER TABLE loop_recipe_runs ADD COLUMN allow_new_nodes INTEGER")
             db.execute("""CREATE TABLE IF NOT EXISTS loop_recipe_events(
                 work_id TEXT NOT NULL, event_seq INTEGER NOT NULL,
                 kind TEXT NOT NULL, epoch INTEGER NOT NULL,
@@ -59,7 +64,9 @@ class LoopStore:
         db.execute("INSERT INTO loop_recipe_events VALUES(?,?,?,?,?,?)",
                    (work_id, seq, kind, epoch, operation_id, time.time() if now is None else now))
 
-    def start(self, *, work_id, direction_id, task_id, owner, plan_text, now=None):
+    def start(self, *, work_id, direction_id, task_id, owner, plan_text, allow_new_nodes=None, now=None):
+        if allow_new_nodes is not None and type(allow_new_nodes) is not bool:
+            raise LoopStateError("LOOP_RECOVERY_POLICY_INVALID")
         for item in (work_id, direction_id, task_id, owner):
             self._ident(item)
         if not isinstance(plan_text, str) or not plan_text.strip():
@@ -78,11 +85,23 @@ class LoopStore:
                 return prior
             db.execute("""INSERT INTO loop_recipe_runs(
                 work_id,direction_id,task_id,owner,epoch,lease_until,
-                state,plan_text,plan_sha256,next_step,updated_at
-            ) VALUES(?,?,?,?,1,?,'LOOP_STARTED',?,?,0,?)""",
-                       (work_id,direction_id,task_id,owner,now+60,plan_text,digest,now))
+                state,plan_text,plan_sha256,next_step,updated_at,allow_new_nodes
+            ) VALUES(?,?,?,?,1,?,'LOOP_STARTED',?,?,0,?,?)""",
+                       (work_id,direction_id,task_id,owner,now+60,plan_text,digest,now,allow_new_nodes))
             self._event(db,work_id,"STARTED",1,now=now)
             return self._get(db,work_id)
+
+    def configure_recovery(self, *, work_id, owner, epoch, allow_new_nodes):
+        if type(allow_new_nodes) is not bool:
+            raise LoopStateError("LOOP_RECOVERY_POLICY_INVALID")
+        with self.store.transaction() as db:
+            row = self._get(db, work_id)
+            if not row or row["owner"] != owner or row["epoch"] != epoch:
+                raise LoopStateError("LOOP_FENCED")
+            db.execute("UPDATE loop_recipe_runs SET allow_new_nodes=?,updated_at=? WHERE work_id=?",
+                       (allow_new_nodes, time.time(), work_id))
+            self._event(db, work_id, "RECOVERY_NEW_NODES_ALLOWED" if allow_new_nodes else "RECOVERY_NEW_NODES_DISALLOWED", epoch)
+            return self._get(db, work_id)
 
     def claim(self, *, work_id, owner, epoch, now=None):
         self._ident(owner)
