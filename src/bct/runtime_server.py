@@ -321,6 +321,33 @@ def run_monitor_rcc_reload(
     ).as_dict()
 
 
+def run_monitor_tools_refresh(bct: BCT, *, runtime_root: Path,
+                              payload: dict[str, Any]) -> dict[str, Any]:
+    """Fixed BCT Control refresh only, through the same public capability."""
+    if set(payload) != {"operation_id"}:
+        raise ValueError("MONITOR_TOOLS_REFRESH_FIELDS_INVALID")
+    operation_id = payload.get("operation_id")
+    if not isinstance(operation_id, str) or not _OPERATION_ID_PATTERN.fullmatch(operation_id):
+        raise ValueError("MONITOR_TOOLS_REFRESH_OPERATION_ID_INVALID")
+    principal = Principal(MONITOR_PRINCIPAL_ID, "monitor-extension-origin",
+                          frozenset({"browser_extension_manage"}))
+    expected = Work("bct-monitor-tools-refresh", "Fixed BCT Control plugin tools refresh",
+                    (str(runtime_root.resolve()),),
+                    frozenset({"browser_extension_manage"}), principal.principal_id)
+    try:
+        current = bct.store.get_work(expected.work_id)
+    except KeyError:
+        bct.store.create_work(expected)
+    else:
+        if current != expected:
+            raise ValueError("MONITOR_TOOLS_REFRESH_WORK_MISMATCH")
+    return bct.operations.run(
+        principal=principal, work_id=expected.work_id, operation_id=operation_id,
+        capability="browser_extension_manage",
+        arguments={"operation": "refresh_tools", "target": "bct_control"},
+    ).as_dict()
+
+
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--runtime-root", required=True)
@@ -729,6 +756,20 @@ def main() -> int:
                 principal=monitor_principal,
                 payload=payload,
             )
+        except (ValueError, BCTError) as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
+        return JSONResponse(result)
+
+    @mcp.custom_route("/monitor/bct-tools/refresh", methods=["POST"], include_in_schema=False)
+    async def monitor_tools_refresh(request: Request) -> JSONResponse:
+        if not monitor_extension_origin_allowed(request.headers.get("origin", "")):
+            return JSONResponse({"error": "MONITOR_EXTENSION_ORIGIN_INVALID"}, status_code=403)
+        try:
+            payload = await request.json()
+            if not isinstance(payload, dict):
+                raise ValueError("MONITOR_TOOLS_REFRESH_OBJECT_REQUIRED")
+            result = await asyncio.to_thread(run_monitor_tools_refresh, bct,
+                                            runtime_root=runtime_root, payload=payload)
         except (ValueError, BCTError) as exc:
             return JSONResponse({"error": str(exc)}, status_code=400)
         return JSONResponse(result)

@@ -71,3 +71,36 @@ review. Then obtain any required action-time approval for protected deployment
 or restart, verify the exact live UI and permissions, run one refresh operation,
 and independently verify the client catalogue. No LIVE refresh, extension reload,
 Core restart, shared-main integration or deployment is performed by these tests.
+
+## Monitor plugin refresh button
+
+Monitor 2.0.2 replaces the old selected-ChatGPT-tab reload action with the same
+fixed BCT Control plugin refresh capability. No selected conversation is needed.
+The Monitor-only loopback POST checks the exact extension origin and accepts only
+an Operation ID. A dedicated bounded Work routes to refresh_tools/bct_control.
+There is no fallback to reloading a conversation. Existing Core/tunnel local
+recovery buttons and RCC/extension reloads are unchanged.
+The UI reports click acceptance and explicitly leaves client catalogue reflection
+unverified. Deploy the Core adapter/route before this Monitor payload; old Core
+returns an error instead of triggering another action. No LIVE proof is claimed.
+
+## Public Core and MCP tunnel recovery
+
+Existing public tool `bct_service_control` now also supports:
+`{"profile":"bct_runtime_v1","action":"recover","target":"core","expected_release_sha":"<current installed SHA>"}`
+or the same input with `target:"mcp_tunnel"`.
+The SHA comes from current BCT status, not a candidate source commit.
+
+This adapter mirrors Monitor's two fixed local recovery contracts: run only the
+existing BCT Core Supervisor or BCT Tunnel Supervisor Windows scheduled task,
+then check readiness. Already-ready targets are a no-op. It never installs or
+rewrites a task, changes security settings, kills processes, or restarts Chrome.
+The existing Work/Operation, policy and protected profile cutover guards apply.
+After a dispatched request, unverified readiness is UNKNOWN and must not be
+replayed with another Operation ID. Public availability is not approval to run.
+
+The command requires this MCP server/transport to be callable. It cannot repair
+the very connection through which the caller has already lost access. Keep
+Monitor's independent local Core/tunnel recovery buttons for that situation.
+The tool can be exposed to ordinary Chat through the active BCT plugin and
+refreshed client catalogue, but that does not guarantee transport availability.

@@ -47,6 +47,15 @@ _GENERAL_TOOLS = (
     "bct_work_create", "bct_operation_get",
 )
 _CAPABILITY_USAGE = {
+    "service_control": (
+        "Public status/start/restart/stop and bounded Supervisor recovery. "
+        "Recovery: profile=bct_runtime_v1, action=recover, target=core|mcp_tunnel, "
+        "expected_release_sha=exact current installed release. Runs only an existing "
+        "BCT Core Supervisor or BCT Tunnel Supervisor scheduled task and verifies readiness. "
+        "No task installation, security configuration, process stop or Chrome restart. "
+        "If this Core/MCP transport is down, this same MCP cannot be called; retain "
+        "Monitor's independent local recovery buttons. Never replay UNKNOWN recovery."
+    ),
     "test": "Run existing py_compile/unittest checks. Cached catalogues can submit a bounded verification recipe using arguments.operation=verify plus steps; each child is checked against the authenticated principal and current policy.",
     "verify": "Run up to 8 read metadata, test, or github_pr_status steps, or a fixed versioned recipe. Each step is durably journaled and authorized against the authenticated principal and current policy. Background operation; retrieve receipt and step_journal with bct_operation_get(wait_seconds=25). No file bodies or test output are persisted.",
     "github_pr_status": "Exact expected_head and required_checks required. Optional wait_seconds (0..300) waits server-side; positive waits run in background. Retrieve receipt with bct_operation_get.",

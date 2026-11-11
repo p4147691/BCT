@@ -1,7 +1,8 @@
 {
     "manifest_version":  3,
     "name":  "BCT Window Monitor",
-    "version":  "2.0.0",
+    "version":  "2.0.2",
+    "version_name": "2.0.2 BCT Plugin Tools Refresh",
     "description":  "BCT의 Windows 창·가상 데스크톱·썸네일을 관찰하고 제어하는 확장입니다.",
     "key":  "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAvMTpffTyiOSOKnPg9jD43awxJKOZ9EBfVRKkbWRyjR6jSiZS9wk2gdVAZs5ETAWn8brlHf7pSB1/hQhB0awSBMM62J+5tzPxTBxyjGmrWKu8TmEFFfInDewJM8l7AsvR43PqUby9IRpmvnNeh+18TND0D/cbVZcBDKW1VX63wdwRDJg+/IjYJDPWJcg5ww50FQc1Q0U7hjHsaZ4XZ+BqUVkll0ZPy0xN7qjcHeac/65Hf3MN4zrIQXuN2K2g6XVsRnwKkFHIhJKcnCx9toCSwTscs8KoWpk312KMGVuYbwfQo3aZDtvg6kgJWhz+st6mXskYsln5MyiDMEFmCE9bmwIDAQAB",
     "permissions":  [

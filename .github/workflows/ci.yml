@@ -44,6 +44,13 @@ jobs:
       - name: Validate tools refresh adapter contracts
         run: node --test tests/test_chatgpt_tools_refresh.cjs
 
+      - name: Validate Monitor plugin refresh boundary
+        run: |
+          python modules/monitor/tools/build_monitor_bundle.py --check
+          node modules/monitor/tools/check_monitor_plugin_tools_refresh.cjs
+          node modules/monitor/tools/check_monitor_bct_shell.js
+          node modules/monitor/tools/check_monitor_recovery_actions.js
+
       - name: Resolve exact validation scope
         id: plan
         shell: pwsh

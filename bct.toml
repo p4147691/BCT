@@ -145,6 +145,7 @@ files = [
   "src/bct/__init__.py",
   "src/bct/service.py",
   "src/bct/service_runtime.py",
+  "src/bct/bounded_service_recovery.py",
   "src/bct/runtime_server.py",
   "src/bct/supervisor.py",
   "src/bct/mcp_server.py",

@@ -710,6 +710,8 @@
       "kind": "partial_recipe",
       "maturity": "isolated",
       "implementation": [
+        {"path":"src/bct/runtime_server.py","symbol":"run_monitor_tools_refresh"},
+        {"path":"modules/monitor/extension/monitor-bct-shell.js","symbol":"refreshTools"},
         {
           "path": "src/bct/features/browser_extension_manage.py",
           "symbol": "BrowserExtensionManageFeature.prepare / execute"
@@ -763,6 +765,38 @@
       ],
       "tests": [
         "tests/test_extension_version_gate.py"
+      ]
+    },
+    {
+      "id": "bct.bounded_service_recovery",
+      "kind": "module",
+      "maturity": "isolated",
+      "implementation": [
+        {
+          "path": "src/bct/bounded_service_recovery.py",
+          "symbol": "BoundedServiceRecovery"
+        },
+        {
+          "path": "src/bct/features/deploy.py",
+          "symbol": "ServiceControlFeature.prepare / execute"
+        }
+      ],
+      "contract": "Public service_control recover routes exact installed-release profile to only the existing Core or MCP Tunnel Supervisor scheduled task, with no-op when ready and readiness verification after one task request. Same-service outage still needs independent local Monitor recovery.",
+      "effects": [
+        "existing-fixed-scheduled-task-run"
+      ],
+      "safety": [
+        "exact-release-sha",
+        "fixed-task-name",
+        "loopback-only-health",
+        "no-task-installation-or-security-change",
+        "unknown-no-replay"
+      ],
+      "used_by": [
+        "bct_service_control(action=recover)"
+      ],
+      "tests": [
+        "tests/test_bounded_service_recovery.py"
       ]
     }
   ]

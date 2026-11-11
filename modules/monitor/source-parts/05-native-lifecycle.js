@@ -160,21 +160,13 @@ monitorMcpTunnelRecover?.addEventListener("click", () => {
 });
 
 monitorBctControlRefresh?.addEventListener("click", () => {
-  void runMonitorUtilityAction(monitorBctControlRefresh, "선택한 ChatGPT 탭의 BC 도구 연결을 새로 읽는 중…", async () => {
-    const node = monitorExactSelectedChatNode();
-    if (!node?.conversationKey) throw new Error("BC_REFRESH_SELECT_EXACT_CHAT_NODE_FIRST");
-    if (node.generating === true) throw new Error("BC_REFRESH_CHAT_IS_GENERATING");
-    const result = await chrome.runtime.sendMessage({
-      type:"monitor-refresh-exact-chatgpt-tab",
-      tabId:node.tabId,
-      windowId:node.windowId,
-      conversationKey:node.conversationKey,
-    });
-    if (!result?.ok || result?.reloaded !== true) throw new Error(result?.error || "BC_REFRESH_UNVERIFIED");
-    setMonitorStatus(`${node.nodeLabel || "선택 노드"} ChatGPT 탭을 다시 불러왔습니다. BC 도구가 다시 연결됩니다.`, true, 5000);
+  void runMonitorUtilityAction(monitorBctControlRefresh, "BCT Control 플러그인의 도구 목록 새로고침을 요청 중…", async () => {
+    const result = await monitorBctShell.refreshTools();
+    setMonitorStatus(`플러그인 새로고침 클릭 수락 · 영수증 ${result.operationId} · 현재 대화의 도구 목록 반영은 별도 확인이 필요합니다.`, true, 12000);
     return result;
-  }).catch((error) => setMonitorStatus(`BC 도구 새로고침 실패 · ${error?.message || error}`, false, 6500));
+  }).catch((error) => setMonitorStatus(`BCT 도구 새로고침 미확인 · ${error?.message || error} · 같은 요청을 다시 누르지 말고 영수증을 확인하세요.`, false, 12000));
 });
+
 if (monitorNodeSync) monitorNodeSync.addEventListener("click", async () => {
   if (monitorNodeSync.disabled) return;
   monitorNodeSync.disabled = true;
