@@ -1,4 +1,4 @@
-const RCC_BUILD_VERSION = '2026-11-09-rcc-dot-title-rename-v1';
+const RCC_BUILD_VERSION = '2026-11-11-rcc-1.0.71-version-identity-v1';
 
 function editorCandidates() {
 

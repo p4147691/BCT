@@ -104,6 +104,13 @@ COMPOSER_REBIND_ROLLBACK = COMPOSER_REBIND_ROOT / "rollback_installed_1_0_69"
 COMPOSER_REBIND_MANIFEST = COMPOSER_REBIND_ROOT / "release_manifest_composer_rebind_immutable.json"
 COMPOSER_REBIND_MANIFEST_SHA256 = "15cd91df77cca9f317ea41423568b4d105dca06907357178132237c54da0257e"
 COMPOSER_REBIND_JOURNAL = Path(r"D:\BCT\runtime\backups\rcc-guarded-install-composer-rebind")
+# Version identity release preserves the exact installed PR472 focus fix.
+VERSION_IDENTITY_ROOT = Path(r"D:\BCT\data\RCC_VERSION_IDENTITY_20261111")
+VERSION_IDENTITY_STAGE = VERSION_IDENTITY_ROOT / "candidate_1_0_71_version_identity"
+VERSION_IDENTITY_ROLLBACK = VERSION_IDENTITY_ROOT / "rollback_installed_1_0_70_pr472"
+VERSION_IDENTITY_MANIFEST = VERSION_IDENTITY_ROOT / "release_manifest_version_identity_immutable.json"
+VERSION_IDENTITY_MANIFEST_SHA256 = "7a835c2cd746cc7c19e2343d1e9c0c42ef20708bb9a7f712b93072f0139dedbe"
+VERSION_IDENTITY_JOURNAL = Path(r"D:\BCT\runtime\backups\rcc-guarded-install-version-identity")
 EXTENSION_ID = "ocbidbaplechjjdacmokhnfbdmgjkphf"
 OP_ID = re.compile(r"[A-Za-z0-9_.-]{1,80}\Z")
 
@@ -231,7 +238,7 @@ def _plan(operation_id: str, *, live: Path, candidate: Path, backup_source: Path
     baseline_version = installed_version or ("1.0.59" if rollback["fileCount"] == 57 else "1.0.60")
     if _identity(live) != (EXTENSION_ID, baseline_version):
         raise PreconditionError("RCC_INSTALL_LIVE_IDENTITY_MISMATCH")
-    if candidate_version not in {"1.0.60", "1.0.61", "1.0.63", "1.0.64", "1.0.65", "1.0.66", "1.0.67", "1.0.69", "1.0.70"}:
+    if candidate_version not in {"1.0.60", "1.0.61", "1.0.63", "1.0.64", "1.0.65", "1.0.66", "1.0.67", "1.0.69", "1.0.70", "1.0.71"}:
         raise PreconditionError("RCC_INSTALL_CANDIDATE_VERSION_UNSUPPORTED")
     if _identity(candidate) != (EXTENSION_ID, candidate_version):
         raise PreconditionError("RCC_INSTALL_CANDIDATE_IDENTITY_MISMATCH")

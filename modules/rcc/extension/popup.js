@@ -1,5 +1,8 @@
 const $ = (id) => document.getElementById(id);
 let snapshot = null;
+// Read the installed manifest, never a separately maintained UI version.
+const installedManifest = chrome.runtime.getManifest();
+$('versionLabel').textContent = installedManifest.version_name || installedManifest.version;
 
 async function readState() {
   const response = await chrome.runtime.sendMessage({ type: 'relay:getState' });

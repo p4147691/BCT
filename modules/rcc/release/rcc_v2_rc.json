@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "kind": "RCC_REBUILD_V2_RC",
-  "candidate": "RCC_COMPOSER_REBIND_20261110",
+  "candidate": "RCC_VERSION_IDENTITY_20261111",
   "sourceRoot": "modules/rcc/extension",
   "candidateInventory": {
     "fileCount": 58,
@@ -23,8 +23,8 @@
       },
       {
         "path": "boot/platform_context.js",
-        "size": 1965,
-        "sha256": "1b58dfdadc7091eb956dfbc7b1e0ab08b49a99e6b4618f4abca7c9baefd13852"
+        "size": 1972,
+        "sha256": "1260ad74533319e7d774b64beeb2b643accf3afde5c749ceeee3f534dd09ff8d"
       },
       {
         "path": "browser/read_adapter.js",
@@ -108,8 +108,8 @@
       },
       {
         "path": "content/conversation_dom.js",
-        "size": 26012,
-        "sha256": "1659bd70601b875d3b4ba3ce6bcd0ebf1ed60c1ac7bc250224d786578ad82f4e"
+        "size": 26019,
+        "sha256": "0eccff9135c2ce6d2a195685c83657b1053dc28584b830d92d2a3d2f72e9cd08"
       },
       {
         "path": "content/conversation_rename.js",
@@ -123,8 +123,8 @@
       },
       {
         "path": "content/simple_relay_executor.js",
-        "size": 42693,
-        "sha256": "bd7bb28cfb844c0a2220218b6a70fc88f778addfc5411b6b99649e5dd15fbae8"
+        "size": 42845,
+        "sha256": "c2b0764a11e96e533d8709245468af992520520b95fdbf6a73baa9e0875492ea"
       },
       {
         "path": "core/conversation.js",
@@ -233,8 +233,8 @@
       },
       {
         "path": "manifest.json",
-        "size": 1526,
-        "sha256": "21c801fbee54d8e8cc4e81c0bb3d1a12f2bebe5c1b1a697a13a00a5862b6c89e"
+        "size": 1527,
+        "sha256": "15e60118831faf6a520c35f66322f8e63bfd9e895ceb1693d56f24948dd52c74"
       },
       {
         "path": "network/directory.js",
@@ -273,13 +273,13 @@
       },
       {
         "path": "popup.html",
-        "size": 641,
-        "sha256": "2d281ff32e3676efdb778a269abb32eed0c52e90a80a656c88551637bb52f68d"
+        "size": 677,
+        "sha256": "6dfd8a6433991cc5dc5807a94fc543031bfa5c4fb802ed519ae30c48f9d6e1ae"
       },
       {
         "path": "popup.js",
-        "size": 2252,
-        "sha256": "fa7547aae4484abef5896737587cb5d865d3e8c05e85008fc78666344b59316d"
+        "size": 2475,
+        "sha256": "0dd50b20809077a905bc6bac957089af002b78bb4a374dfde739cb788f62dfca"
       },
       {
         "path": "relay/contract.js",
@@ -297,7 +297,7 @@
         "sha256": "b3ad92bc20564a905bffc37f3e524e2c8e8c5ae71c02517a301cedd5cf1341cd"
       }
     ],
-    "aggregateSha256": "e054f0fae6598c64c2eb0e4ff397740ffa76acba50abe06dd2e78dfb288e1f02"
+    "aggregateSha256": "c2caaf6d8e8379f3092f05e411f542641371a21cc3f1e78f0cc0c0c7f2a86ba7"
   },
   "activeLoaderGraph": {
     "background": [
