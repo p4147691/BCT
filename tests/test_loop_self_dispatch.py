@@ -10,6 +10,7 @@ from bct.core.store import Store
 from bct.loop_store import LoopStore, LoopStateError
 from bct.loop_self_outbox import LoopSelfOutbox
 from bct.loop_self_dispatch import LoopSelfDispatcher
+from bct.current_nodes import classify_current_nodes
 
 OWNER="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 
@@ -27,6 +28,15 @@ def snapshot(*, owner=OWNER, fresh=True, generating=False, disconnected=False):
                              "items":[node]},
             "rcc":{"instances":[{"state":"OPEN","instance_id":"a"*32,
                                  "session_id":"b"*32,"tabs":[tab]}]}}
+
+
+def production_snapshot(**kwargs):
+    view = snapshot(**kwargs)
+    for instance in view["rcc"]["instances"]:
+        for tab in instance["tabs"]:
+            tab.update(url="https://chatgpt.com/c/" + tab["conversation_key"], node_label="N40")
+    view["current_nodes"] = classify_current_nodes(view["rcc"]["instances"])
+    return view
 
 
 class FakeOperations:
@@ -80,6 +90,33 @@ class LoopSelfDispatcherTests(unittest.TestCase):
         self.assertEqual(self.operations.calls[0]["arguments"]["conversation_key"],OWNER)
         with self.assertRaisesRegex(LoopStateError,"LOOP_SELF_ALREADY_DISPATCHED"):
             self.send(snapshot())
+
+    def test_core_monitor_envelope_sends_exactly_once(self):
+        view = production_snapshot()
+        self.assertNotIn("connection", view["current_nodes"]["items"][0])
+        self.assertNotIn("telemetry", view["current_nodes"]["items"][0])
+        self.assertEqual(self.send({"monitor": view})["status"], "DELIVERED")
+        self.assertEqual(len(self.operations.calls), 1)
+        with self.assertRaisesRegex(LoopStateError, "LOOP_SELF_ALREADY_DISPATCHED"):
+            self.send({"monitor": production_snapshot()})
+        self.assertEqual(len(self.operations.calls), 1)
+
+    def test_production_projection_rejects_nonidle_or_mismatched_tab(self):
+        mismatch = production_snapshot()
+        mismatch["rcc"]["instances"][0]["tabs"][0]["tab_id"] = 99
+        for view in (production_snapshot(disconnected=True),
+                     production_snapshot(generating=True), mismatch):
+            with self.assertRaises(LoopStateError):
+                self.send({"monitor": view})
+        self.assertEqual(self.operations.calls, [])
+        self.assertEqual(self.outbox.get(work_id="work", epoch=1, step=0)["state"], "PENDING")
+
+    def test_invalid_monitor_envelope_never_uses_outer_identity(self):
+        for monitor in (None, {}, snapshot(fresh=False), snapshot(disconnected=True)):
+            with self.assertRaises(LoopStateError):
+                self.send({**snapshot(), "monitor": monitor})
+        self.assertEqual(self.operations.calls, [])
+        self.assertEqual(self.outbox.get(work_id="work", epoch=1, step=0)["state"], "PENDING")
 
     def test_stale_generating_disconnected_never_send(self):
         for view in (snapshot(fresh=False),snapshot(generating=True),
