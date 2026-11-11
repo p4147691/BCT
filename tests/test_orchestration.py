@@ -1066,7 +1066,8 @@ class OrchestrationTests(unittest.TestCase):
                          )["manager_handoffs"][0]["state"])
 
     def _seed_manager_resume_task(self, *, assignment, generation, state,
-                                  attempt_state, dispatch_operation_id=None):
+                                  attempt_state, dispatch_operation_id=None,
+                                  dispatch_message_id=None):
         with self.bct.store.transaction() as db:
             db.execute(
                 "INSERT INTO orchestration_assignments "
@@ -1086,7 +1087,7 @@ class OrchestrationTests(unittest.TestCase):
                 "VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                 (assignment,generation,1,"worker-b",
                  worker["attachment_id"],worker["generation"],attempt_state,
-                 None,dispatch_operation_id,1.0,1.0),
+                 dispatch_message_id,dispatch_operation_id,1.0,1.0),
             )
 
     def test_successor_inventory_lists_original_generations_and_no_replay(self):
@@ -1127,6 +1128,52 @@ class OrchestrationTests(unittest.TestCase):
                 self.bct.store,work_id=work.work_id,
                 session_id="session",expected_epoch=1,
             )
+
+    def test_successor_inventory_existing_message_id_never_classifies_as_unsent(self):
+        from bct.manager_successor_inventory import manager_successor_inventory
+        work=self.bct.store.get_work("work")
+        self._seed_manager_resume_task(
+            assignment="only-durable-mailbox-message",generation=4,
+            state="QUEUED",attempt_state="QUEUED",
+            dispatch_message_id="already-persisted-message",
+        )
+        self._seed_manager_resume_task(
+            assignment="attempt-queued-but-assignment-running",generation=2,
+            state="DISPATCHING",attempt_state="QUEUED",
+        )
+        self.bct.orchestration.takeover_manager(
+            work=work,session_id="session",expected_epoch=1,
+            manager_node_id="backup",reason="confirmed old Manager unresponsive",
+        )
+        summary=manager_successor_inventory(
+            self.bct.store,work_id=work.work_id,session_id="session",
+            expected_epoch=2,
+        )
+        tasks={item["assignment_id"]:item for item in summary["tasks"]}
+        self.assertEqual(
+            "RECONCILE_EXACT_DISPATCH_OPERATION_NO_REPLAY",
+            tasks["only-durable-mailbox-message"]["next_safe_step"],
+        )
+        self.assertEqual("already-persisted-message",
+                         tasks["only-durable-mailbox-message"]["dispatch_message_id"])
+        self.assertEqual(
+            "INSPECT_ORIGINAL_TASK_GENERATION",
+            tasks["attempt-queued-but-assignment-running"]["next_safe_step"],
+        )
+
+    def test_snapshot_epoch_change_during_inventory_is_nonfatal_recheck(self):
+        from unittest.mock import patch
+        work=self.bct.store.get_work("work")
+        self.bct.orchestration.takeover_manager(
+            work=work,session_id="session",expected_epoch=1,
+            manager_node_id="backup",reason="confirmed old Manager failed",
+        )
+        with patch("bct.manager_successor_inventory.manager_successor_inventory",
+                   side_effect=ValueError("MANAGER_SUCCESSOR_EPOCH_NOT_CURRENT")):
+            report=self.bct.orchestration.snapshot(work=work,session_id="session")
+        self.assertEqual("EPOCH_CHANGED_RECHECK",
+                         report["manager_recovery_inventory"]["status"])
+        self.assertFalse(report["manager_recovery_inventory"]["tasks_complete_listing"])
 
     def test_successor_inventory_links_chain_watch_and_original_unacked_return(self):
         from bct.manager_successor_inventory import manager_successor_inventory

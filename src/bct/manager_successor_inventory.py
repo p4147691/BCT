@@ -14,6 +14,10 @@ def manager_successor_inventory(store: Any, *, work_id: str,
     if type(limit) is not int or not 1 <= limit <= 200:
         raise ValueError("MANAGER_SUCCESSOR_INVENTORY_LIMIT_INVALID")
     with store._readonly() as db:
+        # Keep Session/Epoch, original attempts, Watches, returns and counts
+        # on ONE SQLite read snapshot. Otherwise a concurrent takeover can
+        # mix two manager generations in a single resume inventory.
+        db.execute("BEGIN")
         session = db.execute(
             "SELECT session_id,work_id,manager_node_id,manager_epoch,state,"
             "work_assignment_epoch FROM orchestration_sessions "
@@ -109,9 +113,13 @@ def manager_successor_inventory(store: Any, *, work_id: str,
         # existing result/Operation receipts before deciding its next task.
         if str(x["assignment_state"]) in {"APPLIED","FAILED","CANCELLED"}:
             next_step="INSPECT_TERMINAL_RECEIPT_NO_REPLAY"
-        elif x["dispatch_operation_id"]:
+        elif x["dispatch_operation_id"] or x["dispatch_message_id"]:
+            # A durable mailbox message can exist even when a browser
+            # Operation ID was not yet persisted. Such a generation is NOT
+            # safe to adopt as unsent. Check that exact message/Operation.
             next_step="RECONCILE_EXACT_DISPATCH_OPERATION_NO_REPLAY"
-        elif str(x["attempt_state"]) == "QUEUED":
+        elif (str(x["assignment_state"]) == "QUEUED"
+              and str(x["attempt_state"]) == "QUEUED"):
             next_step="ADOPT_QUEUED_GENERATION_ONLY_IF_NOT_DISPATCHED"
         else:
             next_step="INSPECT_ORIGINAL_TASK_GENERATION"
