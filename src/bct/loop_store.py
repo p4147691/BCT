@@ -192,6 +192,40 @@ class LoopStore:
             operation_id=operation_id, result=outcome, now=now,
         )
 
+    def recover_expired_operation(self, *, work_id, owner, epoch, operation_id,
+                                  principal_id, now=None):
+        """Reconcile a disconnected owner's receipt without renewing its lease.
+
+        No claim, send or operation execution. The exact expired identity and
+        operation are rechecked atomically after the canonical receipt read.
+        """
+        now = time.time() if now is None else now
+        try:
+            receipt = self.store.get_operation_for(
+                operation_id=operation_id, work_id=work_id, principal_id=principal_id)
+        except KeyError as exc:
+            raise LoopStateError("LOOP_RECEIPT_NOT_FOUND") from exc
+        outcome = receipt.outcome.value if receipt.outcome is not None else "UNKNOWN"
+        if receipt.state.value != "FINISHED" or outcome not in {"APPLIED", "NOT_APPLIED"}:
+            outcome = "UNKNOWN"
+        with self.store.transaction() as db:
+            row = self._get(db, work_id)
+            if (not row or row["owner"] != owner or row["epoch"] != epoch
+                    or row["lease_until"] > now or row["state"] != "LOOP_STARTED"
+                    or row["operation_id"] != operation_id
+                    or row["operation_state"] not in {"PREPARED", "UNKNOWN", "APPLIED"}):
+                raise LoopStateError("LOOP_EXPIRED_OPERATION_FENCED")
+            if row["operation_state"] == "APPLIED" and outcome != "APPLIED":
+                raise LoopStateError("LOOP_RECEIPT_CONFLICT")
+            db.execute("UPDATE loop_recipe_runs SET operation_state=?,updated_at=? WHERE work_id=?",
+                       (outcome, now, work_id))
+            self._event(db, work_id, "OPERATION_RECONCILED", epoch, operation_id, now)
+            if outcome == "APPLIED":
+                db.execute("UPDATE loop_recipe_runs SET next_step=?,operation_state=NULL WHERE work_id=?",
+                           (row["next_step"] + 1, work_id))
+                self._event(db, work_id, "STEP_ADVANCED", epoch, operation_id, now)
+            return self._get(db, work_id)
+
     def advance(self, *, work_id, owner, epoch, next_step, now=None):
         now=time.time() if now is None else now
         with self.store.transaction() as db:
