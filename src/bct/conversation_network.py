@@ -967,6 +967,9 @@ def transfer_conversation_manager_role(
     if not _SHA256.fullmatch(expected):
         raise ConversationNetworkError("CONVERSATION_NETWORK_ROLE_TAGS_SHA256_INVALID")
     when = float(time.time() if now is None else now)
+    transfer_id = "manager-transfer-" + hashlib.sha256(
+        f"{project}|{predecessor}|{successor}|{when}".encode("utf-8")
+    ).hexdigest()[:24]
     with store.transaction() as db:
         active = {
             str(row["conversation_key"])
@@ -1018,6 +1021,12 @@ def transfer_conversation_manager_role(
             "WHERE project_id=? AND conversation_key IN (?,?)",
             (when, project, predecessor, successor),
         )
+        db.execute(
+            "INSERT INTO conversation_network_manager_transfers("
+            "transfer_id,project_id,predecessor_conversation_key,"
+            "successor_conversation_key,transferred_at) VALUES(?,?,?,?,?)",
+            (transfer_id, project, predecessor, successor, when),
+        )
     return {
         "project_id": project,
         "predecessor_conversation_key": predecessor,
@@ -1026,8 +1035,31 @@ def transfer_conversation_manager_role(
         "predecessor_role_tags_sha256": role_tags_sha256(next_predecessor),
         "role_tags": next_successor,
         "role_tags_sha256": role_tags_sha256(next_successor),
+        "transfer_id": transfer_id,
+        "transferred_at": when,
         "changed": True,
     }
+
+
+def manager_role_transfer_receipt(
+    store: Store, *, project_id: str, predecessor_conversation_key: str,
+    successor_conversation_key: str,
+) -> dict[str, object] | None:
+    """Read the latest exact, persisted user-driven Manager transfer proof."""
+    project = _identifier(project_id, "CONVERSATION_NETWORK_PROJECT_ID_INVALID")
+    predecessor = _conversation_key(predecessor_conversation_key)
+    successor = _conversation_key(successor_conversation_key)
+    with store._readonly() as db:
+        row = db.execute(
+            "SELECT * FROM conversation_network_manager_transfers "
+            "WHERE project_id=? AND predecessor_conversation_key=? "
+            "AND successor_conversation_key=? "
+            "AND transferred_at=(SELECT MAX(transferred_at) "
+            "FROM conversation_network_manager_transfers WHERE project_id=?) "
+            "ORDER BY transferred_at DESC LIMIT 1",
+            (project, predecessor, successor, project),
+        ).fetchone()
+    return dict(row) if row is not None else None
 
 
 def conversation_display_order_directory(

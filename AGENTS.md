@@ -132,23 +132,23 @@ does not by itself require redeploying an unaffected target.
 - Final reports separate local affected checks, candidate/checkpoint CI,
   integrated local main, GitHub main, deployed release and physical LIVE E2E.
 
-## 5A. Chain Message is the default execution route
+## 5A. Chain Recipe is the default execution route
 
 - When the user assigns an implementation, inspection, repair, verification,
-  deployment, or other executable BCT task, use Chain Message as the default
+  deployment, or other executable BCT task, use Chain Recipe as the default
   coordination and continuation route without requiring the user to name it.
 - Treat ordinary requests such as "do this", "fix this", or "continue" as
-  selecting the Chain Message route. Create a bounded Work, resolve fresh exact
+  selecting the Chain Recipe route. Create a bounded Work, resolve fresh exact
   Manager/Worker or Supervisor identities, and preserve the normal receipts,
   response watch, return-to-Manager, UNKNOWN and no-replay contracts.
-- Do not use Chain Message only when the user explicitly requests an exception,
-  such as "do not use Chain Message", "work only in this node", or a named
+- Do not use Chain Recipe only when the user explicitly requests an exception,
+  such as "do not use Chain Recipe", "work only in this node", or a named
   alternative execution route. Follow that exception only for the requested
   scope; it does not change the project default.
 - A question, explanation, status request, or design discussion with no assigned
-  execution is not forced through Chain Message. Once the user asks to perform
+  execution is not forced through Chain Recipe. Once the user asks to perform
   the work, the default above applies.
-- If the exact Chain Message route is unavailable, ambiguous, paused, or unsafe,
+- If the exact Chain Recipe route is unavailable, ambiguous, paused, or unsafe,
   do not silently substitute another execution route. Preserve current receipts
   and report the exact blocked stage or ask for the necessary target choice.
 
