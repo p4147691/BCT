@@ -980,6 +980,91 @@ class OrchestrationTests(unittest.TestCase):
             work=work, session_id="session"
         )["session"]["manager_epoch"])
 
+    def _prepared_epoch_successor_without_handoff_send(self):
+        """Simulate a hard Core stop after the epoch commit, before notice claim."""
+        work = self.bct.store.get_work("work")
+        with self.bct.store.transaction() as db:
+            db.execute(
+                "UPDATE orchestration_sessions SET wake_receipt_mode='RCC_RESULT_POLL_V1' "
+                "WHERE session_id='session'",
+            )
+        promoted = self.bct.orchestration.takeover_manager(
+            work=work, session_id="session", expected_epoch=1,
+            manager_node_id="backup", reason="confirmed original Manager absent",
+            evidence={"source":"exact-old-manager-recheck"},
+        )
+        self.assertEqual(2, promoted["manager_epoch"])
+        return work
+
+    def test_core_restart_delivers_previously_pending_exact_epoch_handoff_once(self):
+        from bct.manager_succession_recovery import ManagerSuccessionRecovery
+        work = self._prepared_epoch_successor_without_handoff_send()
+        before = len([r for r in self.relay.calls if r["command"] == "send-wakeback"])
+        original = self.bct.orchestration.snapshot(
+            work=work, session_id="session",
+        )["manager_handoffs"][0]
+        self.assertEqual("PENDING", original["state"])
+        recovery = ManagerSuccessionRecovery(self.bct.orchestration, self.relay)
+        result = recovery.run_once()
+        self.assertEqual(1, result["handoffs_resumed"], result)
+        self.assertEqual(1, result["handoffs_delivered"], result)
+        self.assertEqual(before+1, len([
+            r for r in self.relay.calls if r["command"] == "send-wakeback"
+        ]))
+        current = self.bct.orchestration.snapshot(work=work, session_id="session")
+        self.assertEqual(2, current["session"]["manager_epoch"])
+        self.assertEqual("backup", current["session"]["manager_node_id"])
+        self.assertEqual("DELIVERED", current["manager_handoffs"][0]["state"])
+        # A different Core instance, same durable Work, cannot resend the
+        # original effect or revive predecessor Epoch.
+        recovered = ManagerSuccessionRecovery(self.bct.orchestration, self.relay)
+        # A restarted Core takes ownership after the old lease expires;
+        # its durable handoff must still be exactly-once.
+        again = recovered.run_once(now=time.time() + 45.0)
+        self.assertTrue(again["lease_owned"])
+        self.assertEqual(0, again["handoffs_resumed"])
+        self.assertEqual(before+1, len([
+            r for r in self.relay.calls if r["command"] == "send-wakeback"
+        ]))
+
+    def test_core_restart_preserves_unknown_successor_notice_without_replay(self):
+        from bct.manager_succession_recovery import ManagerSuccessionRecovery
+        work = self._prepared_epoch_successor_without_handoff_send()
+        self.relay.unknown_wake_once.add("BCT_MGR2")
+        recovery = ManagerSuccessionRecovery(self.bct.orchestration, self.relay)
+        first = recovery.run_once()
+        self.assertEqual(1, first["handoffs_resume_unknown"])
+        notice = self.bct.orchestration.snapshot(
+            work=work, session_id="session",
+        )["manager_handoffs"][0]
+        self.assertEqual("UNKNOWN", notice["state"])
+        sent = len([x for x in self.relay.calls if x["command"] == "send-wakeback"])
+        restart = ManagerSuccessionRecovery(self.bct.orchestration, self.relay)
+        second = restart.run_once(now=time.time() + 45.0)
+        self.assertTrue(second["lease_owned"])
+        self.assertEqual(0, second["handoffs_resumed"])
+        self.assertEqual(sent, len([
+            x for x in self.relay.calls if x["command"] == "send-wakeback"
+        ]))
+
+    def test_core_restart_does_not_resend_delivering_predecessor_handoff(self):
+        from bct.manager_succession_recovery import ManagerSuccessionRecovery
+        work = self._prepared_epoch_successor_without_handoff_send()
+        claimed = self.bct.orchestration.claim_manager_handoff(
+            work=work, session_id="session", successor_epoch=2,
+        )
+        self.assertEqual("DELIVERING", claimed["state"])
+        recovery = ManagerSuccessionRecovery(self.bct.orchestration, self.relay)
+        result = recovery.run_once()
+        self.assertEqual(0, result["handoffs_resumed"])
+        self.assertFalse(any(
+            r["command"] == "send-wakeback" for r in self.relay.calls
+        ))
+        self.assertEqual("DELIVERING",
+                         self.bct.orchestration.snapshot(
+                             work=work, session_id="session",
+                         )["manager_handoffs"][0]["state"])
+
     def test_manager_generating_for_long_time_is_never_auto_replaced(self):
         from bct.manager_succession_recovery import ManagerSuccessionRecovery
         work = self.bct.store.get_work("work")

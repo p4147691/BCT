@@ -32,6 +32,7 @@ class ManagerSuccessionRecovery:
         self.lease_token = secrets.token_hex(32)
         # Iterate all active Manager sessions, not the same first batch forever.
         self._scan_cursor = ""
+        self._handoff_scan_cursor = ""
 
     def _acquire(self, now: float) -> bool:
         with self.store.transaction() as db:
@@ -193,6 +194,91 @@ class ManagerSuccessionRecovery:
         )
         return outcome.value
 
+    def _current_pending_handoffs(self, *, limit: int) -> list[dict[str, Any]]:
+        """Resume only current-epoch PENDING handoffs after Core restart.
+
+        A takeover may have committed its Manager Epoch before the process
+        claimed its first context notice. A later loop must find that exact
+        already-created handoff, not elect another Manager or invent new IDs.
+        DELIVERING, UNKNOWN, DELIVERED and BLOCKED never appear here.
+        """
+        with self.store._readonly() as db:
+            tables = {
+                str(row["name"]) for row in db.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                )
+            }
+            required = {
+                "orchestration_manager_handoffs",
+                "orchestration_sessions",
+                "orchestration_attachments",
+                "orchestration_session_nodes",
+                "works",
+            }
+            if not required.issubset(tables):
+                return []
+            statement = (
+                "SELECT h.*,s.work_id FROM orchestration_manager_handoffs h "
+                "JOIN orchestration_sessions s ON s.session_id=h.session_id "
+                "JOIN works w ON w.work_id=s.work_id "
+                "JOIN orchestration_attachments a ON a.attachment_id=h.attachment_id "
+                "JOIN orchestration_session_nodes n "
+                "ON n.session_id=h.session_id AND n.node_id=h.successor_node_id "
+                "WHERE h.state IN ('PENDING','NOT_APPLIED') "
+                "AND w.state='ACTIVE' AND w.assignment_epoch=s.work_assignment_epoch "
+                "AND s.state IN ('ACTIVE','PARTIAL') "
+                "AND h.successor_epoch=s.manager_epoch "
+                "AND h.successor_node_id=s.manager_node_id "
+                "AND n.active=1 AND n.session_role='MANAGER' "
+                "AND a.active=1 AND a.node_id=h.successor_node_id "
+                "AND a.generation=h.attachment_generation "
+                "AND a.instance_id=h.instance_id "
+                "AND a.external_session_id=h.external_session_id "
+                "AND a.tab_id=h.tab_id "
+                "AND a.conversation_key=h.conversation_key "
+                "AND a.binding_receipt_id=h.binding_receipt_id "
+                "AND h.handoff_id>? "
+                "ORDER BY h.handoff_id LIMIT ?"
+            )
+            rows = db.execute(
+                statement, (self._handoff_scan_cursor, limit),
+            ).fetchall()
+            if not rows and self._handoff_scan_cursor:
+                self._handoff_scan_cursor = ""
+                rows = db.execute(statement, ("", limit)).fetchall()
+            if rows:
+                self._handoff_scan_cursor = str(rows[-1]["handoff_id"])
+        return [dict(row) for row in rows]
+
+    def _resume_committed_handoffs(self, *, limit: int) -> dict[str, int]:
+        """Claim/complete only previously committed current-Epoch receipts."""
+        stats = {"eligible": 0, "delivered": 0, "unknown": 0, "waiting": 0}
+        for item in self._current_pending_handoffs(limit=limit):
+            stats["eligible"] += 1
+            if self._observe(item) != "IDLE":
+                stats["waiting"] += 1
+                continue
+            work = self.store.get_work(str(item["work_id"]))
+            # The existing claim checks the current epoch *again* and records
+            # the deterministic delivery_id before any RCC external effect.
+            # A concurrent Manager takeover fences this claim.
+            try:
+                claimed = self.service.claim_manager_handoff(
+                    work=work, session_id=str(item["session_id"]),
+                    successor_epoch=int(item["successor_epoch"]),
+                )
+            except ConflictError:
+                stats["waiting"] += 1
+                continue
+            if claimed is None:
+                continue
+            result = self._send_handoff(claimed, work)
+            if result == Outcome.APPLIED.value:
+                stats["delivered"] += 1
+            elif result == Outcome.UNKNOWN.value:
+                stats["unknown"] += 1
+        return stats
+
     def run_once(self, *, limit: int = 8, now: float | None = None) -> dict[str, int | bool]:
         if isinstance(limit, bool) or not 1 <= limit <= 32:
             raise ValueError("MANAGER_SUCCESSION_LIMIT_INVALID")
@@ -201,10 +287,21 @@ class ManagerSuccessionRecovery:
             "lease_owned": False, "observed": 0, "due": 0, "taken_over": 0,
             "handoffs_delivered": 0, "handoffs_unknown": 0,
             "telemetry_unknown": 0, "needs_successor": 0,
+            "handoffs_resumed": 0, "handoffs_resume_unknown": 0,
+            "handoffs_resume_waiting": 0,
         }
         if not self._acquire(now):
             return summary
         summary["lease_owned"] = True
+        # The Core may have stopped between durable Epoch takeover and its
+        # first Manager handoff. Reconcile that exact existing receipt before
+        # considering any further recovery election.
+        resumed = self._resume_committed_handoffs(limit=limit)
+        summary["handoffs_resumed"] = resumed["delivered"]
+        summary["handoffs_resume_unknown"] = resumed["unknown"]
+        summary["handoffs_resume_waiting"] = resumed["waiting"]
+        summary["handoffs_delivered"] += resumed["delivered"]
+        summary["handoffs_unknown"] += resumed["unknown"]
         for current in self._current(limit=limit):
             work = self.store.get_work(str(current["work_id"]))
             state = self._observe(current)
