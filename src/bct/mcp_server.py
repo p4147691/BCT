@@ -3103,7 +3103,10 @@ def build_mcp(
         name="bct_loop_recipe",
         description=("Durable SINGLE_PERSISTENT start/status/claim/reconcile/advance; "
                      "reconcile verifies the original BCT Operation receipt. "
-                     "It also records exact SELF wake intent without directly sending."),
+                     "Records SELF wake intent; optional existing global Supervisor binding via "
+                     "supervisor/review_instruction, configure_review/request_review and exact "
+                     "candidate_sha/evidence_text completion handoff. Status includes plan/progress/review. "
+                     "No node creation or permission expansion; Core dispatches the reserved handoff."),
         structured_output=True,
     )
     async def bct_loop_recipe(
@@ -3111,6 +3114,9 @@ def build_mcp(
         task_id: str = "", owner: str = "", plan_text: str = "",
         epoch: int = 1, operation_id: str = "", next_step: int = 0,
         message_text: str = "", verified: bool = False,
+        supervisor: str = "", review_instruction: str = "",
+        candidate_sha: str = "", evidence_text: str = "", direction_text: str = "",
+        review_response_sha: str = "",
     ) -> dict[str, Any]:
         from bct.loop_store import LoopStore
         from bct.chain_direction import ChainDirectionLedger
@@ -3157,15 +3163,66 @@ def build_mcp(
                 return {"status": "OK", "recovery": result}
             if action == "status":
                 loop = await asyncio.to_thread(ledger.get, work_id)
-                return {"status": "OK" if loop else "NOT_FOUND", "loop": loop}
+                from bct.loop_supervisor_handoff import LoopReviewLedger
+                review = LoopReviewLedger(bct.store).get(work_id)
+                if review:
+                    review = {k: v for k, v in review.items() if k not in {"message_text", "evidence_text", "instruction"}}
+                plan = (ChainExecutionPlanLedger.get_for_chain(store=bct.store, work_id=work_id,
+                    direction_id=loop["direction_id"], task_id=loop["task_id"]) if loop else None)
+                progress = (ChainExecutionPlanLedger.read_latest_execute_plan_check(store=bct.store,
+                    work_id=work_id, direction_id=loop["direction_id"], task_id=loop["task_id"]) if loop else None)
+                return {"status": "OK" if loop else "NOT_FOUND", "loop": loop,
+                        "plan": plan, "progress": progress, "review": review}
+            if action in {"configure_review", "request_review", "resume_review"}:
+                from bct.loop_supervisor_handoff import LoopReviewLedger
+                review_ledger = LoopReviewLedger(bct.store)
+                if action == "resume_review":
+                    if status_provider is None:
+                        return {"status": "UNAVAILABLE", "reason": "LOOP_FRESH_STATUS_REQUIRED"}
+                    snapshot = await asyncio.to_thread(status_provider)
+                    result = await asyncio.to_thread(review_ledger.resume, work_id=work_id,
+                        owner=owner, epoch=epoch, response_sha256=review_response_sha, snapshot=snapshot)
+                elif action == "configure_review":
+                    if status_provider is None:
+                        return {"status": "UNAVAILABLE", "reason": "LOOP_FRESH_STATUS_REQUIRED"}
+                    snapshot = await asyncio.to_thread(status_provider)
+                    result = await asyncio.to_thread(review_ledger.configure, work_id=work_id,
+                        owner=owner, supervisor=supervisor, instruction=review_instruction, snapshot=snapshot)
+                else:
+                    result = await asyncio.to_thread(review_ledger.request, work_id=work_id,
+                        owner=owner, epoch=epoch, candidate_sha=candidate_sha, evidence_text=evidence_text)
+                return {"status": "OK", "review": {k:v for k,v in result.items() if k != "message_text"}}
             if action == "start":
                 direction = await asyncio.to_thread(
                     ChainDirectionLedger(bct.store).get, direction_id=direction_id,
                 )
+                if direction is None and direction_text:
+                    # Explicit single-node Loop entry. Reuse the Direction ledger,
+                    # not the three-node Chain delivery topology. Existing records
+                    # and ordinary Chain validation are never weakened or changed.
+                    if not supervisor or status_provider is None:
+                        return {"status": "INVALID_REQUEST", "reason": "LOOP_REVIEW_BINDING_REQUIRED"}
+                    from bct.loop_supervisor_handoff import validate_loop_review_topology
+                    snapshot = await asyncio.to_thread(status_provider)
+                    validate_loop_review_topology(snapshot, owner=owner, supervisor=supervisor)
+                    if not review_instruction.strip() or len(review_instruction) > 4000:
+                        return {"status": "INVALID_REQUEST", "reason": "LOOP_REVIEW_INSTRUCTION_REQUIRED"}
+                    direction = await asyncio.to_thread(ChainDirectionLedger(bct.store).save,
+                        direction_id=direction_id, work_id=work_id, source_kind="USER",
+                        decision="NEW_TASK", direction_text=direction_text,
+                        source_text=direction_text)
                 if (not direction or direction["work_id"] != work_id
                         or direction["decision"] != "NEW_TASK"
                         or direction["chain_state"] != "NOT_PLANNED"):
                     return {"status": "INVALID_REQUEST", "reason": "LOOP_DIRECTION_NOT_READY"}
+                if supervisor:
+                    if status_provider is None:
+                        return {"status": "UNAVAILABLE", "reason": "LOOP_FRESH_STATUS_REQUIRED"}
+                    from bct.loop_supervisor_handoff import validate_loop_review_topology, LoopReviewLedger
+                    snapshot = await asyncio.to_thread(status_provider)
+                    validate_loop_review_topology(snapshot, owner=owner, supervisor=supervisor)
+                    if not review_instruction.strip() or len(review_instruction) > 4000:
+                        return {"status": "INVALID_REQUEST", "reason": "LOOP_REVIEW_INSTRUCTION_REQUIRED"}
                 loop = await asyncio.to_thread(
                     ledger.start, work_id=work_id, direction_id=direction_id,
                     task_id=task_id, owner=owner, plan_text=plan_text,
@@ -3178,7 +3235,12 @@ def build_mcp(
                     plan_id=plan_id, work_id=work_id, direction_id=direction_id,
                     task_id=task_id, generation=1, plan_text=plan_text,
                 )
-                return {"status": "OK", "loop": loop, "plan": plan}
+                review = None
+                if supervisor:
+                    review = await asyncio.to_thread(LoopReviewLedger(bct.store).configure,
+                        work_id=work_id, owner=owner, supervisor=supervisor,
+                        instruction=review_instruction, snapshot=snapshot)
+                return {"status": "OK", "loop": loop, "plan": plan, "review": review}
             if action in {"queue_self", "self_status", "reconcile_self"}:
                 from bct.loop_self_outbox import LoopSelfOutbox
                 outbox = LoopSelfOutbox(bct.store)
@@ -3212,7 +3274,14 @@ def build_mcp(
                 from bct.loop_store import LoopStateError
                 observed = await asyncio.to_thread(status_provider)
                 LoopSelfDispatcher.exact_route(
-                    observed.get("monitor",observed),owner,
+                    observed, owner,
+                    # Renewing the exact current owner is not a send. A
+                    # generating owner must be able to recover its lease.
+                    # Store.claim rechecks epoch under the transaction, so a
+                    # concurrent takeover still fences this request.
+                    require_idle=not (current is not None
+                                      and current["owner"] == owner
+                                      and current["epoch"] == epoch),
                 )
                 loop = await asyncio.to_thread(
                     ledger.claim, work_id=work_id, owner=owner, epoch=epoch,
@@ -3237,6 +3306,12 @@ def build_mcp(
                 if verified is not True:
                     return {"status": "INVALID_REQUEST",
                             "reason": "LOOP_COMPLETION_VERIFICATION_REQUIRED"}
+                from bct.loop_supervisor_handoff import LoopReviewLedger
+                review_ledger = LoopReviewLedger(bct.store)
+                if review_ledger.get(work_id):
+                    review = await asyncio.to_thread(review_ledger.request, work_id=work_id,
+                        owner=owner, epoch=epoch, candidate_sha=candidate_sha, evidence_text=evidence_text)
+                    return {"status": "REVIEW_PENDING", "review": {k:v for k,v in review.items() if k != "message_text"}}
                 loop = await asyncio.to_thread(
                     ledger.complete, work_id=work_id, owner=owner,
                     epoch=epoch, verified=True,

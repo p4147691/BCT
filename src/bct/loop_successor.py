@@ -292,6 +292,10 @@ class LoopSuccessorLedger:
                     WHERE work_id=? AND state IN ('UNCERTAIN','UNKNOWN') LIMIT 1""", (work_id,)).fetchone():
                 raise LoopStateError("LOOP_SELF_PRIOR_EFFECT_UNRESOLVED")
             new_epoch=loop["epoch"]+1
+            from bct.loop_supervisor_handoff import LoopReviewLedger
+            LoopReviewLedger.transfer_configured(db, work_id=work_id,
+                predecessor=case["predecessor"], successor=case["successor"],
+                epoch=new_epoch, handoff_operation_id=case["send_op"], now=now)
             # Protect unsent intents; old external effects are never transferred.
             db.execute("""UPDATE loop_recipe_runs SET owner=?,epoch=?,
                 lease_until=?,updated_at=? WHERE work_id=?""",

@@ -132,7 +132,16 @@ class ChainExecutionPlanLedger:
                 and loop["task_id"] == task_id
                 and loop["state"] in {"LOOP_STARTED", "COMPLETED"}
             )
-        if not (chain_started or loop_started):
+        review_started = False
+        if not (chain_started or loop_started) and direction["decision"] == "NEW_TASK":
+            with self.store._readonly() as db:
+                exists = db.execute("SELECT 1 FROM sqlite_master WHERE name='loop_review_handoffs'").fetchone()
+                if exists:
+                    review = db.execute("SELECT task_id,state FROM loop_review_handoffs WHERE work_id=?", (work_id,)).fetchone()
+                    review_started = bool(review and review["task_id"] == task_id
+                        and review["state"] in {"DISPATCHING", "DELIVERED"}
+                        and loop and loop["direction_id"] == direction_id)
+        if not (chain_started or loop_started or review_started):
             raise ValueError("CHAIN_EXECUTION_PLAN_SOURCE_NOT_STARTED")
         plan_sha = hashlib.sha256(plan_text.encode("utf-8")).hexdigest()
         proposed = (work_id, direction_id, task_id, generation, plan_text, plan_sha)

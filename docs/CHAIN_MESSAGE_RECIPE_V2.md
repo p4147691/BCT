@@ -422,3 +422,40 @@ Chain/Set Direction의 prepare 응답에 `manual_guidance`로 자동 포함한�
 실행 중인 서버는 자기 릴리스에 포함된 설명서를 돌려준다. 소스 설명서를 열었다고 LIVE가
 업데이트된 것은 아니다. source fingerprint·manual hash, `bct_status`의 release SHA,
 테스트·CI·설치·E2E 영수증은 각각 구분한다.
+
+## 단일 Manager Loop의 독립 Supervisor 인계 (후보)
+
+Loop 실행 노드는 자기 대화망의 Manager 하나이며 Worker나 손자 노드를 만들지 않는다.
+별도 전역 Supervisor의 정확 UUID를 `bct_loop_recipe(start)`의 `supervisor`와
+`review_instruction`으로 결속하거나, 기존 Loop에는 `configure_review`로 결속한다.
+새 단일 노드 작업은 명시적인 `direction_text`와 Direction/Task ID를 start에 전달하면
+같은 Direction 원장에 Loop 방향을 저장한다. 일반 Chain의 3노드 전송 검증을 완화하거나
+가짜 Worker를 만들지 않는다. 기존 Direction은 덮어쓰지 않는다.
+이 결속은 현재 역할과 망을 확인할 뿐 노드 생성·역할 변경·새 권한 부여를 하지 않는다.
+Supervisor가 없거나 확인되지 않으면 시작/결속이 보류되며 다른 UUID로 대체하지 않는다.
+
+결속된 Loop의 `complete(verified=true, candidate_sha=정확40자리SHA, evidence_text=증거)`
+또는 `request_review`는 원 실행의 완료 조건을 확인하고 검수 대기만 기록한다.
+Core는 동일 증거 패킷에 대해 기존 Send Delayed Message Watch를 선예약한 뒤 기존
+BCT browser Operation으로 한 번 인계한다. 검수자는 같은 Direction에 별도의 Review
+Task 실행계획을 저장하고 기존 SELF/MANAGER 흐름으로 검수·허가된 후속 작업·반환을 한다.
+이 인계 자체는 병합/배포 권한이 아니며 현재 Work와 실제 사용자 승인 범위를 유지한다.
+
+최종 완료에는 검수자의 정확 반환 출처, 원래 반환 Operation APPLIED, 해당 응답의
+계획 revision/진행 N/N, `LOOP ACCEPTANCE: PASS` 및 같은 `LOOP CANDIDATE SHA: <SHA>`가
+필요하다. 일반 CODE_REVIEW_PASS나 CI 성공만으로 완료하지 않는다. 전체 사용자 수락
+범위가 미완료면 HOLD로 반환한다. 검수 중에는 원 Loop의 SELF·복구 실행을 멈추며,
+역할 변경·원 Manager 교체·검수자 전송 UNKNOWN은 추정하여 재개하지 않는다.
+
+`status`는 원 계획/최신 진행 관측과 검수 상태를 함께 반환한다. 검수 미결속인 기존
+Loop의 동작은 유지한다. 현재 후보는 기존 Supervisor 재사용 경로이며 자동 생성과
+검수 전송 후 Manager 승계는 별도 안전 절차가 필요하다. 전송 전 CONFIGURED 검수
+결속만 검증된 Loop 후계 Epoch 이전과 같은 트랜잭션에서 새 owner로 이전한다.
+옛 owner와 인계 영수증은 history에 남고, 전송 전 새 owner의 실제 Manager 역할과
+Supervisor 전역 역할을 다시 확인한다. 이 결속 이전은 역할을 자동 변경하지 않는다.
+실제 반환 APPLIED가 확인된 REVIEW_HOLD는 `resume_review`에 현재 owner/epoch와
+정확 `review_response_sha`를 주어 명시적으로 재개한다. 이전 회차 전체를 history에
+보존하고 새 Epoch·검수 Task·Operation ID로 수정→새 SHA→재검수한다. UNKNOWN이나
+미반환 전송은 이 경로를 사용할 수 없다. 이전 DELIVERED SELF는 ACK를 가장하지 않고
+RETIRED_FOR_REVIEW로 보존하여 재개 후 옛 응답을 다시 실행하지 않는다.
+로컬 mock 테스트는 실제 RCC/운영 인계·독립 검수·배포 성공의 증거가 아니다.

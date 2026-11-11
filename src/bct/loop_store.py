@@ -93,6 +93,8 @@ class LoopStore:
                 raise LoopStateError("LOOP_NOT_FOUND")
             if row["state"] == "COMPLETED":
                 raise LoopStateError("LOOP_COMPLETED")
+            if row["state"] != "LOOP_STARTED":
+                raise LoopStateError("LOOP_REVIEW_PENDING")
             if row["epoch"] != epoch:
                 raise LoopStateError("LOOP_FENCED")
             # A successor may take over an expired lease even when an effect
@@ -100,6 +102,9 @@ class LoopStore:
             # any new effect. Blocking the claim would deadlock recovery.
             if row["lease_until"] > now and row["owner"] != owner:
                 raise LoopStateError("LOOP_LEASE_HELD")
+            if owner != row["owner"] and db.execute("SELECT 1 FROM sqlite_master WHERE name='loop_review_handoffs'").fetchone():
+                if db.execute("SELECT 1 FROM loop_review_handoffs WHERE work_id=?", (work_id,)).fetchone():
+                    raise LoopStateError("LOOP_REVIEW_PROVEN_SUCCESSION_REQUIRED")
             new_epoch = epoch + (row["owner"] != owner or row["lease_until"] <= now)
             db.execute("""UPDATE loop_recipe_runs SET owner=?,epoch=?,lease_until=?,
                 updated_at=? WHERE work_id=? AND epoch=?""",
@@ -150,6 +155,8 @@ class LoopStore:
             raise LoopStateError("LOOP_FENCED")
         if row["state"] == "COMPLETED":
             raise LoopStateError("LOOP_COMPLETED")
+        if row["state"] != "LOOP_STARTED":
+            raise LoopStateError("LOOP_REVIEW_PENDING")
         if row["lease_until"] <= now:
             raise LoopStateError("LOOP_LEASE_EXPIRED")
         return row
@@ -241,6 +248,9 @@ class LoopStore:
         now=time.time() if now is None else now
         with self.store.transaction() as db:
             row=self._owned(db,work_id,owner,epoch,now)
+            if db.execute("SELECT 1 FROM sqlite_master WHERE name='loop_review_handoffs'").fetchone():
+                if db.execute("SELECT 1 FROM loop_review_handoffs WHERE work_id=?", (work_id,)).fetchone():
+                    raise LoopStateError("LOOP_INDEPENDENT_ACCEPTANCE_REQUIRED")
             if not verified or row["next_step"] < 1 or row["operation_state"] is not None:
                 raise LoopStateError("LOOP_COMPLETION_UNVERIFIED")
             db.execute("UPDATE loop_recipe_runs SET state='COMPLETED',updated_at=? WHERE work_id=?",

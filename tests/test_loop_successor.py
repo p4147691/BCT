@@ -140,6 +140,43 @@ class SuccessorTests(unittest.TestCase):
         with self.assertRaisesRegex(LoopStateError,"LOOP_SUCCESSOR_HANDOFF_NOT_ACKED"):
             self.ledger.finish(work_id="w",now=167)
 
+    def test_configured_review_follows_only_proven_successor(self):
+        from unittest.mock import patch
+        from bct.loop_supervisor_handoff import LoopReviewLedger
+        from bct.loop_self_outbox import LoopSelfOutbox
+        supervisor="cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+        review=LoopReviewLedger(self.store)
+        with patch("bct.loop_supervisor_handoff.validate_loop_review_topology"):
+            review.configure(work_id="w",owner=OLD,supervisor=supervisor,instruction="Independent source review",snapshot={})
+        with self.assertRaisesRegex(LoopStateError,"PROVEN_SUCCESSION_REQUIRED"):
+            self.loop.claim(work_id="w",owner=NEW,epoch=1,now=161)
+        # Exercise all original CREATE/receipt/UUID/response/PAUSE/epoch gates.
+        self.test_full_inheritance_and_fencing()
+        self.assertEqual(review.get("w")["owner"],NEW)
+        import json
+        history=review.history("w")
+        self.assertEqual(json.loads(history[0]["payload_json"])["review"]["owner"],OLD)
+        self.assertEqual(json.loads(history[0]["payload_json"])["proof"]["handoff_operation_id"],self.sent["send_op"])
+        # A fresh valid role check can re-confirm the same inherited binding.
+        with patch("bct.loop_supervisor_handoff.validate_loop_review_topology") as fresh:
+            review.configure(work_id="w",owner=NEW,supervisor=supervisor,instruction="Independent source review",snapshot={})
+            fresh.assert_called_once()
+        out=LoopSelfOutbox(self.store)
+        intent=out.get(work_id="w",epoch=2,step=0)
+        out.reserve(work_id="w",epoch=2,step=0,owner=NEW,now=166)
+        old_get=self.store.get_operation_for
+        self.store.get_operation_for=lambda **kw: (SimpleNamespace(state=SimpleNamespace(value="FINISHED"),outcome=SimpleNamespace(value="APPLIED"))
+            if kw["operation_id"]==intent["operation_id"] else old_get(**kw))
+        out.reconcile(work_id="w",epoch=2,step=0,principal_id="principal",now=167)
+        self.loop.prepare_operation(work_id="w",owner=NEW,epoch=2,operation_id="new-work",now=168)
+        self.loop.reconcile(work_id="w",owner=NEW,epoch=2,operation_id="new-work",result="APPLIED",now=169)
+        self.loop.advance(work_id="w",owner=NEW,epoch=2,next_step=1,now=170)
+        result=review.request(work_id="w",owner=NEW,epoch=2,candidate_sha="a"*40,evidence_text="new owner finished",now=171)
+        self.assertEqual(result["state"],"PENDING")
+        self.assertEqual(result["owner"],NEW)
+        self.assertEqual(out.get(work_id="w",epoch=2,step=0)["state"],"RETIRED_FOR_REVIEW")
+
+
 
 if __name__=="__main__":
     unittest.main()
