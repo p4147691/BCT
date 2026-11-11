@@ -772,7 +772,7 @@ class RccIntegrationTests(unittest.TestCase):
         self.assertEqual([], self.client.calls)
 
     def test_bootstrap_send_requires_exact_creation_identity(self):
-        with self.assertRaisesRegex(PreconditionError, "RCC_BOOTSTRAP_IDENTITY_REQUIRED"):
+        with self.assertRaisesRegex(PreconditionError, "RCC_CREATED_TAB_INPUT_INVALID"):
             self.call("send-bad", {
                 "command": "send-to-created-tab", "instance_id": "instance123",
                 "text": "hello",

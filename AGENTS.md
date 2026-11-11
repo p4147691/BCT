@@ -132,25 +132,41 @@ does not by itself require redeploying an unaffected target.
 - Final reports separate local affected checks, candidate/checkpoint CI,
   integrated local main, GitHub main, deployed release and physical LIVE E2E.
 
-## 5A. Chain Message is the default execution route
+## 5A. Chain Recipe is the default execution route
 
 - When the user assigns an implementation, inspection, repair, verification,
-  deployment, or other executable BCT task, use Chain Message as the default
+  deployment, or other executable BCT task, use Chain Recipe as the default
   coordination and continuation route without requiring the user to name it.
 - Treat ordinary requests such as "do this", "fix this", or "continue" as
-  selecting the Chain Message route. Create a bounded Work, resolve fresh exact
+  selecting the Chain Recipe route. Create a bounded Work, resolve fresh exact
   Manager/Worker or Supervisor identities, and preserve the normal receipts,
   response watch, return-to-Manager, UNKNOWN and no-replay contracts.
-- Do not use Chain Message only when the user explicitly requests an exception,
-  such as "do not use Chain Message", "work only in this node", or a named
+- Do not use Chain Recipe only when the user explicitly requests an exception,
+  such as "do not use Chain Recipe", "work only in this node", or a named
   alternative execution route. Follow that exception only for the requested
   scope; it does not change the project default.
 - A question, explanation, status request, or design discussion with no assigned
-  execution is not forced through Chain Message. Once the user asks to perform
+  execution is not forced through Chain Recipe. Once the user asks to perform
   the work, the default above applies.
-- If the exact Chain Message route is unavailable, ambiguous, paused, or unsafe,
+- If the exact Chain Recipe route is unavailable, ambiguous, paused, or unsafe,
   do not silently substitute another execution route. Preserve current receipts
   and report the exact blocked stage or ask for the necessary target choice.
+
+## 5B. Default file read selection (existing bct_read)
+
+- When one file body is requested, call `bct_read` with `operation=file`.
+  When two or more independent file bodies share the same authorized Work,
+  prefer one existing `bct_read(operation=batch,items=[{id,operation=file,path},...])`.
+  Do not require the user to say "batch"; do not create a new MCP or RCC command.
+- A batch executes its items sequentially inside Core, not concurrently. Bounds:
+  20 items, 512 KiB per file, 1 MiB combined. IDs and targets must be unique.
+  Respect Work path/owner/capability fences; separate different Work, dependent
+  reads, and requests exceeding bounds. Do not bypass a failed precondition.
+- Inspect every returned item and the aggregate status: PARTIAL_FAILURE is not
+  COMPLETE even if other items succeeded. Preserve SHA and per-item evidence.
+  A snapshot supplies metadata/receipts, not a substitute for file bodies.
+  Reading a mutable file may fail or change; do not claim atomic consistency.
+  Keep operation=file fully compatible.
 
 ## 6. UNKNOWN, retries and completion
 

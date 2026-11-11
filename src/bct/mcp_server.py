@@ -51,7 +51,7 @@ _CAPABILITY_USAGE = {
     "verify": "Run up to 8 read metadata, test, or github_pr_status steps, or a fixed versioned recipe. Each step is durably journaled and authorized against the authenticated principal and current policy. Background operation; retrieve receipt and step_journal with bct_operation_get(wait_seconds=25). No file bodies or test output are persisted.",
     "github_pr_status": "Exact expected_head and required_checks required. Optional wait_seconds (0..300) waits server-side; positive waits run in background. Retrieve receipt with bct_operation_get.",
     "github_run_watch": "Register one exact Actions run for a detached, advisory-only Inbox completion. It never merges, pushes, deploys, or changes Work state; retrieve terminal results with bct_inbox_get.",
-    "read": "Read a scoped file or directory with operation=file|directory_tree|batch|snapshot. Read-only discovery: operation=search with path, query, depth, max_entries, limit; operation=duplicates with path and bounded SHA-256 verification (max_hash_bytes, timeout_seconds); operation=compare with path_a and path_b. Partial searches/hash budgets report complete=false. Never deletes files.",
+    "read": "Default read selection: one file -> operation=file; two or more independent files in the SAME authorized Work -> operation=batch with items=[{id,operation:'file',path}], one unique id/target each. Batch is server-sequential, max 20 items, 512 KiB per file, 1 MiB combined; preserve per-item statuses (PARTIAL_FAILURE is not COMPLETE). Split dependent reads, different Work/permissions, or oversized requests; never broaden authorization or retry an ambiguous effect. snapshot is metadata, not a replacement for file bodies. Read-only discovery: operation=search|duplicates|compare; directory_tree also supported. Existing operation=file remains compatible.",
     "system_inspect": "Read process_list, process by pid, or port owners. For one bounded read-only diagnosis use operation=diagnose with query and/or up to 8 ports, optional limit. Never terminates a process.",
     "approval_challenge": "Read-only exact Work/Operation request challenge for independent human approval UI. Accept capability, operation_id and full arguments of a pre-approved P2 action. Returns full prepared request, target and SHA256; never issues approvals or executes effects.",
     "file_local_action": "Normal local file operation within an exact user-scoped Work: move/rename/restore require source and destination. recoverable_delete takes source only, moves to .bct-recovery after an interactive Windows YES/NO confirmation; headless and declines fail closed. Never overwrites, permanently deletes or touches BCT/OS protected paths; high security available separately via file_action_apply.",
@@ -1127,7 +1127,9 @@ def build_mcp(
             "snapshot, current Node Info, durable conversation-network directory, their comparison, and "
             "an optional selected project's stored network. "
             "When report_target_conversation_key is supplied, State R also reads that exact A return "
-            "conversation's Recovery Notices. Does not save a Direction or send."
+            "conversation's Recovery Notices. action=recovery_inbox reads durable Worker MANAGER "
+            "returns collected for the bound A or S, including their last execution and delivery "
+            "receipts, without sending or replaying anything."
         ),
         structured_output=True,
     )
@@ -1138,14 +1140,232 @@ def build_mcp(
         direction_id: str = "", assessment: dict[str, Any] | None = None,
         task_id: str = "", operation_id: str = "", target_conversation_key: str = "",
         max_generations: int = 0, report_target_conversation_key: str = "",
+        generation: int = 0,
         entry_context_id: str = "",
         worker_preparation_id: str = "",
         parent_direction_id: str = "", parent_step_id: str = "",
         branch_kind: str = "PRIMARY", branch_reason: str = "", branch_request_id: str = "",
     ) -> dict[str, Any]:
         """Run one explicit boundary of the Chain Recipe."""
-        if action not in {"prepare", "save", "recover_node", "prepare_send", "apply_network", "send", "preflight", "provision_worker"}:
+        if action not in {"prepare", "save", "recover_node", "prepare_send", "apply_network", "send", "preflight", "provision_worker", "recovery_inbox", "bind_recovery_collector", "resume_manager", "ack_recovery"}:
             return {"status": "INVALID_REQUEST", "reason": "CHAIN_RECIPE_ACTION_INVALID"}
+        if action == "recovery_inbox":
+            if not report_target_conversation_key:
+                return {"status": "INVALID_REQUEST",
+                        "reason": "CHAIN_RECOVERY_REPORT_TARGET_REQUIRED"}
+            try:
+                work = await asyncio.to_thread(bct.store.get_work, work_id)
+            except KeyError:
+                return {"status": "NOT_FOUND", "reason": "WORK_NOT_FOUND"}
+            if work.owner_principal_id != principal.principal_id:
+                return {"status": "NOT_FOUND", "reason": "WORK_NOT_FOUND"}
+            from bct.chain_manager_recovery import ChainManagerRecoveryLedger
+            from bct.send_delayed_message import DurableWatchLedger
+            records = await asyncio.to_thread(
+                ChainManagerRecoveryLedger(bct.store, initialize=False).inbox,
+                work_id=work.work_id,
+                report_target_conversation_key=report_target_conversation_key.lower(),
+            )
+            items = []
+            for record in records:
+                execution = await asyncio.to_thread(
+                    DurableWatchLedger(bct.store).read_execution_context,
+                    task_id=record["task_id"], generation=record["generation"],
+                )
+                operation = None
+                if record.get("delivery_operation_id"):
+                    try:
+                        receipt = await asyncio.to_thread(
+                            bct.store.get_operation_for,
+                            operation_id=record["delivery_operation_id"],
+                            work_id=work.work_id,
+                            principal_id=work.owner_principal_id,
+                        )
+                        operation = receipt.as_dict()
+                    except (KeyError, ValueError):
+                        operation = None
+                items.append({
+                    "checkpoint": record,
+                    "last_execution_result": execution,
+                    "delivery_receipt": operation,
+                })
+            return {
+                "status": "OK", "effects": "NONE_READ_ONLY",
+                "collector_role": "HANDOFF_INFORMATION_ONLY",
+                "does_not": ["act_as_manager", "send_message", "replay_unknown"],
+                "items": items,
+            }
+        if action == "ack_recovery":
+            if (not report_target_conversation_key
+                    or not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", task_id)
+                    or generation < 1):
+                return {"status": "INVALID_REQUEST",
+                        "reason": "CHAIN_RECOVERY_ACK_INPUT_REQUIRED"}
+            try:
+                work = await asyncio.to_thread(bct.store.get_work, work_id)
+                if work.owner_principal_id != principal.principal_id:
+                    raise KeyError(work_id)
+                from bct.chain_manager_recovery import ChainManagerRecoveryLedger
+                checkpoint = await asyncio.to_thread(
+                    ChainManagerRecoveryLedger(bct.store).acknowledge,
+                    work_id=work.work_id, task_id=task_id,
+                    generation=generation,
+                    manager_conversation_key=report_target_conversation_key.lower(),
+                )
+            except KeyError:
+                return {"status": "NOT_FOUND", "reason": "WORK_NOT_FOUND"}
+            except ValueError as exc:
+                return {"status": "INVALID_REQUEST", "reason": str(exc)}
+            return {
+                "status": "ACKNOWLEDGED", "checkpoint": checkpoint,
+                "next_safe_step": "STATE_R_THEN_MANAGER_DECIDES_NEXT_DIRECTION",
+                "does_not": ["send_message", "replay_worker_task"],
+            }
+        if action == "resume_manager":
+            if not report_target_conversation_key:
+                return {"status": "INVALID_REQUEST",
+                        "reason": "CHAIN_RECOVERY_MANAGER_REQUIRED"}
+            try:
+                work = await asyncio.to_thread(bct.store.get_work, work_id)
+                if work.owner_principal_id != principal.principal_id:
+                    raise KeyError(work_id)
+                from bct.chain_direction import resolve_direction_target
+                snapshot = await asyncio.to_thread(status_provider)
+                manager = resolve_direction_target(
+                    snapshot=snapshot,
+                    conversation_key=report_target_conversation_key.lower(),
+                )
+                roles = {
+                    str(value).strip().casefold()
+                    for value in manager["node_info"].get("roles", [])
+                }
+                if "manager" not in roles or roles & {"worker", "supervisor"}:
+                    raise ValueError("CHAIN_RECOVERY_MANAGER_ROLE_NOT_CONFIRMED")
+                from bct.send_delayed_message import DurableWatchLedger
+                watch_ledger = DurableWatchLedger(bct.store)
+                active = [row for row in watch_ledger.watching(limit=100)
+                          if row["context"].get("work_id") == work.work_id]
+                from bct.chain_manager_recovery import ChainManagerRecoveryLedger
+                recovery_ledger = ChainManagerRecoveryLedger(bct.store)
+                checkpoints = await asyncio.to_thread(
+                    recovery_ledger.for_work, work_id=work.work_id,
+                )
+                manager_scope = str(
+                    manager["node_info"].get("network_id")
+                    or manager["node_info"].get("network") or ""
+                ).strip()
+                predecessor_keys = {
+                    str(row["context"].get("manager_conversation_key") or "")
+                    for row in active
+                }
+                predecessor_keys.update(
+                    str(row["active_manager_conversation_key"])
+                    for row in checkpoints
+                )
+                worker_keys = {row["conversation_key"] for row in active}
+                worker_keys.update(str(row["worker_conversation_key"])
+                                   for row in checkpoints)
+                supervisor_keys = {
+                    str(row["context"].get("supervisor_conversation_key") or "")
+                    for row in active
+                }
+                supervisor_keys.update(str(row["supervisor_conversation_key"])
+                                       for row in checkpoints)
+                if report_target_conversation_key.lower() in supervisor_keys:
+                    raise ValueError("CHAIN_RECOVERY_MANAGER_IS_SUPERVISOR")
+                for worker_key in worker_keys:
+                    worker = resolve_direction_target(
+                        snapshot=snapshot, conversation_key=worker_key,
+                    )
+                    worker_scope = str(
+                        worker["node_info"].get("network_id")
+                        or worker["node_info"].get("network") or ""
+                    ).strip()
+                    if not manager_scope or manager_scope != worker_scope:
+                        raise ValueError("CHAIN_RECOVERY_MANAGER_WORKER_NETWORK_MISMATCH")
+                succession_proofs = []
+                from bct.conversation_network import manager_role_transfer_receipt
+                for predecessor in sorted(predecessor_keys - {
+                        "", report_target_conversation_key.lower()}):
+                    proof = await asyncio.to_thread(
+                        manager_role_transfer_receipt, bct.store,
+                        project_id=manager_scope,
+                        predecessor_conversation_key=predecessor,
+                        successor_conversation_key=report_target_conversation_key.lower(),
+                    )
+                    if proof is None:
+                        raise ValueError(
+                            "CHAIN_RECOVERY_MANAGER_SUCCESSION_PROOF_REQUIRED"
+                        )
+                    succession_proofs.append(proof)
+                binding = await asyncio.to_thread(
+                    watch_ledger.resume_manager,
+                    work_id=work.work_id,
+                    manager_conversation_key=report_target_conversation_key.lower(),
+                    manager_instance_id=manager["instance_id"],
+                    succession_proofs=succession_proofs,
+                )
+                rebound = await asyncio.to_thread(
+                    recovery_ledger.rebind_active_manager,
+                    work_id=work.work_id,
+                    manager_conversation_key=report_target_conversation_key.lower(),
+                    succession_proofs=succession_proofs,
+                )
+            except KeyError:
+                return {"status": "NOT_FOUND", "reason": "WORK_NOT_FOUND"}
+            except ValueError as exc:
+                return {"status": "INVALID_REQUEST", "reason": str(exc)}
+            return {
+                "status": "MANAGER_RESUMED", "binding": binding,
+                "rebound_checkpoints": rebound,
+                "next_safe_step": "READ_RECOVERY_INBOX_THEN_ACK_EACH_CHECKPOINT",
+                "does_not": ["send_message", "replay_unknown", "act_as_supervisor"],
+            }
+        if action == "bind_recovery_collector":
+            loaded_direction = await read_saved_direction(
+                work_id=work_id, direction_id=direction_id,
+            )
+            if loaded_direction["status"] != "READY":
+                return loaded_direction
+            import json
+            saved_assessment = json.loads(
+                loaded_direction["direction"].get("assessment_json") or "{}"
+            )
+            if not saved_assessment:
+                return {"status": "INVALID_REQUEST",
+                        "reason": "CHAIN_RECOVERY_DIRECTION_ASSESSMENT_REQUIRED"}
+            from bct.chain_direction import (
+                resolve_direction_network, resolve_direction_target,
+            )
+            try:
+                snapshot = await asyncio.to_thread(status_provider)
+                resolve_direction_network(
+                    snapshot=snapshot, assessment=saved_assessment, targets=[],
+                )
+                supervisor = resolve_direction_target(
+                    snapshot=snapshot,
+                    conversation_key=saved_assessment[
+                        "supervisor_conversation_key"
+                    ],
+                )
+                from bct.send_delayed_message import DurableWatchLedger
+                binding = await asyncio.to_thread(
+                    DurableWatchLedger(bct.store).bind_recovery_collector,
+                    work_id=work_id, direction_id=direction_id,
+                    manager_conversation_key=saved_assessment[
+                        "manager_conversation_key"
+                    ],
+                    supervisor_conversation_key=saved_assessment[
+                        "supervisor_conversation_key"
+                    ],
+                    supervisor_instance_id=supervisor["instance_id"],
+                )
+            except (KeyError, ValueError) as exc:
+                return {"status": "INVALID_REQUEST", "reason": str(exc)}
+            return {
+                "status": "OK", "binding": binding,
+                "does_not": ["send_message", "replay_unknown", "act_as_manager"],
+            }
         if action == "provision_worker":
             if (not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", task_id)
                     or not re.fullmatch(r"[A-Za-z0-9_.:-]{1,60}", worker_preparation_id)):
@@ -1938,7 +2158,10 @@ def build_mcp(
         network_results: list[dict[str, Any]], max_generations: int,
     ) -> dict[str, Any]:
         """Record each target Direction, recheck its live route, then send it."""
-        from bct.chain_direction import ChainDirectionLedger, resolve_direction_network
+        from bct.chain_direction import (
+            ChainDirectionLedger, resolve_direction_network,
+            resolve_direction_target,
+        )
 
         ledger = ChainDirectionLedger(bct.store)
         results = []
@@ -1961,6 +2184,10 @@ def build_mcp(
                 origin, current_targets = resolve_direction_network(
                     snapshot=fresh, assessment=assessment, targets=[(index, target)],
                 )
+                supervisor = resolve_direction_target(
+                    snapshot=fresh,
+                    conversation_key=assessment["supervisor_conversation_key"],
+                )
                 route = current_targets[0][2]
                 if route["node_info"].get("generating") is True:
                     results.append({"status": "TARGET_BUSY", "target_conversation_key": target["conversation_key"]})
@@ -1973,6 +2200,10 @@ def build_mcp(
                     target_conversation_key=target["conversation_key"],
                     origin_conversation_key=assessment["manager_conversation_key"],
                     origin_instance_id=origin["instance_id"],
+                    supervisor_conversation_key=assessment[
+                        "supervisor_conversation_key"
+                    ],
+                    supervisor_instance_id=supervisor["instance_id"],
                     continuation_output_contract="explicit-next-task-v1", max_generations=max_generations,
                 )
                 results.append({**result, "target_conversation_key": target["conversation_key"],
@@ -2086,6 +2317,8 @@ def build_mcp(
         target_tab_id: int = 0, target_window_id: int = 0,
         target_conversation_key: str = "", origin_conversation_key: str = "",
         origin_instance_id: str = "",
+        supervisor_conversation_key: str = "",
+        supervisor_instance_id: str = "",
         continuation_output_contract: str = "none",
         max_generations: int = 0,
         source_kind: str = "USER", source_task_id: str = "",
@@ -2255,6 +2488,8 @@ def build_mcp(
              "conversation_key":target_conversation,
              "manager_conversation_key":origin_conversation,
              "manager_instance_id":origin_instance or instance_id,
+             "supervisor_conversation_key":supervisor_conversation_key,
+             "supervisor_instance_id":supervisor_instance_id,
              "planned_send_operation_id":send_id,
              "planned_send_text":outgoing_instruction,
              "execution_path":execution_path,
