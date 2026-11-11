@@ -123,7 +123,7 @@ class LoopSelfOutbox:
                 raise LoopStateError("LOOP_SELF_RECONCILE_NOT_READY")
             # A concurrent continuation may ACK after our receipt read.
             # ACK is terminal: never resurrect a consumed wake as DELIVERED.
-            if current["state"] == "ACKED":
+            if current["state"] in {"ACKED", "RETIRED_FOR_REVIEW"}:
                 return current
             if current["state"] in {"DELIVERED","NOT_APPLIED"} and current["state"]!=new_state:
                 raise LoopStateError("LOOP_SELF_RECEIPT_CONFLICT")

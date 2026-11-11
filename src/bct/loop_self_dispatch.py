@@ -24,7 +24,7 @@ class LoopSelfDispatcher:
         self.outbox = LoopSelfOutbox(store)
 
     @staticmethod
-    def exact_route(snapshot: dict, owner: str):
+    def exact_route(snapshot: dict, owner: str, *, require_idle: bool = True):
         # Core recovery supplies the full status envelope; direct callers
         # supply its Monitor view. Never fall back to outer identity fields
         # when an envelope is present, even if its Monitor view is invalid.
@@ -42,9 +42,11 @@ class LoopSelfDispatcher:
                     if n.get("status") == "CONFIRMED"
                     and n.get("conversation_uuid") == owner
                     and n.get("source") == "RCC_FRESH"
-                    and n.get("generating") is False
+                    and (n.get("generating") is False or
+                         (not require_idle and n.get("generating") is True))
                     and not n.get("connection", {}).get("disconnected", True)
-                    and n.get("telemetry", {}).get("readiness") == "IDLE"]
+                    and n.get("telemetry", {}).get("readiness") in
+                        ({"IDLE"} if require_idle else {"IDLE", "BUSY"})]
         if len(matching) != 1:
             raise LoopStateError("LOOP_NODE_NOT_EXACT_IDLE")
         candidates=[]
@@ -54,9 +56,11 @@ class LoopSelfDispatcher:
             for tab in instance.get("tabs", []):
                 if (tab.get("conversation_key") == owner
                         and tab.get("presence") == "OPEN"
-                        and tab.get("generating") is False
+                        and (tab.get("generating") is False or
+                             (not require_idle and tab.get("generating") is True))
                         and not tab.get("connection",{}).get("disconnected",True)
-                        and tab.get("telemetry",{}).get("readiness") == "IDLE"):
+                        and tab.get("telemetry",{}).get("readiness") in
+                            ({"IDLE"} if require_idle else {"IDLE", "BUSY"})):
                     candidates.append((instance,tab))
         if len(candidates) != 1:
             raise LoopStateError("LOOP_RCC_TARGET_NOT_UNIQUE")

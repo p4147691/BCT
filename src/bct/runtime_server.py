@@ -551,6 +551,8 @@ def main() -> int:
             bct.store, bct.operations, bct.operations._features["browser"],
             principal_id=MCP_PRINCIPAL_ID,
         )
+        from .loop_supervisor_handoff import LoopSupervisorHandoff
+        review_handoff = LoopSupervisorHandoff(bct.store, bct.operations, bct.operations._features["browser"])
         previous_snapshot = None
         while not recovery_stop.is_set():
             try:
@@ -560,12 +562,14 @@ def main() -> int:
                 )
                 pending = outbox.list_pending(limit=2)
                 delivered = outbox.list_delivered(limit=2)
+                reviews = review_handoff.ledger.pending(limit=4)
+                review_outcomes = []
                 recovered = {"checked": 0, "results": [], "external_effect": "NONE"}
                 delivery = []
                 continuations = []
                 succession = {"checked": 0, "outcomes": []}
                 monitor = None
-                if due or pending or delivered:
+                if due or pending or delivered or reviews:
                     monitor = build_monitor_state(
                         store=bct.store, service_state=state,
                         data_root=runtime_root.parent / "data",
@@ -616,6 +620,7 @@ def main() -> int:
                             snapshot=snapshot, prior_snapshot=previous_snapshot,
                             now=time.time(), limit=2,
                         )
+                    review_outcomes = review_handoff.run_once(snapshot=snapshot, limit=4)
                     previous_snapshot = snapshot
                 state["loop_recipe_recovery"] = {
                     "enabled": True, "mode": "EXACT_SELF_AND_SUCCESSOR_RECOVERY",
@@ -626,6 +631,7 @@ def main() -> int:
                     "last_continuations": continuations,
                     "last_receipt_reconciliation": reconciled,
                     "last_succession": succession,
+                    "last_review_handoffs": review_outcomes,
                     "last_error": None, "last_run_at": time.time(),
                 }
             except Exception as exc:

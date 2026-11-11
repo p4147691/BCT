@@ -58,6 +58,17 @@ class LoopSelfContinuation:
                 or hashlib.sha256(text.encode("utf-8")).hexdigest()!=response_sha
                 or not isinstance(turn_key,str) or not turn_key):
             return {"status":"RESPONSE_HASH_UNVERIFIED"}
+        from bct.chain_execution_plan import ChainExecutionPlanLedger, check_execute_plan
+        from bct.loop_store import LoopStore
+        loop = LoopStore(self.store).get(row["work_id"])
+        if loop:
+            plans = ChainExecutionPlanLedger(self.store)
+            plan = plans.get_for_chain(store=self.store, work_id=row["work_id"],
+                direction_id=loop["direction_id"], task_id=loop["task_id"])
+            plans.record_execute_plan_check(work_id=row["work_id"],
+                direction_id=loop["direction_id"], task_id=loop["task_id"],
+                generation=row["step"] + 1, response_sha256=response_sha,
+                assessment=check_execute_plan(plan=plan, response_text=text))
         try:
             instruction=extract_next_instruction(text)
         except InstructionError:
