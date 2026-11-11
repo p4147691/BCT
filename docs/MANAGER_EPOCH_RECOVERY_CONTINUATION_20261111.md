@@ -28,3 +28,7 @@ N40 Chrome/RCC 독립 실사용 검증 전 동일 UUID 두 번째 전송 의존 
 - PENDING/NOT_APPLIED 인계가 8개 이상이고 일부 후계자가 BUSY여도 전체 후보를 순서대로 검사한다. 별도 커서와 wrap으로 재시작 후에도 누락 없이 재검사한다.
 - 진짜 SQLite 샘플 10개 인계에서 3개씩 4회 검사 후 처음으로 순환함을 확인했고, 이전 Manager Epoch 후보는 배제했다.
 - 테스트 시뮬레이션에는 사용자 Windows/RCC 새 Chat 전송이 포함되지 않는다.
+
+## 정확한 후계 attachment 추가 보호
+- 인계 영수증에 결속된 후계 attachment가 활성 목록에서 최신 generation인지 다시 확인한다. 더 새로운 활성 attachment가 등장하면 이전 bindingReceiptId/탭으로 보내지 않는다.
+- 실제 SQLite 장부에서 더 새 attachment를 주입하는 테스트와 Epoch/UNKNOWN 회귀가 통과했다.

@@ -139,6 +139,22 @@ class ManagerScanFairnessTests(unittest.TestCase):
             ["case-00","case-01","case-02"],
         ], batches)
 
+    def test_superseded_active_attachment_generation_is_not_a_handoff_target(self):
+        store = PendingHandoffStore(2)
+        self.addCleanup(store.db.close)
+        store.db.execute(
+            "INSERT INTO orchestration_attachments VALUES(?,?,?,?,?,?,?,?,?)",
+            ("newer-attachment","successor",1,2,"instance","session",99,
+             "conversation","new-binding-receipt"),
+        )
+        store.db.commit()
+        recovery = ManagerSuccessionRecovery(
+            SimpleNamespace(store=store), client=SimpleNamespace(),
+        )
+        # Newer attachment belongs to the same logical node. All old
+        # handoff receipts need explicit attachment identity reconciliation.
+        self.assertEqual([], recovery._current_pending_handoffs(limit=8))
+
     def test_old_epoch_handoff_is_never_a_resume_candidate(self):
         store = PendingHandoffStore(2)
         self.addCleanup(store.db.close)
