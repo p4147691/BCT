@@ -72,6 +72,17 @@ Every capability tool accepts `work_id`, `operation_id`, `arguments`, and an opt
 `approval_ref`. It delegates to the same policy, work ownership, resource claim, duplicate
 operation, precondition, and outcome code used by direct BCT calls.
 
+Default choice (without requiring users to say "batch"): use
+`bct_read(arguments={"operation":"file","path":"..."})` for one file body.
+For two or more independent file bodies within the same Work and limits,
+prefer `bct_read(arguments={"operation":"batch","items":[{"id":"a","operation":"file","path":"..."},{"id":"b","operation":"file","path":"..."}]})`.
+This is the existing `bct_read` MCP tool: no new RCC command or MCP tool is
+required. Split requests with different Work or permission scopes, dependent
+reads, or exceeded bounds rather than widening authorization. Inspect each
+result: aggregate `PARTIAL_FAILURE` is not a complete success, and batches
+run sequentially inside Core. `snapshot` only provides metadata and receipts,
+not the file bodies. Keep `operation=file` backward-compatible.
+
 Related file and directory inspection can use one `bct_read` call with `operation: "batch"`.
 Each item has a unique caller label, an absolute path, and optionally the existing
 `directory_tree` depth/limit fields. BCT validates every item before recording the operation,
