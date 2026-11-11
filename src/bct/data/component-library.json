@@ -1,6 +1,6 @@
 {
   "schema": "bct.component-library.bundle.v1",
-  "source_fingerprint": "8e90979aa88bcc11401f2686b1b5ed518a2bb5f6c143076a0b12170ddde5ec42",
+  "source_fingerprint": "ce41da30b8f43df4e653ba3806d1388e3971ae3e8dfeb7d8a71e8fc44a85d0cd",
   "source_hashes": {
     "docs/CHAIN_MESSAGE_RECIPE_V2.md": "67793cf99755f2e094fbed7c01d85c23f185b18514fc720b0642389c285046be",
     "docs/component-library.v1.json": "bb50289037d70aa0ffd9c0b32b85c7b922899976f9b55434b3181906fb4904c4",
@@ -42,7 +42,7 @@
     "src/bct/features/conversation_network.py": "950299ce295bf82f6efd2c993d8bddae1ce56294b7312ed97765ac516725f6ce",
     "src/bct/features/owned_extension_action.py": "6c164bfb0cacf132940f16c15dfc9f653937b48a91d5e3e3ba648ad07e4bfa15",
     "src/bct/features/rcc.py": "f3b196df21df45ddf91897f893e84bf238e8738f18a366f1320a586fcf40a9a0",
-    "src/bct/manager_successor_inventory.py": "551c817923a45d330067eb68b4c188996bf054086577ba1c75d6550459e610f9",
+    "src/bct/manager_successor_inventory.py": "8349c59c08756033c6f66dfb872c0b7df713e866ca20fc8cd585c5aec768a660",
     "src/bct/mcp_server.py": "5408749e6ee56bab64cced23b6f3889fdf002c363282a641e48d4bcc58551814",
     "src/bct/node_recovery.py": "0428ab8cc0ad5d7f0c4a744c178131a65c7e738677485fa1aa7c9fca381abc30",
     "src/bct/runtime_server.py": "a7e8750c630c21162bcb49f273801fe0d8340848e3e5da8b6dcf57a4f44b21e6",

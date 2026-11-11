@@ -3203,14 +3203,33 @@ class OrchestrationService:
         # The inventory is read-only; this is never permission to replay
         # previously submitted or UNKNOWN effects.
         from ..manager_successor_inventory import manager_successor_inventory
-        recovery_inventory = (
-            manager_successor_inventory(
-                self.store, work_id=work.work_id, session_id=session_id,
-                expected_epoch=int(session["manager_epoch"]), limit=50,
-            )
-            if (int(session["manager_epoch"]) > 1
-                and str(session["state"]) in {"ACTIVE", "PARTIAL"}) else None
-        )
+        recovery_inventory = None
+        if (int(session["manager_epoch"]) > 1
+                and str(session["state"]) in {"ACTIVE", "PARTIAL"}):
+            try:
+                recovery_inventory = manager_successor_inventory(
+                    self.store, work_id=work.work_id, session_id=session_id,
+                    expected_epoch=int(session["manager_epoch"]), limit=50,
+                )
+            except ValueError as exc:
+                # A new Manager Epoch or Work assignment can commit between
+                # the main status read and this optional inventory. Do not
+                # turn that ordinary, concurrent recovery into a 500 or show
+                # old tasks as if they belonged to the new Manager.
+                if str(exc) not in {
+                    "MANAGER_SUCCESSOR_EPOCH_NOT_CURRENT",
+                    "MANAGER_SUCCESSOR_WORK_EPOCH_CHANGED",
+                    "MANAGER_SUCCESSOR_SESSION_NOT_FOUND",
+                }:
+                    raise
+                recovery_inventory = {
+                    "status": "EPOCH_CHANGED_RECHECK",
+                    "effects": "READ_ONLY_NO_SEND_NO_REPLACE",
+                    "tasks_complete_listing": False,
+                    "wakes_complete_listing": False,
+                    "watches_complete_listing": False,
+                    "returns_complete_listing": False,
+                }
         return {
             "session": self._session_value(session),
             "manager_recovery_inventory": recovery_inventory,
