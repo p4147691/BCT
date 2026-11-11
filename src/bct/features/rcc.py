@@ -254,6 +254,45 @@ _COMMON = {"command", "instance_id", "timeout_s"}
 _SENSITIVE_KEYS = {"token", "secret", "password", "authorization"}
 _BOOTSTRAP_RESULT_READBACK_TIMEOUT_S = 15.0
 
+# Public input contract for the creation-bound send. This documents the
+# existing Core preconditions; it does not expose another MCP tool or alter
+# the RCC wire protocol. Keep metadata specific rather than guessing schemas
+# for commands whose contracts are not yet audited.
+_CREATION_BOUND_SEND_INPUT = {
+    "required": ["instance_id", "session_id", "tab_id", "window_id",
+                 "create_operation_id", "text"],
+    "optional": ["timeout_s"],
+    "forbidden": ["creation_receipt", "message", "conversation_key"],
+    "types": {"instance_id": "string", "session_id": "string",
+              "tab_id": "positive_integer", "window_id": "positive_integer",
+              "create_operation_id": "nonempty_string", "text": "nonempty_string",
+              "timeout_s": "number"},
+    "receipt_rule": "A prior creation Operation is required; never replay UNKNOWN.",
+    "invocation": "bct_browser(arguments.command='rcc_send_message_to_created_tab')",
+}
+
+
+def validate_created_tab_send_input(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Pure, no-RCC preflight for the existing creation-bound send contract.
+
+    Discovery/validation must run before any effect reservation. This helper
+    never resolves or replays a prior creation/send receipt.
+    """
+    required = set(_CREATION_BOUND_SEND_INPUT["required"])
+    optional = set(_CREATION_BOUND_SEND_INPUT["optional"]) | {"command"}
+    provided = set(arguments) if isinstance(arguments, dict) else set()
+    missing = sorted(key for key in required
+                     if key not in provided or arguments[key] is None
+                     or isinstance(arguments[key], str) and not arguments[key].strip())
+    unexpected = sorted(provided - required - optional)
+    return {
+        "ok": not missing and not unexpected,
+        "missing": missing,
+        "unexpected": unexpected,
+        "required": list(_CREATION_BOUND_SEND_INPUT["required"]),
+        "allowed": sorted(required | optional),
+    }
+
 
 def command_catalog() -> list[dict[str, Any]]:
     """Return public names with an explicit RCC-versus-BCT ownership boundary."""
@@ -302,6 +341,10 @@ def command_catalog() -> list[dict[str, Any]]:
                 "legacy_alias": command,
                 "compatibility_alias": "bct_" + command.replace("-", "_"),
             })
+    for row in rows:
+        if row["legacy_alias"] == "send-to-created-tab":
+            row["input_contract"] = dict(_CREATION_BOUND_SEND_INPUT)
+            row["exposed_as_separate_mcp_tool"] = False
     return rows
 
 
@@ -1033,6 +1076,15 @@ class BrowserFeature:
             return self._prepare_send_delayed_message(work=work, arguments=arguments)
         if command == "send-message":
             return self._prepare_send_message(work=work, arguments=arguments)
+        if command == "send-to-created-tab":
+            preflight = validate_created_tab_send_input(arguments)
+            if not preflight["ok"]:
+                raise PreconditionError(
+                    "RCC_CREATED_TAB_INPUT_INVALID:missing="
+                    + ",".join(preflight["missing"])
+                    + ";unexpected=" + ",".join(preflight["unexpected"])
+                    + ";required=" + ",".join(preflight["required"])
+                )
         if command not in _COMMANDS:
             raise PreconditionError("RCC_COMMAND_NOT_ALLOWED")
         try:
