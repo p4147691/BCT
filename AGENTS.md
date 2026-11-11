@@ -152,6 +152,22 @@ does not by itself require redeploying an unaffected target.
   do not silently substitute another execution route. Preserve current receipts
   and report the exact blocked stage or ask for the necessary target choice.
 
+## 5B. Default file read selection (existing bct_read)
+
+- When one file body is requested, call `bct_read` with `operation=file`.
+  When two or more independent file bodies share the same authorized Work,
+  prefer one existing `bct_read(operation=batch,items=[{id,operation=file,path},...])`.
+  Do not require the user to say "batch"; do not create a new MCP or RCC command.
+- A batch executes its items sequentially inside Core, not concurrently. Bounds:
+  20 items, 512 KiB per file, 1 MiB combined. IDs and targets must be unique.
+  Respect Work path/owner/capability fences; separate different Work, dependent
+  reads, and requests exceeding bounds. Do not bypass a failed precondition.
+- Inspect every returned item and the aggregate status: PARTIAL_FAILURE is not
+  COMPLETE even if other items succeeded. Preserve SHA and per-item evidence.
+  A snapshot supplies metadata/receipts, not a substitute for file bodies.
+  Reading a mutable file may fail or change; do not claim atomic consistency.
+  Keep operation=file fully compatible.
+
 ## 6. UNKNOWN, retries and completion
 
 - Never replay an `UNKNOWN` external effect under a new Operation ID just to make
