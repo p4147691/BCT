@@ -3272,17 +3272,34 @@ def build_mcp(
                             "reason": "LOOP_EXACT_SUCCESSOR_STATUS_REQUIRED"}
                 from bct.loop_self_dispatch import LoopSelfDispatcher
                 from bct.loop_store import LoopStateError
-                observed = await asyncio.to_thread(status_provider)
-                LoopSelfDispatcher.exact_route(
-                    observed, owner,
-                    # Renewing the exact current owner is not a send. A
-                    # generating owner must be able to recover its lease.
-                    # Store.claim rechecks epoch under the transaction, so a
-                    # concurrent takeover still fences this request.
-                    require_idle=not (current is not None
-                                      and current["owner"] == owner
-                                      and current["epoch"] == epoch),
-                )
+                same_owner = (current is not None and current["owner"] == owner
+                              and current["epoch"] == epoch)
+                renewing = same_owner and current["state"] == "LOOP_STARTED"
+                # Concurrent Monitor probes can return a cached INFLIGHT row;
+                # timeout observations have a five-second probe backoff. Retry
+                # observation only, never a send, and never accept cached data.
+                delays = (0, .25, 1, 2, 3) if renewing else (0,)
+                for attempt, delay in enumerate(delays):
+                    if delay:
+                        await asyncio.sleep(delay)
+                    if renewing:
+                        latest = await asyncio.to_thread(ledger.get, work_id)
+                        if (latest is None or latest["owner"] != owner
+                                or latest["epoch"] != epoch
+                                or latest["state"] != "LOOP_STARTED"):
+                            raise LoopStateError("LOOP_FENCED")
+                    observed = await asyncio.to_thread(status_provider)
+                    try:
+                        LoopSelfDispatcher.exact_route(
+                            observed, owner, require_idle=not same_owner,
+                        )
+                        break
+                    except LoopStateError as exc:
+                        if (str(exc) != "LOOP_NODE_OBSERVATION_STALE"
+                                or attempt == len(delays) - 1):
+                            raise
+                # The transactional claim still fences takeover after the last
+                # observation. Busy-owner renewal does not authorize delivery.
                 loop = await asyncio.to_thread(
                     ledger.claim, work_id=work_id, owner=owner, epoch=epoch,
                 )
