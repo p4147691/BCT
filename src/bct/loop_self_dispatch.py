@@ -14,6 +14,7 @@ from bct.core.capabilities import capability_matches
 from bct.loop_self_outbox import LoopSelfOutbox
 from bct.loop_store import LoopStateError
 from bct.node_recovery import NodeRecoveryLedger
+from bct.status_views import status_view
 
 
 class LoopSelfDispatcher:
@@ -24,7 +25,17 @@ class LoopSelfDispatcher:
 
     @staticmethod
     def exact_route(snapshot: dict, owner: str):
-        nodes = snapshot.get("current_nodes", {})
+        # Core recovery supplies the full status envelope; direct callers
+        # supply its Monitor view. Never fall back to outer identity fields
+        # when an envelope is present, even if its Monitor view is invalid.
+        if "monitor" in snapshot:
+            snapshot = snapshot["monitor"]
+            if not isinstance(snapshot, dict):
+                raise LoopStateError("LOOP_NODE_OBSERVATION_STALE")
+        # The production classifier intentionally has no connection/telemetry.
+        # Reuse the status projection's exact UUID/tab/window join against the
+        # same fresh RCC observation, rather than treating absent fields as idle.
+        nodes = status_view({"monitor": snapshot}, "node").get("current_nodes", {})
         if nodes.get("observation", {}).get("state") != "FRESH":
             raise LoopStateError("LOOP_NODE_OBSERVATION_STALE")
         matching = [n for n in nodes.get("items", [])
