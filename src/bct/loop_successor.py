@@ -251,11 +251,14 @@ class LoopSuccessorLedger:
             ).fetchone()
             if not has_recovery_ledger:
                 raise LoopStateError("LOOP_SUCCESSOR_PREDECESSOR_NOT_FENCED")
+            exact_fence_id="loop-fence-"+hashlib.sha256(
+                f"{work_id}:{case['predecessor_epoch']}".encode()
+            ).hexdigest()[:24]
             predecessor_fence=db.execute(
                 """SELECT 1 FROM node_recovery_cases
-                WHERE work_id=? AND conversation_key=? AND state IN
+                WHERE case_id=? AND work_id=? AND conversation_key=? AND state IN
                 ('PAUSED','REPLACEMENT_PREPARED') LIMIT 1""",
-                (work_id,case["predecessor"]),
+                (exact_fence_id,work_id,case["predecessor"]),
             ).fetchone()
             if not predecessor_fence:
                 raise LoopStateError("LOOP_SUCCESSOR_PREDECESSOR_NOT_FENCED")

@@ -1,5 +1,6 @@
 """No-effect Loop successor creation/UUID/handoff/Epoch fault injection."""
 import tempfile
+import hashlib
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -126,9 +127,9 @@ class SuccessorTests(unittest.TestCase):
         recovery=NodeRecoveryLedger(self.store)
         work=self.store.get_work("w")
         proof=observe_node(status_view(snapshot(),"node"),conversation_key=OLD)
-        recovery.check(work=work,case_id="successor-fence-test",task_id="t",
+        recovery.check(work=work,case_id="loop-fence-"+hashlib.sha256(b"w:1").hexdigest()[:24],task_id="t",
                        conversation_key=OLD,evidence=proof,kind="CHECK")
-        recovery.pause(work=work,case_id="successor-fence-test",
+        recovery.pause(work=work,case_id="loop-fence-"+hashlib.sha256(b"w:1").hexdigest()[:24],
                        reason="proven first reply")
         result=self.ledger.finish(work_id="w",now=165)
         self.assertEqual(result["epoch"],2)
