@@ -38,6 +38,21 @@ class RecoveryTests(unittest.TestCase):
                 self.assertEqual("http://127.0.0.1:12345/readyz",
                                  f._probe.call_args.args[0])
 
+    def test_tunnel_probe_rejects_negative_and_partial_tokens(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            file = root / ".local/state/tunnel-client/health/act-control.url"
+            file.parent.mkdir(parents=True)
+            file.write_text("http://127.0.0.1:12345")
+            f = BoundedServiceRecovery()
+            with patch("bct.bounded_service_recovery.Path.home", return_value=root):
+                for health, ready in (("not live", "ready"), ("live", "not ready"),
+                                      ("alive", "ready"), ("live", "already")):
+                    f._probe = Mock(side_effect=[(True, health), (True, ready)])
+                    self.assertFalse(f.ready("mcp_tunnel"))
+                f._probe = Mock(side_effect=[(True, "live\n"), (True, "ready\n")])
+                self.assertTrue(f.ready("mcp_tunnel"))
+
     @patch("bct.bounded_service_recovery.os.name", "nt")
     def test_already_ready_never_dispatches(self):
         f = BoundedServiceRecovery()

@@ -26,7 +26,7 @@ function clickExactRefresh(expectedPath) {
 async function refresh(a, puppeteer) {
   if (a.operation !== "refresh_tools" || a.target !== "bct_control")
     throw Error("PLUGIN_REFRESH_ARGUMENTS_NOT_ALLOWED");
-  let browser, session, owned, effect = false, result;
+  let browser, session, owned, effect = false, targetUnresolved = false, result;
   try {
     const port = fs.readFileSync(path.join(a.profile_root, "DevToolsActivePort"), "utf8")
       .trim().split(/\r?\n/);
@@ -37,6 +37,8 @@ async function refresh(a, puppeteer) {
       browserWSEndpoint: "ws://127.0.0.1:" + port[0] + port[1], defaultViewport: null,
     });
     session = await browser.target().createCDPSession();
+    // Target creation itself is a mutation, even if its reply is lost.
+    targetUnresolved = true;
     const created = await session.send("Target.createTarget", {url: URL, background: true});
     owned = created.targetId;
     if (!owned) throw Error("OWNED_TARGET_ID_MISSING");
@@ -60,16 +62,18 @@ async function refresh(a, puppeteer) {
       click_dispatched: true, client_catalog_verified: false};
   } catch (e) {
     result = {status: "ERROR", code: String(e.message || e).slice(0, 180),
-      effect_started: effect};
+      effect_started: effect || targetUnresolved};
   } finally {
     if (session && owned) {
       try {
         const closed = await session.send("Target.closeTarget", {targetId: owned});
         if (closed.success !== true) throw Error("OWNED_TAB_CLOSE_UNCONFIRMED");
+        targetUnresolved = false;
         result.owned_tab_closed = true;
+        if (result.status === "ERROR") result.effect_started = effect;
       } catch {
         result = {...result, status: "ERROR", code: "OWNED_TAB_CLOSE_UNCONFIRMED",
-          effect_started: effect, owned_tab_closed: false};
+          effect_started: effect || targetUnresolved, owned_tab_closed: false};
       }
     }
     if (session) try { await session.detach(); } catch {}

@@ -41,7 +41,11 @@ async function runFake(options = {}) {
   const session = {
     send: async (method, args) => {
       calls.push({method, args});
-      if (method === "Target.createTarget") return {targetId: "owned"};
+      if (method === "Target.createTarget") {
+        if (options.createReplyLost) throw Error("CREATE_REPLY_LOST");
+        if (options.createIdMissing) return {};
+        return {targetId: "owned"};
+      }
       return {success: !options.closeFailure};
     }, detach: async () => {},
   };
@@ -93,4 +97,24 @@ test("failed cleanup cannot be reported as APPLIED", async () => {
   assert.equal(result.status, "ERROR");
   assert.equal(result.effect_started, true);
   assert.equal(result.owned_tab_closed, false);
+});
+
+for (const option of ["createReplyLost", "createIdMissing"]) {
+  test(option + " preserves UNKNOWN without guessing a cleanup target", async () => {
+    const clicks = fixture();
+    const {result, calls} = await runFake({[option]: true});
+    assert.equal(result.status, "ERROR");
+    assert.equal(result.effect_started, true);
+    assert.equal(calls.length, 1);
+    assert.equal(clicks(), 0);
+  });
+}
+test("pre-click UI mismatch plus cleanup failure stays UNKNOWN", async () => {
+  const clicks = fixture({count: 2});
+  const {result, calls} = await runFake({closeFailure: true});
+  assert.equal(result.status, "ERROR");
+  assert.equal(result.effect_started, true);
+  assert.equal(result.owned_tab_closed, false);
+  assert.equal(calls.length, 2);
+  assert.equal(clicks(), 0);
 });

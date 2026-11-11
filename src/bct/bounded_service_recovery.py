@@ -49,7 +49,7 @@ class BoundedServiceRecovery:
             return False
         health, body = self._probe(base + "/healthz")
         ready, text = self._probe(base + "/readyz")
-        return health and "live" in body.lower() and ready and "ready" in text.lower()
+        return health and body.strip() == "live" and ready and text.strip() == "ready"
 
     def _dispatch(self, task):
         executable = Path(os.environ.get("SystemRoot", "C:/Windows")) / "System32/schtasks.exe"

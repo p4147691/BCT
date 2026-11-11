@@ -338,15 +338,22 @@
       const generated = String(operationId || `monitor.tools-refresh.${randomId?.() || ""}`);
       if (!/^[A-Za-z0-9_.:-]{1,80}$/.test(generated))
         throw new Error("BCT_TOOLS_REFRESH_OPERATION_ID_INVALID");
+      let receipt;
+      try {
       const response = await fetcher(URLS.toolsRefresh, {
         method: "POST", headers: {"Content-Type": "application/json"}, cache: "no-store",
         body: JSON.stringify({operation_id: generated}),
       });
-      const receipt = await response?.json?.().catch(() => null);
+      receipt = await response?.json?.().catch(() => null);
       if (!response?.ok || receipt?.outcome !== "APPLIED" ||
           receipt?.evidence?.click_dispatched !== true ||
           receipt?.evidence?.owned_tab_closed !== true) {
         throw new Error(`BCT_TOOLS_REFRESH_UNVERIFIED:${generated}:${receipt?.error || receipt?.outcome || "UNKNOWN"}`);
+      }
+      } catch (cause) {
+        const error = new Error(`BCT_TOOLS_REFRESH_UNVERIFIED:${generated}:${cause?.message || "UNKNOWN"}`);
+        error.operationId = generated;
+        throw error;
       }
       return Object.freeze({receipt, operationId: generated, clientCatalogVerified: false});
     }

@@ -25,5 +25,14 @@ vm.runInNewContext(fs.readFileSync(path.join(__dirname, "../extension/monitor-bc
     await assert.rejects(bad.refreshTools("original-operation"), /UNVERIFIED:original-operation/);
     assert.equal(count, 1);
   }
+  let attempts = 0;
+  const lost = context.MonitorBctShell.create({randomId: () => "lost-reply",
+    fetcher: async () => { attempts++; throw Error("network lost"); }});
+  await assert.rejects(lost.refreshTools(), error => {
+    assert.equal(error.operationId, "monitor.tools-refresh.lost-reply");
+    assert.match(error.message, /monitor.tools-refresh.lost-reply/);
+    return true;
+  });
+  assert.equal(attempts, 1);
   console.log("PASS: Monitor fixed plugin refresh, exact receipt, no tab reload or automatic retry");
 })().catch(e => { console.error(e); process.exitCode = 1; });
