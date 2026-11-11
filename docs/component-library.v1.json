@@ -727,7 +727,7 @@
           "symbol": "loop_recipe_recovery_loop"
         }
       ],
-      "contract": "Opt-in single-Manager Loop independent review: bind an existing exact global Supervisor, freeze a candidate SHA and evidence packet, prearm existing Chain response Watch before one BCT browser Operation, reuse SELF/MANAGER return and Execute Plan progress. Complete only after exact independent full-acceptance verdict and SHA, plan completion and original APPLIED return receipt. Legacy unconfigured Loops retain their behavior.",
+      "contract": "Opt-in single-Manager Loop independent review: bind an existing exact global Supervisor, freeze a candidate SHA and evidence packet, prearm existing Chain response Watch before one BCT browser Operation, reuse SELF/MANAGER return and Execute Plan progress. Complete only after exact independent full-acceptance verdict and SHA, plan completion and original APPLIED return receipt. Legacy unconfigured Loops retain their behavior. Acceptance atomically stores a durable result separately from requester transport and user notification.",
       "effects": [
         "durable-review-binding-and-outbox",
         "exact-supervisor-message",
@@ -745,6 +745,41 @@
       ],
       "used_by": [
         "bct_loop_recipe",
+        "loop_recipe_recovery_loop"
+      ]
+    },
+    {
+      "id": "bct.loop_requester_result",
+      "kind": "partial_recipe",
+      "maturity": "bounded",
+      "implementation": [
+        {
+          "path": "src/bct/loop_result.py",
+          "symbol": "LoopResultLedger / LoopResultDispatcher"
+        },
+        {
+          "path": "src/bct/loop_successor.py",
+          "symbol": "LoopSuccessorLedger.prepare / reserve_effect"
+        }
+      ],
+      "contract": "Store the independent accepted result for the explicit original requester reference. Default pull-only results are readable by the parent dot; never infer a browser UUID from a dot/channel reference. Optional explicitly bound RCC delivery reuses the exact route, NodeRecovery and BCT Operation blocks. Acceptance, conversation delivery and unverified user notification remain separate. New public Loop starts disallow node creation; historical unset recovery policy is preserved.",
+      "effects": [
+        "durable-requester-binding-and-result",
+        "optional-exact-conversation-report",
+        "explicit-recovery-constraint"
+      ],
+      "safety": [
+        "no-guessed-requester-route",
+        "no-manager-or-supervisor-self-return",
+        "fresh-identity-and-idle-route",
+        "immutable-operation-and-payload",
+        "unknown-no-replay",
+        "user-notification-never-inferred",
+        "no-new-node-when-disallowed"
+      ],
+      "used_by": [
+        "bct_loop_recipe",
+        "LoopReviewLedger.observe_return",
         "loop_recipe_recovery_loop"
       ]
     }

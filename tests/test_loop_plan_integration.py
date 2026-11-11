@@ -42,6 +42,16 @@ class LoopPlanIntegrationTests(unittest.TestCase):
         self.assertEqual(self.direction.get(direction_id="direction-test")["chain_state"],
                          "NOT_PLANNED")
 
+    def test_started_loop_is_not_mislabeled_as_pending_chain_start(self):
+        pending = lambda: self.direction.list_pending_chain_starts(store=self.store, principal_id="test")
+        self.assertEqual(len(pending()), 1)
+        LoopStore(self.store).start(work_id="loop-test",direction_id="direction-test",
+            task_id="task-1",owner="node-a",plan_text="step A")
+        self.assertEqual(pending(), [])
+        self.direction.save(direction_id="other-direction",work_id="loop-test",
+            source_kind="USER",decision="NEW_TASK",direction_text="Different unstarted direction")
+        self.assertEqual([row["direction_id"] for row in pending()], ["other-direction"])
+
     def test_existing_chain_started_contract_is_preserved(self):
         # In the isolated fixture, emulate the already-verified Chain transition.
         # Loop must not be a prerequisite for the existing multi-node plan path.

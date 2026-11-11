@@ -23,6 +23,18 @@ class LoopStoreTests(unittest.TestCase):
     def claim(self, engine, owner, epoch, now):
         return engine.claim(work_id="loop-test",owner=owner,epoch=epoch,now=now)
 
+    def test_legacy_table_migration_preserves_existing_owner_and_policy(self):
+        with self.store.transaction() as db:
+            db.execute("ALTER TABLE loop_recipe_runs DROP COLUMN allow_new_nodes")
+        restored = LoopStore(self.store).get("loop-test")
+        self.assertEqual(restored["owner"], "node-a")
+        self.assertEqual(restored["epoch"], 1)
+        self.assertIsNone(restored["allow_new_nodes"])
+        self.a.configure_recovery(work_id="loop-test",owner="node-a",epoch=1,allow_new_nodes=False)
+        with self.assertRaisesRegex(LoopStateError, "FENCED"):
+            self.a.configure_recovery(work_id="loop-test",owner="other",epoch=1,allow_new_nodes=True)
+        self.assertEqual(self.a.get("loop-test")["allow_new_nodes"], 0)
+
     def test_start_idempotency_and_conflict(self):
         row=self.a.start(work_id="loop-test",direction_id="direction",task_id="task",
                          owner="node-a",plan_text="step 1",now=105)

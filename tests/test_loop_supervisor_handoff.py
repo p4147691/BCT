@@ -167,6 +167,20 @@ class LoopReviewTests(unittest.TestCase):
             adapter.run_once(snapshot={})
         self.assertEqual(self.loop.get("work")["state"],"COMPLETED")
         self.assertEqual(self.ledger.get("work")["state"],"ACCEPTED")
+        from bct.loop_result import LoopResultLedger
+        report = LoopResultLedger(self.store).get("work")
+        self.assertEqual(report["state"], "READY_FOR_REQUESTER")
+        self.assertEqual(report["result"]["candidate_sha"], SHA)
+        self.assertEqual(report["result"]["return_operation_id"], "delayed-manager-"+key)
+        self.assertEqual(report["result"]["user_notification"], "UNVERIFIED")
+        # Upgrade from an older accepted review may reconstruct the same result
+        # only after checking its original watch and return receipt.
+        with self.store.transaction() as db:
+            db.execute("DELETE FROM loop_result_reports WHERE work_id='work'")
+        with patch("bct.loop_supervisor_handoff.DurableWatchLedger.read_execution_context",return_value=ctx):
+            restored = LoopResultLedger(self.store).recover_acceptance("work")
+        self.assertEqual(restored["result"], report["result"])
+        self.assertEqual(restored["operation_id"], report["operation_id"])
 
     def test_generic_code_pass_is_not_acceptance(self):
         adapter,receipts=self.delivered()
@@ -177,6 +191,8 @@ class LoopReviewTests(unittest.TestCase):
             adapter.run_once(snapshot={})
         self.assertEqual(self.loop.get("work")["state"],"REVIEW_PENDING")
         self.assertEqual(self.ledger.get("work")["state"],"REVIEW_HOLD")
+        from bct.loop_result import LoopResultLedger
+        self.assertIsNone(LoopResultLedger(self.store).get("work"))
 
 class ComposedReviewTransportTests(unittest.TestCase):
     def test_real_ledgers_chain_watch_and_return_with_simulated_rcc(self):
@@ -185,7 +201,10 @@ class ComposedReviewTransportTests(unittest.TestCase):
     def test_hold_resume_new_sha_and_second_independent_review(self):
         self.run_transport(first_hold=True)
 
-    def run_transport(self, first_hold=False):
+    def test_acceptance_result_sent_once_to_explicit_existing_requester(self):
+        self.run_transport(report_to_requester=True)
+
+    def run_transport(self, first_hold=False, report_to_requester=False):
         import test_delayed_send_rcc_flow as fixtures
         from bct.service import BCT
         from bct.features.rcc import BrowserFeature
@@ -218,6 +237,13 @@ class ComposedReviewTransportTests(unittest.TestCase):
             view["rcc"]["instances"][0]["session_id"]=fixtures.SESSION
             view["current_nodes"]["items"].append({**node,"conversation_uuid":supervisor,"tab_id":13,"roles":["Supervisor"],"network_id":""})
             view["rcc"]["instances"][0]["tabs"].append({**tab,"conversation_key":supervisor,"tab_id":13,"conversation_scope":{"role_tags":["Supervisor"]}})
+            if report_to_requester:
+                requester = fixtures.WORKER  # Existing origin conversation; never provisioned.
+                view["current_nodes"]["items"].append({**node,"conversation_uuid":requester,"tab_id":10,"roles":[],"network_id":""})
+                view["rcc"]["instances"][0]["tabs"].append({**tab,"conversation_key":requester,"tab_id":10,"conversation_scope":{}})
+                from bct.loop_result import LoopResultLedger
+                LoopResultLedger(bct.store).configure(work_id="review-work",owner=owner,
+                    requester_ref="explicit-origin:42",conversation_key=requester,snapshot={"monitor":view})
             adapter=LoopSupervisorHandoff(bct.store,bct.operations,browser)
             adapter.ledger.configure(work_id="review-work",owner=owner,supervisor=supervisor,
                 instruction="Source-only review; no deployment",snapshot={"monitor":view})
@@ -261,9 +287,22 @@ class ComposedReviewTransportTests(unittest.TestCase):
                 self.assertEqual(json.loads(history[0]["payload_json"])["review"],prior)
             self.assertEqual(result[0]["state"],"ACCEPTED",result)
             self.assertEqual(loop.get("review-work")["state"],"COMPLETED")
+            from bct.loop_result import LoopResultLedger
+            report = LoopResultLedger(bct.store).get("review-work")
+            self.assertEqual(report["state"], "PENDING" if report_to_requester else "READY_FOR_REQUESTER")
+            self.assertEqual(report["result"]["candidate_sha"], "b"*40 if first_hold else SHA)
             self.assertEqual([target for target,_,_ in rcc.sent],[supervisor,owner] * (2 if first_hold else 1))
             adapter.run_once(snapshot={"monitor":view})
             self.assertEqual(len(rcc.sent),4 if first_hold else 2)
+            if report_to_requester:
+                from bct.loop_result import LoopResultDispatcher
+                dispatcher = LoopResultDispatcher(bct.store,bct.operations)
+                sent = dispatcher.run_once(snapshot={"monitor":view})
+                self.assertEqual(sent[0]["state"], "DELIVERED_TO_CONVERSATION", sent)
+                dispatcher.run_once(snapshot={"monitor":view})
+                self.assertEqual([target for target,_,_ in rcc.sent], [supervisor,owner,requester])
+                self.assertEqual(rcc.create_count, 0)
+                self.assertEqual(dispatcher.ledger.get("review-work")["result"]["user_notification"], "UNVERIFIED")
 
 
 if __name__ == "__main__":

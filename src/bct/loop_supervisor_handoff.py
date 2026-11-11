@@ -44,6 +44,8 @@ def validate_loop_review_topology(snapshot, *, owner, supervisor):
 class LoopReviewLedger:
     def __init__(self, store):
         self.store = store
+        from bct.loop_result import LoopResultLedger
+        LoopResultLedger(store)
         with store.transaction() as db:
             db.execute("""CREATE TABLE IF NOT EXISTS loop_review_handoffs(
                 work_id TEXT PRIMARY KEY, owner TEXT NOT NULL,
@@ -288,6 +290,9 @@ class LoopReviewLedger:
                 from bct.loop_store import LoopStore
                 db.execute("UPDATE loop_recipe_runs SET state='COMPLETED',updated_at=? WHERE work_id=?", (time.time(), work_id))
                 LoopStore._event(db, work_id, "INDEPENDENT_ACCEPTANCE_RETURNED", row["epoch"], "delayed-manager-"+key)
+                from bct.loop_result import LoopResultLedger
+                LoopResultLedger.record_acceptance(db, loop=loop, review=row, context=context,
+                    return_operation_id="delayed-manager-"+key, now=time.time())
         return self.get(work_id)
 
 
