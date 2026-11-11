@@ -58,6 +58,23 @@ class LoopRecoveryExecutor:
             work_id=current["work_id"]
             owner=current["owner"]
             if not self.owner_ready(owner):
+                if current["operation_state"] in {"PREPARED", "UNKNOWN", "APPLIED"}:
+                    try:
+                        settled = ledger.recover_expired_operation(
+                            work_id=work_id, owner=owner, epoch=current["epoch"],
+                            operation_id=current["operation_id"],
+                            principal_id=self.principal_id, now=now,
+                        )
+                    except (LoopStateError, KeyError) as exc:
+                        results.append({"work_id": work_id, "status": "RECEIPT_CHECK_REQUIRED",
+                                        "reason": str(exc)})
+                        continue
+                    status = ("STEP_CONFIRMED" if settled["operation_state"] is None
+                              else "UNKNOWN_HOLD" if settled["operation_state"] == "UNKNOWN"
+                              else "OWNER_UNAVAILABLE")
+                    results.append({"work_id": work_id, "epoch": settled["epoch"],
+                                    "status": status, "next_step": settled["next_step"]})
+                    continue
                 results.append({"work_id":work_id,"status":"OWNER_UNAVAILABLE"})
                 continue
             try:
