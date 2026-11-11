@@ -32,3 +32,31 @@ bct.toml 및 scripts/build_component_library.py: 운영 배포 목록·컴포넌
 ## 검수 판정 조건
 전체 저장된 Work의 ID·Epoch/Generation 불변성, UNKNOWN 무재전송, 기존 8R Chain 회귀, 상태 조회 비침습성, 실제 Work/Task 목록 생략 표시, 배포 목록 일치 및 exact SHA CI 확인.
 승인 전 main/LIVE는 그대로 유지.
+
+# PR #476 검수 발견 사항 및 후속 격리 수정
+
+기준 SHA: bd0ab1b0c4907a6798f781df6cf03940e9193b1d
+검수 대상: PR #476 (base a2411ec, head bd0ab1b). 원본 PR/영수증은 보존.
+
+## 발견 1: 원래 메시지 ID가 있지만 Operation ID가 비어 있는 경우
+이전 next_safe_step은 dispatch_operation_id만 검사했고, dispatch_message_id가 존재해도 attempt=QUEUED면 ADOPT_QUEUED_GENERATION_ONLY_IF_NOT_DISPATCHED를 반환할 수 있었다.
+후계 A가 이를 미전송 작업으로 잘못 읽지 않도록 어떤 영속 메시지 ID든 원래 영수증 대조 지시로 분류한다. assignment_state 또한 QUEUED인 경우에만 미전송 채택 후보로 표시한다.
+
+## 발견 2: Snapshot과 후계 Inventory의 Epoch 경합
+기존 Orchestration snapshot은 DB connection을 닫고 후계 Inventory를 별도 connection으로 읽으므로, 두 조회 사이에 새 Manager Epoch가 등록되면 ValueError로 상태 조회 자체가 중단될 수 있었다.
+후계 Inventory 내부의 모든 SELECT는 하나의 SQLite BEGIN 읽기 스냅샷을 사용하고, Snapshot과 읽기 사이의 Epoch/Work 변경 오류는 EPOCH_CHANGED_RECHECK 상태로 반환하여 잘못된 작업 목록을 표시하지 않는다.
+
+## 격리 회귀
+진짜 미전송 vs 영속 메시지 ID 단독 보존/재조회, Dispatching assignment에서 queued attempt 판정, Epoch 변경 중 상태 조회의 안전한 실패, 기존 원장 ID/UNKNOWN 무재전송. 외부 RCC 호출 없음.
+
+## 미완료 및 독립 검수 범위
+이번 수정은 이미 준비된 후계 A가 안전하게 무엇을 읽을지 정하는 내부 읽기 전용 경계다. 새 후계 생성·Manager 활성 Epoch 실제 승계·실제 AI 업무 재개를 구현 또는 실증한 것으로 간주하지 않는다.
+PR #476에 독립 리뷰 승인은 없었다. 별도 detached checkout의 테스트는 자기 재시험이며 타 AI/인간의 독립 승인과 별도다.
+N40가 수정 중인 Chrome/RCC 실사용 동일 UUID 두 번째 전송 경로는 HOLD. N36/N37 완료 영수증·운영·UNKNOWN·N40/N42 공유 파일·원본 미커밋·main/LIVE 모두 보존.
+
+## PR #476·#477 통합 검토 — 2026-11-11
+PR #476 SHA 71a5efe: cross-session Watch와 corrupt JSON 독립 코드감사 재현, 수정 후보 CI 14/14 성공, 독립 재승인 없음.
+PR #477 SHA ff58752: dispatch_message_id 단독 QUEUED 및 Snapshot-Epoch 경합 수정, CI 14/14 성공, 독립 승인 없음.
+두 브랜치는 bd0ab1b에서 갈라졌으므로 clean integration worktree에서 합쳤고 generated component library는 실제 양쪽 수정 소스로 재생성.
+추가 검토: 손상 JSON은 Work 귀속을 알 수 없으므로 다른 Work에 해당할 수 있는 전역 부패 건수로 scoped Manager 결과를 가리지 않고, Work만 확인되는 legacy Watch는 UNVERIFIED로 표기.
+원본 PR, N40/N42 공유 파일, N36/N37 완료, UNKNOWN, 원본 미커밋, main/LIVE 보존. 실제 후계 업무 E2E/독립 승인 미완료.

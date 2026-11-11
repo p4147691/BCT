@@ -14,6 +14,10 @@ def manager_successor_inventory(store: Any, *, work_id: str,
     if type(limit) is not int or not 1 <= limit <= 200:
         raise ValueError("MANAGER_SUCCESSOR_INVENTORY_LIMIT_INVALID")
     with store._readonly() as db:
+        # Keep Session/Epoch, original attempts, Watches, returns and counts
+        # on ONE SQLite read snapshot. Otherwise a concurrent takeover can
+        # mix two manager generations in a single resume inventory.
+        db.execute("BEGIN")
         session = db.execute(
             "SELECT session_id,work_id,manager_node_id,manager_epoch,state,"
             "work_assignment_epoch FROM orchestration_sessions "
@@ -66,7 +70,6 @@ def manager_successor_inventory(store: Any, *, work_id: str,
         watches=[]
         watch_count=0
         legacy_watch_count=0
-        corrupt_watch_context_count=0
         # Invalid historical metadata must not break the whole Manager
         # snapshot. A legacy Work-only Watch is visible for reconciliation,
         # but is NOT proof of membership in this orchestration Session.
@@ -101,13 +104,10 @@ def manager_successor_inventory(store: Any, *, work_id: str,
                 f" AND {safe_session} IS NULL",
                 (work_id,session_id),
             ).fetchone()["n"]
-            # Malformed JSON cannot reliably be attributed to a Work, so
-            # report a global integrity count rather than silently adopting
-            # or misattributing such a Watch. Never alter its original row.
-            corrupt_watch_context_count=db.execute(
-                "SELECT COUNT(*) AS n FROM delayed_send_watches "
-                "WHERE NOT json_valid(context_json)"
-            ).fetchone()["n"]
+            # Malformed historic JSON is excluded by guarded extraction.
+            # It cannot be attributed to a Work safely. Do not expose a
+            # GLOBAL count in this Work-scoped view, or let unrelated Works
+            # suppress valid exact-session recovery evidence.
         returns=[]
         return_count=0
         if "chain_manager_return_checkpoints" in tables:
@@ -141,9 +141,13 @@ def manager_successor_inventory(store: Any, *, work_id: str,
         # existing result/Operation receipts before deciding its next task.
         if str(x["assignment_state"]) in {"APPLIED","FAILED","CANCELLED"}:
             next_step="INSPECT_TERMINAL_RECEIPT_NO_REPLAY"
-        elif x["dispatch_operation_id"]:
+        elif x["dispatch_operation_id"] or x["dispatch_message_id"]:
+            # A durable mailbox message can exist even when a browser
+            # Operation ID was not yet persisted. Such a generation is NOT
+            # safe to adopt as unsent. Check that exact message/Operation.
             next_step="RECONCILE_EXACT_DISPATCH_OPERATION_NO_REPLAY"
-        elif str(x["attempt_state"]) == "QUEUED":
+        elif (str(x["assignment_state"]) == "QUEUED"
+              and str(x["attempt_state"]) == "QUEUED"):
             next_step="ADOPT_QUEUED_GENERATION_ONLY_IF_NOT_DISPATCHED"
         else:
             next_step="INSPECT_ORIGINAL_TASK_GENERATION"
@@ -170,10 +174,8 @@ def manager_successor_inventory(store: Any, *, work_id: str,
         "total_chain_watches":int(watch_count),
         "watches_complete_listing":int(watch_count)<=limit,
         "legacy_work_only_watches":int(legacy_watch_count),
-        "watch_session_membership_verified":(
-            int(legacy_watch_count)==0 and int(corrupt_watch_context_count)==0
-        ),
-        "corrupt_watch_context_count_unattributed":int(corrupt_watch_context_count),
+        "watch_session_membership_verified":int(legacy_watch_count)==0,
+        "unattributed_watch_integrity":"NOT_ASSESSED_WORK_SCOPED",
         "unacknowledged_returns":[dict(x) for x in returns[:limit]],
         "total_unacknowledged_returns":int(return_count),
         "returns_complete_listing":int(return_count)<=limit,
