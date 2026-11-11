@@ -140,9 +140,20 @@ The A role remains fenced by Manager Epoch and active orchestration manager
 ownership; the global S role preserves every Work's active Watch and immutable
 original S return receipt, rebinding the active alias transactionally.
 No user-provided internal UUID, role grant or extra approval is introduced.
-An observed endpoint without positive NEW_CHAT_REQUIRED, a completely absent
-tab lacking a trustworthy target, or any unverified UUID is explicitly
-unresolved, not asserted to have been automatically replaced.
+If the original tab disappears after a durable, exact Work-bound
+NEW_CHAT_REQUIRED RECHECK, BCT may recover the target window from precisely
+one FRESH and positively connected RCC peer which is BOTH an existing member
+of the same conversation network AND already referenced by that exact Work's
+Direction/Watch/return ledger. The peer's actual Node Info scope, session,
+tab and window must agree with the current RCC snapshot; target-discover
+still supplies the opaque, Work-scoped browser target. The original-UUID
+readiness check runs again before any external bootstrap. Shared project
+membership alone, a stale sensor, absent peer or multiple possible windows
+can never choose an arbitrary destination.
+
+An endpoint without positive NEW_CHAT_REQUIRED, a missing tab without
+that verified same-Work/same-network peer, or any unverified UUID remains
+RECOVERY_NEEDED and is never represented as successfully replaced.
 
 ## Recovery scope and routing
 1. Start with bct_status, current Node Info and durable conversation network directory; infer the original Work/Direction/Task/generation from existing watches, directions, execution plans and return checkpoints. Prefer explicit context already in the receiving conversation over mere recent timestamps.

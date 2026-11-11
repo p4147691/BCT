@@ -71,6 +71,104 @@ class ChainDirectionLedgerTests(unittest.TestCase):
             self.assertEqual("chain-1-send", started["chain_send_operation_id"])
             self.assertEqual("WAIT_FOR_RETURN", started["chain_continuation"]["next_safe_step"])
 
+    def test_returned_watch_projects_manager_reentry_without_replaying_or_rewriting(self):
+        import json
+        with tempfile.TemporaryDirectory() as root:
+            store = Store(Path(root) / "state.sqlite")
+            directions = ChainDirectionLedger(store)
+            DurableWatchLedger(store)
+            directions.save(
+                direction_id="saved-direction", work_id="the-original-work",
+                source_kind="USER", decision="NEW_TASK",
+                direction_text="Return the exact completed Worker result.",
+            )
+            directions.plan_chain(
+                direction_id="saved-direction", work_id="the-original-work",
+                task_id="worker-task", operation_id="original-send",
+            )
+            directions.mark_chain_started(
+                direction_id="saved-direction", work_id="the-original-work",
+                task_id="worker-task", operation_id="original-send",
+            )
+            with store.transaction() as db:
+                db.execute(
+                    "INSERT INTO delayed_send_watches "
+                    "(task_id,generation,conversation_key,response_turn_id,"
+                    "source_send_receipt,state,context_json) "
+                    "VALUES('worker-task',1,'worker-conversation',"
+                    "'original-turn','original-send','RETURNED_TO_MANAGER',?)",
+                    (json.dumps({"work_id":"the-original-work",
+                                 "chain_direction_id":"saved-direction"}),),
+                )
+                before = dict(db.execute(
+                    "SELECT * FROM chain_directions WHERE direction_id='saved-direction'",
+                ).fetchone())
+            result = directions.get(direction_id="saved-direction")
+            continuation = result["chain_continuation"]
+            self.assertEqual("IN_PROGRESS", result["recipe_state"])
+            self.assertEqual("WAITING_INPUT", continuation["state"])
+            self.assertEqual("MANAGER_REENTER_CHAIN_RECIPE",
+                             continuation["next_safe_step"])
+            self.assertEqual(
+                {"state":"RETURNED_TO_MANAGER", "generation":1,
+                 "source":"EXACT_WORK_TASK_READ_ONLY"},
+                continuation["durable_watch"],
+            )
+            self.assertEqual(
+                continuation, directions.get(direction_id="saved-direction")[
+                    "chain_continuation"],
+            )
+            with store._readonly() as db:
+                self.assertEqual(before, dict(db.execute(
+                    "SELECT * FROM chain_directions "
+                    "WHERE direction_id='saved-direction'",
+                ).fetchone()))
+                self.assertEqual("RETURNED_TO_MANAGER", db.execute(
+                    "SELECT state FROM delayed_send_watches "
+                    "WHERE task_id='worker-task'",
+                ).fetchone()["state"])
+
+    def test_unknown_watch_projects_same_receipt_only_and_never_replays(self):
+        import json
+        with tempfile.TemporaryDirectory() as root:
+            store = Store(Path(root) / "state.sqlite")
+            directions = ChainDirectionLedger(store)
+            DurableWatchLedger(store)
+            directions.save(
+                direction_id="unknown-direction",work_id="original-work",
+                source_kind="USER",decision="NEW_TASK",direction_text="Investigate.",
+            )
+            directions.plan_chain(
+                direction_id="unknown-direction",work_id="original-work",
+                task_id="worker-task",operation_id="send-1",
+            )
+            directions.mark_chain_started(
+                direction_id="unknown-direction",work_id="original-work",
+                task_id="worker-task",operation_id="send-1",
+            )
+            with store.transaction() as db:
+                db.execute(
+                    "INSERT INTO delayed_send_watches "
+                    "(task_id,generation,conversation_key,response_turn_id,"
+                    "source_send_receipt,state,context_json) "
+                    "VALUES('worker-task',1,'worker','turn','send-1','UNKNOWN',?)",
+                    (json.dumps({"work_id":"original-work"}),),
+                )
+                db.execute(
+                    "INSERT INTO delayed_send_watches "
+                    "(task_id,generation,conversation_key,response_turn_id,"
+                    "source_send_receipt,state,context_json) "
+                    "VALUES('worker-task',2,'foreign','turn','send-foreign',"
+                    "'RETURNED_TO_MANAGER',?)",
+                    (json.dumps({"work_id":"unrelated-work"}),),
+                )
+            continuation = directions.get(
+                direction_id="unknown-direction")["chain_continuation"]
+            self.assertEqual("UNKNOWN", continuation["state"])
+            self.assertEqual("RECONCILE_SAME_RECEIPT_ONLY",
+                             continuation["next_safe_step"])
+            self.assertEqual(1, continuation["durable_watch"]["generation"])
+
     def test_saved_direction_persists_chain_start_handoff_after_reopen(self):
         with tempfile.TemporaryDirectory() as root:
             path = Path(root) / "state.sqlite"

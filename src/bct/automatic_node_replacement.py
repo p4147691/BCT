@@ -49,7 +49,9 @@ class AutomaticNodeReplacement:
             ).fetchall()
         return [dict(row) for row in rows]
 
-    def _original_connection(self, key: str, snapshot: dict) -> dict | None:
+    def _original_connection(
+        self, key: str, snapshot: dict, *, work=None,
+    ) -> dict | None:
         node = status_view(snapshot, "node")
         current = node.get("current_nodes") or {}
         if (node.get("status") != "OK"
@@ -58,6 +60,15 @@ class AutomaticNodeReplacement:
         evidence = observe_node(node, key)
         if (evidence["reason"] != "NODE_NEW_CHAT_REQUIRED"
                 or evidence["result"] != "CHECK"):
+            # A previously exact NEW_CHAT_REQUIRED node may disappear before
+            # its saved replacement intent is reserved. Never guess a window.
+            # Find ONE fresh, explicitly same-network live peer as a window
+            # anchor, while the original Work/RECHECK proof remains required
+            # by _process before any external create-and-send.
+            if evidence["reason"] == "NODE_NOT_OBSERVED" and work is not None:
+                return self._unique_network_peer_window(
+                    original=key, work=work, snapshot=snapshot,
+                )
             return None
         ident = evidence["node"] or {}
         if ident.get("generating") is True:
@@ -78,6 +89,99 @@ class AutomaticNodeReplacement:
                         "window_id":int(tab["window_id"]),
                     })
         return matches[0] if len(matches) == 1 and matches[0]["instance_id"] else None
+
+    def _unique_network_peer_window(
+        self, *, original: str, work, snapshot: dict,
+    ) -> dict | None:
+        """Use one exact live network window if the old Chat tab vanished.
+
+        Requires an existing recorded Work recovery case with a recent
+        positive NEW_CHAT_REQUIRED RECHECK. This helper only resolves an
+        existing RCC instance/window; it does not create or send anything.
+        A global S with multiple scopes, a stale observer or two possible
+        windows fail closed rather than guessing a user's destination.
+        """
+        node = status_view(snapshot, "node")
+        current = node.get("current_nodes") or {}
+        if (node.get("status") != "OK"
+                or (current.get("observation") or {}).get("state") != "FRESH"):
+            return None
+        if observe_node(node, original)["reason"] != "NODE_NOT_OBSERVED":
+            return None
+        with self.store._readonly() as db:
+            memberships = db.execute(
+                "SELECT project_id FROM conversation_network_memberships "
+                "WHERE conversation_key=? AND activity='ACTIVE'",
+                (original,),
+            ).fetchall()
+            if len(memberships) != 1:
+                return None
+            project_id = str(memberships[0]["project_id"])
+            peers = {
+                str(row["conversation_key"]).lower() for row in db.execute(
+                    "SELECT conversation_key FROM conversation_network_memberships "
+                    "WHERE project_id=? AND activity='ACTIVE' "
+                    "AND conversation_key!=?",
+                    (project_id, original),
+                )
+            }
+        # A shared project can contain other Works. A peer must also be
+        # already linked to THIS original Work through its durable Chain
+        # Direction, Watch or pending return. Project membership by itself
+        # never authorizes using a different conversation's window.
+        work_peers = {
+            str(item["conversation_key"]).lower() for item in _targets(self.store)
+            if item["work_id"] == work.work_id
+            and item["conversation_key"] != original
+        }
+        peers &= work_peers
+        if not peers:
+            return None
+        fresh: dict[str, tuple[int,int]] = {}
+        for item in current.get("items") or []:
+            if not isinstance(item, dict):
+                continue
+            key = str(item.get("conversation_uuid") or "").lower()
+            connection = item.get("connection")
+            if (key not in peers or item.get("status") != "CONFIRMED"
+                    or item.get("generating") is not False
+                    or not isinstance(connection, dict)
+                    or connection.get("disconnected") is not False
+                    or str(item.get("network_id") or "") != project_id
+                    or type(item.get("tab_id")) is not int
+                    or type(item.get("window_id")) is not int):
+                continue
+            fresh[key] = (item["tab_id"], item["window_id"])
+        rcc = status_view(snapshot, "rcc").get("rcc") or {}
+        windows: dict[tuple[str,int], dict[str,Any]] = {}
+        for instance in rcc.get("instances") or []:
+            if (not isinstance(instance, dict)
+                    or instance.get("state") != "OPEN"
+                    or instance.get("cached") is True):
+                continue
+            instance_id = str(instance.get("instance_id") or "")
+            session_id = str(instance.get("session_id") or "")
+            if not instance_id or not re.fullmatch("[a-f0-9]{32}", session_id):
+                continue
+            for tab in instance.get("tabs") or []:
+                if not isinstance(tab, dict):
+                    continue
+                key = str(tab.get("conversation_key") or "").lower()
+                connection = tab.get("connection")
+                if (key not in fresh or tab.get("presence") != "OPEN"
+                        or (tab.get("tab_id"),tab.get("window_id")) != fresh[key]
+                        or (isinstance(connection,dict)
+                            and connection.get("disconnected") is True)):
+                    continue
+                window = tab["window_id"]
+                windows[(instance_id,window)] = {
+                    "instance_id":instance_id,
+                    "window_id":window,
+                    "peer_conversation_key":key,
+                    "peer_session_id":session_id,
+                    "network_id":project_id,
+                }
+        return next(iter(windows.values())) if len(windows) == 1 else None
 
     def _instruction(self, *, work, case: dict, role: str, task_id: str) -> str:
         # Read the newest exact original Work/Task generation instead of
@@ -306,7 +410,7 @@ class AutomaticNodeReplacement:
                     and observed.get("observation_state") == "FRESH"):
                 return {"status":"EXACT_NEW_CHAT_NOT_CONFIRMED"}
             snapshot = self.status_provider()
-            source = self._original_connection(original, snapshot)
+            source = self._original_connection(original, snapshot, work=work)
             if source is None:
                 return {"status":"WAIT_ORIGINAL_RCC_IDENTITY"}
             target_ref = self._discover_window(

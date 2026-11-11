@@ -384,6 +384,98 @@ class AutoNewChatTests(unittest.TestCase):
         self.assertEqual(B, checkpoint["supervisor_conversation_key"])
         self.assertEqual(SUCCESSOR, checkpoint["active_supervisor_conversation_key"])
 
+    def _missing_original_snapshot(self, *, peer=False, conflicting_window=False):
+        """Old B disappeared after a positive persisted NEW_CHAT_REQUIRED RECHECK."""
+        raw = self.snapshot()
+        raw["monitor"]["current_nodes"]["items"] = [
+            row for row in raw["monitor"]["current_nodes"]["items"]
+            if row["conversation_uuid"] != B
+        ]
+        tablist = raw["monitor"]["rcc"]["instances"][0]["tabs"]
+        tablist[:] = [
+            tab for tab in tablist if tab.get("conversation_key") != B
+        ]
+        if peer:
+            raw["monitor"]["current_nodes"]["items"].append({
+                "conversation_uuid": A, "status": "CONFIRMED",
+                "tab_id": 12, "window_id": 11, "generating": False,
+                "network_id": self.orig_scope["scope_id"],
+                "roles": ["Manager"],
+                "connection": {"disconnected": False},
+            })
+            tablist.append({
+                "conversation_key": A, "presence": "OPEN",
+                "tab_id": 12, "window_id": 11,
+                "connection": {"disconnected": False},
+                "conversation_scope": {
+                    "scope_id": self.orig_scope["scope_id"],
+                    "scope_name": "Project", "role_tags": ["Manager"],
+                },
+            })
+            if conflicting_window:
+                raw["monitor"]["current_nodes"]["items"].append({
+                    "conversation_uuid": S, "status": "CONFIRMED",
+                    "tab_id": 30, "window_id": 99, "generating": False,
+                    "network_id": self.orig_scope["scope_id"],
+                    "roles": ["Reviewer"],
+                    "connection": {"disconnected": False},
+                })
+                tablist.append({
+                    "conversation_key": S, "presence": "OPEN",
+                    "tab_id": 30, "window_id": 99,
+                    "connection": {"disconnected": False},
+                    "conversation_scope": {
+                        "scope_id": self.orig_scope["scope_id"],
+                        "scope_name": "Project", "role_tags": ["Reviewer"],
+                    },
+                })
+        return raw
+
+    def test_missing_old_tab_uses_only_fresh_exact_network_peer_window(self):
+        # A real BCT Work/Direction/Watch and two positive CHECK/RECHECK
+        # already prove this B requires NEW_CHAT. It may disappear before
+        # the single bootstrap intent is reserved.
+        configure_conversation_scope(
+            self.store, conversation_key=A, display_name="Original A",
+            scope_name="Project", role_tags=["Manager"],
+        )
+        self.auto.status_provider = lambda: self._missing_original_snapshot(peer=True)
+        result = self.auto.run_once()
+        self.assertEqual("REPLACED", result["events"][0]["status"], result)
+        self.assertEqual(1, self.auto.bct.operations.sends)
+        self.assertEqual(1, self.auto.bct.operations.discoveries)
+        self.assertEqual("REPLACED", self.ledger.get(
+            work=self.work, case_id=self.case)["state"])
+        # The completed Worker task may not be replayed after Core restart.
+        self.auto.run_once()
+        self.assertEqual(1, self.auto.bct.operations.sends)
+
+    def test_missing_old_tab_without_scope_peer_never_creates_chat(self):
+        self.auto.status_provider = lambda: self._missing_original_snapshot()
+        result = self.auto.run_once()
+        self.assertEqual("WAIT_ORIGINAL_RCC_IDENTITY",
+                         result["events"][0]["status"])
+        self.assertEqual(0, self.auto.bct.operations.sends)
+        self.assertEqual("RECOVERY_NEEDED", self.ledger.get(
+            work=self.work, case_id=self.case)["state"])
+
+    def test_ambiguous_peer_windows_never_choose_a_new_chat_target(self):
+        configure_conversation_scope(
+            self.store, conversation_key=A, display_name="Original A",
+            scope_name="Project", role_tags=["Manager"],
+        )
+        configure_conversation_scope(
+            self.store, conversation_key=S, display_name="Original reviewer",
+            scope_name="Project", role_tags=["Reviewer"],
+        )
+        self.auto.status_provider = lambda: self._missing_original_snapshot(
+            peer=True, conflicting_window=True,
+        )
+        result = self.auto.run_once()
+        self.assertEqual("WAIT_ORIGINAL_RCC_IDENTITY",
+                         result["events"][0]["status"])
+        self.assertEqual(0, self.auto.bct.operations.sends)
+
     def test_one_atomic_new_chat_restores_previous_role_and_task(self):
         result=self.auto.run_once()
         self.assertEqual("REPLACED",result["events"][0]["status"],result)

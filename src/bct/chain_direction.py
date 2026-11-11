@@ -637,6 +637,19 @@ class ChainDirectionLedger:
                 "chain_send_operation_id,chain_state FROM chain_directions "
                 "WHERE parent_direction_id=? ORDER BY direction_id", (direction_id,),
             ).fetchall()
+            watch = None
+            if (row is not None and row["chain_state"] == "CHAIN_STARTED"
+                    and str(row["chain_task_id"] or "")):
+                try:
+                    watch = db.execute(
+                        "SELECT state,generation FROM delayed_send_watches "
+                        "WHERE task_id=? AND json_extract(context_json,'$.work_id')=? "
+                        "ORDER BY generation DESC LIMIT 1",
+                        (row["chain_task_id"], row["work_id"]),
+                    ).fetchone()
+                except sqlite3.OperationalError as exc:
+                    if "no such table" not in str(exc):
+                        raise
         if row is None:
             return None
         direction = {**dict(row), "assessment": json.loads(row["assessment_json"]),
@@ -650,6 +663,41 @@ class ChainDirectionLedger:
             "work_id": direction["work_id"],
             "direction_id": direction["direction_id"],
         }
+        # Durable Watch is newer than the immutable 'CHAIN_STARTED' marker.
+        # Derive the *read-only* continuation view from its exact Work+Task
+        # receipt; never rewrite old Direction/Watch or declare an A ACK.
+        if watch is not None:
+            mapping = {
+                "WATCHING": ("WAITING_EXTERNAL", "WAIT_FOR_EXACT_RESPONSE",
+                             "The exact sent task is awaiting its durable response."),
+                "MANAGER_DECISION_REQUIRED": (
+                    "WAITING_INPUT", "MANAGER_REENTER_CHAIN_RECIPE",
+                    "Worker result is recorded; A must review the original Direction."),
+                "RETURNED_TO_MANAGER": (
+                    "WAITING_INPUT", "MANAGER_REENTER_CHAIN_RECIPE",
+                    "Worker result has been returned; a delivery is not an A decision ACK."),
+                "MANAGER_RECOVERY_PENDING": (
+                    "WAITING_RECOVERY", "RECOVER_MANAGER_INBOX",
+                    "Completed Worker result is held durably for a recovered Manager."),
+                "SELF_SENT": ("IN_PROGRESS", "WAIT_FOR_CURRENT_GENERATION",
+                              "The original task has a later SELF continuation."),
+                "UNKNOWN": ("UNKNOWN", "RECONCILE_SAME_RECEIPT_ONLY",
+                            "External effect is uncertain; do not resend."),
+                "CANCELLED": ("CANCELLED", "INSPECT_CANCELLATION_RECEIPT",
+                              "The earlier Watch is cancelled; do not resend."),
+            }
+            record_state = str(watch["state"])
+            continuation = direction["chain_continuation"]
+            continuation["durable_watch"] = {
+                "state": record_state,
+                "generation": int(watch["generation"]),
+                "source": "EXACT_WORK_TASK_READ_ONLY",
+            }
+            if (record_state in mapping
+                    and direction["recipe_state"] not in {"COMPLETED", "CANCELLED"}):
+                state, next_step, reason = mapping[record_state]
+                continuation.update(state=state, next_safe_step=next_step,
+                                    reason=reason)
         direction["chain_branch"] = {
             "root_work_id": direction.get("root_work_id") or direction["work_id"],
             "parent_work_id": direction.get("parent_work_id") or "",
