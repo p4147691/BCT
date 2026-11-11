@@ -32,3 +32,21 @@ N40 Chrome/RCC 독립 실사용 검증 전 동일 UUID 두 번째 전송 의존 
 ## 정확한 후계 attachment 추가 보호
 - 인계 영수증에 결속된 후계 attachment가 활성 목록에서 최신 generation인지 다시 확인한다. 더 새로운 활성 attachment가 등장하면 이전 bindingReceiptId/탭으로 보내지 않는다.
 - 실제 SQLite 장부에서 더 새 attachment를 주입하는 테스트와 Epoch/UNKNOWN 회귀가 통과했다.
+
+## 후계 Manager Task/Generation 원장 조회 보완 (2026-11-11)
+
+기존 자동 복구 후보 a2411ec의 후속 격리 변경이다. 별도의 신규 사용자 승인이나 새 MCP 공개 명령은 추가하지 않는다.
+
+기존 Orchestration 상태 조회에서 활성 Manager Epoch가 2 이상일 때 원래 Work의 정확한 Task/Generation, assignment/attempt state, 원 dispatch operation ID, 대기 중인 Manager Wake, Chain Watch와 미확인 반환을 읽기 전용으로 연결한다.
+
+이 조회는 새 후계 노드가 이미 확정된 Work/Session/Epoch일 때에만 사용할 수 있다. 오래된 Epoch, 종료된 Session, 다른 Work, Work assignment epoch 불일치는 거부한다.
+
+미전송 QUEUED는 기존 경로에서만 채택할 수 있고, dispatch_operation_id가 있으면 외부 제출 여부를 기존 Operation 영수증으로 대조해야 한다. UNKNOWN/기존 발송은 재실행하지 않는다. Watch와 반환의 저장된 원래 Task Generation은 유지한다.
+
+결과 제한은 최대 200개이며 Work별 실제 전체 개수와 complete_listing을 함께 반환한다. 50건 초과 시 결과가 전체라고 잘못 표시하지 않는다.
+
+이미 완료된 N36/N37에는 전송·Check·Replace 없음. N40/N42는 현재 GENERATING 관찰 및 독립 Chrome/RCC 호스트가 아직 확인되지 않아 실제 후계 전송 지시 없음.
+
+코드/DB 격리 회귀는 실제 AI가 Task 완료까지 수행했다는 증거가 아니며, N40 실사용 패치 E2E PASS 전 실사용 Chain 승계 시험은 HOLD한다.
+
+활성 Manager Epoch에서 후계 Chat 생성과 실제 사용자 대화 재개는 계속 미완료. N40/N42 파일, 다른 worktree, UNKNOWN, 운영/main/LIVE 보존.

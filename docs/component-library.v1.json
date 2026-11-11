@@ -64,6 +64,7 @@
       "implementation": [
         {"path": "src/bct/automatic_chain_recovery.py", "symbol": "AutomaticChainNodeRecovery.run_once"},
         {"path": "src/bct/automatic_manager_rebinding.py", "symbol": "AutomaticManagerRebinding.run_once"},
+        {"path": "src/bct/manager_successor_inventory.py", "symbol": "manager_successor_inventory"},
         {"path": "src/bct/automatic_prepared_replacement.py", "symbol": "AutomaticPreparedReplacement.run_once"},
         {"path": "src/bct/automatic_node_replacement.py", "symbol": "AutomaticNodeReplacement.run_once"},
         {"path": "src/bct/node_recovery.py", "symbol": "NodeRecoveryLedger.check / mark_automatic_observation"},

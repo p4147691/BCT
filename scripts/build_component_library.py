@@ -18,6 +18,7 @@ FLOW_SOURCES = (
     "src/bct/mcp_server.py", "src/bct/chain_direction.py", "src/bct/chain_execution_plan.py",
     "src/bct/chain_entry_policy.py", "src/bct/chain_recipe_blocks.py", "src/bct/chain_recovery_context.py",
     "src/bct/automatic_chain_recovery.py", "src/bct/automatic_manager_rebinding.py",
+    "src/bct/manager_successor_inventory.py",
     "src/bct/automatic_prepared_replacement.py",
     "src/bct/automatic_node_replacement.py",
     "src/bct/runtime_server.py",
