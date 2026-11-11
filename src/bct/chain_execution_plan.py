@@ -28,8 +28,6 @@ def check_execute_plan(*, plan: dict[str, Any] | None,
     change durable state.  Its result is suitable for later status display and
     for the separate observation-recording primitive.
     """
-    # Normalize only this parsing view. Callers retain/hash the original bytes.
-    response_text = response_text.replace("\r\n", "\n")
     issues: list[str] = []
     reported_revision: int | None = None
     completed_steps: int | None = None
@@ -37,27 +35,20 @@ def check_execute_plan(*, plan: dict[str, Any] | None,
     if plan is None:
         issues.append("PLAN_MISSING")
     else:
-        revisions = re.findall(r"(?m)^PLAN REVISION:[ \t]*(\d+)[ \t]*$", response_text)
-        if not revisions or len(revisions) != len(re.findall(r"(?m)^PLAN REVISION:", response_text)):
+        revision = re.search(r"(?m)^PLAN REVISION:\s*(\d+)\s*$", response_text)
+        if revision is None:
             issues.append("PLAN_REVISION_MISMATCH")
         else:
-            reported_revision = int(revisions[-1])
-            if any(int(value) != int(plan.get("revision", 0)) for value in revisions):
+            reported_revision = int(revision.group(1))
+            if reported_revision != int(plan.get("revision", 0)):
                 issues.append("PLAN_REVISION_MISMATCH")
-    # A captured terminal turn can contain an earlier progress update and the
-    # final answer. Select the latest declaration only when all declarations
-    # describe one consistent, monotonically advancing plan.
-    progress = re.findall(r"(?m)^PROGRESS:[ \t]*(\d+)[ \t]*/[ \t]*(\d+)[ \t]*[-—]", response_text)
-    if not progress or len(progress) != len(re.findall(r"(?m)^PROGRESS:", response_text)):
+    progress = re.search(r"(?m)^PROGRESS:\s*(\d+)\s*/\s*(\d+)\s*[-—]", response_text)
+    if progress is None:
         issues.append("PROGRESS_MISSING")
     else:
-        values = [(int(done), int(total)) for done, total in progress]
-        completed_steps, total_steps = values[-1]
-        if any(done > total or total < 1 for done, total in values):
+        completed_steps, total_steps = int(progress.group(1)), int(progress.group(2))
+        if completed_steps > total_steps or total_steps < 1:
             issues.append("PROGRESS_MISSING")
-        if any(total != total_steps for _, total in values) or any(
-                later[0] < earlier[0] for earlier, later in zip(values, values[1:])):
-            issues.append("PROGRESS_CONFLICT")
     return {
         "plan_id": str((plan or {}).get("plan_id") or ""),
         "reported_revision": reported_revision,
@@ -127,30 +118,9 @@ class ChainExecutionPlanLedger:
         direction = ChainDirectionLedger(self.store).get(direction_id=direction_id)
         if direction is None or direction["work_id"] != work_id:
             raise ValueError("CHAIN_DIRECTION_NOT_FOUND")
-        chain_started = (
-            direction["decision"] == "NEW_TASK"
-            and direction["chain_state"] == "CHAIN_STARTED"
-            and direction["chain_task_id"] == task_id
-        )
-        loop_started = False
-        if not chain_started and direction["decision"] == "NEW_TASK":
-            from bct.loop_store import LoopStore
-            loop = LoopStore(self.store).get(work_id)
-            loop_started = bool(
-                loop and loop["direction_id"] == direction_id
-                and loop["task_id"] == task_id
-                and loop["state"] in {"LOOP_STARTED", "COMPLETED"}
-            )
-        review_started = False
-        if not (chain_started or loop_started) and direction["decision"] == "NEW_TASK":
-            with self.store._readonly() as db:
-                exists = db.execute("SELECT 1 FROM sqlite_master WHERE name='loop_review_handoffs'").fetchone()
-                if exists:
-                    review = db.execute("SELECT task_id,state FROM loop_review_handoffs WHERE work_id=?", (work_id,)).fetchone()
-                    review_started = bool(review and review["task_id"] == task_id
-                        and review["state"] in {"DISPATCHING", "DELIVERED"}
-                        and loop and loop["direction_id"] == direction_id)
-        if not (chain_started or loop_started or review_started):
+        if (direction["decision"] != "NEW_TASK"
+                or direction["chain_state"] != "CHAIN_STARTED"
+                or direction["chain_task_id"] != task_id):
             raise ValueError("CHAIN_EXECUTION_PLAN_SOURCE_NOT_STARTED")
         plan_sha = hashlib.sha256(plan_text.encode("utf-8")).hexdigest()
         proposed = (work_id, direction_id, task_id, generation, plan_text, plan_sha)

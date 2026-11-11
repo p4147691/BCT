@@ -29,28 +29,27 @@ class LoopPlanIntegrationTests(unittest.TestCase):
                                direction_id="direction-test",task_id="task-1",
                                generation=1,plan_text="step A then verify")
 
-    def test_plan_blocked_until_real_loop_start(self):
+    def test_loop_record_no_longer_authorizes_common_chain_plan(self):
         with self.assertRaisesRegex(ValueError,"CHAIN_EXECUTION_PLAN_SOURCE_NOT_STARTED"):
             self.save_plan()
         loop=LoopStore(self.store)
         loop.start(work_id="loop-test",direction_id="direction-test",
-                   task_id="task-1",owner="node-a",plan_text="step A then verify")
-        result=self.save_plan()
-        self.assertEqual(result["plan_id"],"loop-plan")
-        self.assertFalse(result["duplicate"])
-        self.assertTrue(self.save_plan()["duplicate"])
-        self.assertEqual(self.direction.get(direction_id="direction-test")["chain_state"],
-                         "NOT_PLANNED")
+                   task_id="task-1",owner="node-a",plan_text="historical plan")
+        before=loop.get("loop-test")
+        with self.assertRaisesRegex(ValueError,"CHAIN_EXECUTION_PLAN_SOURCE_NOT_STARTED"):
+            self.save_plan()
+        self.assertEqual(loop.get("loop-test"),before)
+        self.assertIsNone(self.plans.get(plan_id="loop-plan"))
 
-    def test_started_loop_is_not_mislabeled_as_pending_chain_start(self):
+    def test_common_pending_query_is_restored_without_loop_filter(self):
         pending = lambda: self.direction.list_pending_chain_starts(store=self.store, principal_id="test")
         self.assertEqual(len(pending()), 1)
         LoopStore(self.store).start(work_id="loop-test",direction_id="direction-test",
-            task_id="task-1",owner="node-a",plan_text="step A")
-        self.assertEqual(pending(), [])
+            task_id="task-1",owner="node-a",plan_text="historical plan")
+        self.assertEqual(len(pending()),1)
         self.direction.save(direction_id="other-direction",work_id="loop-test",
             source_kind="USER",decision="NEW_TASK",direction_text="Different unstarted direction")
-        self.assertEqual([row["direction_id"] for row in pending()], ["other-direction"])
+        self.assertEqual({row["direction_id"] for row in pending()}, {"direction-test","other-direction"})
 
     def test_existing_chain_started_contract_is_preserved(self):
         # In the isolated fixture, emulate the already-verified Chain transition.

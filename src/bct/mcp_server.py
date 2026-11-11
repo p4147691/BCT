@@ -3101,7 +3101,7 @@ def build_mcp(
 
     @server.tool(
         name="bct_loop_recipe",
-        description=("Durable SINGLE_PERSISTENT start/status/claim/reconcile/advance; "
+        description=("New Loop starts are disabled after Chain restoration; existing status/claim/reconcile/advance remain. "
                      "reconcile verifies the original BCT Operation receipt. "
                      "Records SELF wake intent; optional existing global Supervisor binding via "
                      "supervisor/review_instruction, configure_review/request_review and exact "
@@ -3126,6 +3126,12 @@ def build_mcp(
         from bct.loop_store import LoopStore
         from bct.chain_direction import ChainDirectionLedger
         from bct.chain_execution_plan import ChainExecutionPlanLedger
+
+        # Chain compatibility has been restored. Stop a new Loop before any
+        # Direction, run, plan, requester or review record can be created.
+        if action == "start":
+            return {"status":"INVALID_REQUEST", "reason":"LOOP_NEW_START_DISABLED_CHAIN_RESTORED",
+                    "effects":"NONE", "existing_records":"PRESERVED"}
 
         if not work_id and action == "recover":
             from bct.loop_recovery_executor import LoopRecoveryExecutor

@@ -727,7 +727,7 @@
           "symbol": "loop_recipe_recovery_loop"
         }
       ],
-      "contract": "Opt-in single-Manager Loop independent review: bind an existing exact global Supervisor, freeze a candidate SHA and evidence packet, prearm existing Chain response Watch before one BCT browser Operation, reuse SELF/MANAGER return and Execute Plan progress. Complete only after exact independent full-acceptance verdict and SHA, plan completion and original APPLIED return receipt. Legacy unconfigured Loops retain their behavior. Acceptance atomically stores a durable result separately from requester transport and user notification.",
+      "contract": "Retained-record single-Manager Loop independent review (new public starts are disabled before writes after restoring the original common Chain contract; new Loop/review plan creation is not supported): bind an existing exact global Supervisor, freeze a candidate SHA and evidence packet, prearm existing Chain response Watch before one BCT browser Operation, reuse SELF/MANAGER return and Execute Plan progress. Complete only after exact independent full-acceptance verdict and SHA, plan completion and original APPLIED return receipt. Legacy unconfigured Loops retain their behavior. Acceptance atomically stores a durable result separately from requester transport and user notification.",
       "effects": [
         "durable-review-binding-and-outbox",
         "exact-supervisor-message",
