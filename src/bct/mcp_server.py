@@ -3197,10 +3197,13 @@ def build_mcp(
                         "plan": plan, "progress": progress, "review": review,
                         "result_report": result_report,
                         "user_notification": "UNVERIFIED"}
-            if action in {"configure_review", "request_review", "resume_review"}:
+            if action in {"configure_review", "request_review", "resume_review", "reconcile_review"}:
                 from bct.loop_supervisor_handoff import LoopReviewLedger
                 review_ledger = LoopReviewLedger(bct.store)
-                if action == "resume_review":
+                if action == "reconcile_review":
+                    result = await asyncio.to_thread(review_ledger.reconcile_return, work_id=work_id,
+                        owner=owner, epoch=epoch, response_sha256=review_response_sha)
+                elif action == "resume_review":
                     if status_provider is None:
                         return {"status": "UNAVAILABLE", "reason": "LOOP_FRESH_STATUS_REQUIRED"}
                     snapshot = await asyncio.to_thread(status_provider)

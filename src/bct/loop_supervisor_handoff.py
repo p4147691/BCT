@@ -254,7 +254,20 @@ class LoopReviewLedger:
             db.execute("UPDATE loop_review_handoffs SET state=?,updated_at=? WHERE work_id=? AND state='DISPATCHING'", (state, time.time(), work_id))
         return self.get(work_id)
 
-    def observe_return(self, work_id):
+    def reconcile_return(self, *, work_id, owner, epoch, response_sha256):
+        row = self.get(work_id)
+        if (not row or row["state"] != "REVIEW_HOLD" or row["owner"] != owner
+                or row["epoch"] != epoch):
+            raise LoopStateError("LOOP_REVIEW_HOLD_REQUIRED")
+        context = json.loads(row["response_json"] or "null")
+        if not context or context["decision"]["response_sha256"] != response_sha256:
+            raise LoopStateError("LOOP_REVIEW_RETURN_PROOF_REQUIRED")
+        actual = DurableWatchLedger(self.store).read_execution_context(task_id=row["task_id"])
+        if actual != context:
+            raise LoopStateError("LOOP_REVIEW_RETURN_PROOF_REQUIRED")
+        return self.observe_return(work_id, recheck_progress=True)
+
+    def observe_return(self, work_id, *, recheck_progress=False):
         row = self.get(work_id)
         context = DurableWatchLedger(self.store).read_execution_context(task_id=row["task_id"])
         if not context or context["watch_state"] != "RETURNED_TO_MANAGER":
@@ -272,6 +285,19 @@ class LoopReviewLedger:
             work_id=work_id, direction_id=current["direction_id"], task_id=row["task_id"])
         plan = ChainExecutionPlanLedger.get_for_chain(store=self.store,
             work_id=work_id, direction_id=current["direction_id"], task_id=row["task_id"])
+        original_check = check
+        if recheck_progress:
+            from bct.chain_execution_plan import check_execute_plan
+            text = (context.get("prior_turn") or {}).get("response_text")
+            if (row["state"] != "REVIEW_HOLD" or json.loads(row["response_json"] or "null") != context
+                    or not isinstance(text, str)
+                    or hashlib.sha256(text.encode("utf-8")).hexdigest() != context["decision"]["response_sha256"]):
+                raise LoopStateError("LOOP_REVIEW_RETURN_PROOF_REQUIRED")
+            # Keep the old immutable check and full return receipt. Only the
+            # pure interpretation of this exact terminal response is renewed.
+            if check:
+                assessment = check_execute_plan(plan=plan, response_text=text)
+                check = {**check, **{k:v for k,v in assessment.items() if k != "plan_id"}}
         plan_complete = bool(plan and check and check["reported_revision"] == plan["revision"]
             and check["plan_id"] == plan["plan_id"] and check["generation"] == context["generation"]
             and check["response_sha256"] == context["decision"]["response_sha256"]
@@ -283,9 +309,17 @@ class LoopReviewLedger:
             if (not loop or loop["owner"] != row["owner"] or loop["epoch"] != row["epoch"]
                     or loop["state"] != "REVIEW_PENDING"):
                 raise LoopStateError("LOOP_REVIEW_OWNER_CHANGED")
+            current_review = db.execute("SELECT * FROM loop_review_handoffs WHERE work_id=?", (work_id,)).fetchone()
+            if not current_review or dict(current_review) != row:
+                raise LoopStateError("LOOP_REVIEW_RETURN_PROOF_REQUIRED")
             state = "ACCEPTED" if accepted else "REVIEW_HOLD"
-            changed = db.execute("UPDATE loop_review_handoffs SET state=?,response_json=?,updated_at=? WHERE work_id=? AND state='DELIVERED'",
-                (state, json.dumps(context, sort_keys=True), time.time(), work_id))
+            expected_state = "REVIEW_HOLD" if recheck_progress else "DELIVERED"
+            if recheck_progress and accepted:
+                self.archive(db, current_review, kind="PROGRESS_REEVALUATED",
+                    proof={"original_check":original_check,"assessment":check,
+                           "response_sha256":context["decision"]["response_sha256"]}, now=time.time())
+            changed = db.execute("UPDATE loop_review_handoffs SET state=?,response_json=?,updated_at=? WHERE work_id=? AND state=?",
+                (state, json.dumps(context, sort_keys=True), time.time(), work_id, expected_state))
             if changed.rowcount and accepted:
                 from bct.loop_store import LoopStore
                 db.execute("UPDATE loop_recipe_runs SET state='COMPLETED',updated_at=? WHERE work_id=?", (time.time(), work_id))
