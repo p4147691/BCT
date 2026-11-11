@@ -119,12 +119,37 @@ class LoopSelfOutbox:
                    "UNKNOWN":"UNKNOWN"}[outcome]
         with self.store.transaction() as db:
             current=self._get(db,work_id,epoch,step)
+            if not current or current["operation_id"] != row["operation_id"]:
+                raise LoopStateError("LOOP_SELF_RECONCILE_NOT_READY")
+            # A concurrent continuation may ACK after our receipt read.
+            # ACK is terminal: never resurrect a consumed wake as DELIVERED.
+            if current["state"] == "ACKED":
+                return current
             if current["state"] in {"DELIVERED","NOT_APPLIED"} and current["state"]!=new_state:
                 raise LoopStateError("LOOP_SELF_RECEIPT_CONFLICT")
             db.execute("""UPDATE loop_recipe_self_outbox SET state=?,updated_at=?
                 WHERE work_id=? AND epoch=? AND step=?""",
                 (new_state,now,work_id,epoch,step))
             return self._get(db,work_id,epoch,step)
+
+    def reconcile_uncertain(self, *, principal_id, limit=8, now=None):
+        """Read original receipts only; never reserve, dispatch or requeue."""
+        results = []
+        for row in self.list_uncertain(limit=limit):
+            try:
+                work = self.store.get_work(row["work_id"])
+                if work.owner_principal_id != principal_id or work.state != "ACTIVE":
+                    continue
+                settled = self.reconcile(
+                    work_id=row["work_id"], epoch=row["epoch"], step=row["step"],
+                    principal_id=principal_id, now=now,
+                )
+                results.append({"operation_id": row["operation_id"],
+                                "status": settled["state"]})
+            except (ValueError, KeyError) as exc:
+                results.append({"operation_id": row["operation_id"],
+                                "status": "HELD", "reason": type(exc).__name__})
+        return results
 
     def list_delivered(self, *, limit=8):
         if not isinstance(limit,int) or not 1 <= limit <= 32:
@@ -134,6 +159,7 @@ class LoopSelfOutbox:
                 """SELECT o.* FROM loop_recipe_self_outbox o
                 JOIN loop_recipe_runs l ON l.work_id=o.work_id
                 WHERE o.state='DELIVERED' AND l.state='LOOP_STARTED'
+                AND o.conversation_key=l.owner
                 ORDER BY o.updated_at,o.work_id LIMIT ?""",
                 (limit,),
             ).fetchall()]
