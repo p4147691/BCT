@@ -371,6 +371,13 @@ A는 `COMPLETE`, `NEW_TASK`, `ASK_USER`, `HOLD`를 판단한다. NEW_TASK가 메
 | Node Info | Monitor 우클릭 정보: 대화망·역할·담당 작업·메모. 관계의 정본은 Direction·branch·Watch 영수증이다. 자식/손자 지시에는 임시 관계 정보를 포함하고, Manager가 계속 참고할 짧은 상태가 필요하다고 판단하면 기존 `set-node-info`의 `node_memo`에 적을 수 있다. 메모만 바꿀 때는 현재 관찰한 `scope_name`·역할·기대 scope를 그대로 넣으므로 대화망 소속이나 역할은 바꾸지 않는다. BCT는 이 메모를 임의로 쓰지도, Manager의 명시적 기록을 막지도 않는다. |
 | Work / task_id / Operation | 기존 지속 작업 경계 / 한 체인의 연속 처리 식별값 / 개별 효과와 영수증 |
 
+Chain 전체 구현은 `src/bct/recipes/chain.py`에서 관리한다. 부분 레시피는 같은
+`recipes/` 패키지의 `input.py`, `state.py`, `direction.py`, `network.py`, `delivery.py`,
+`recovery.py`에 나뉜다. `outline.py`는 단계/진행 표시, `runtime.py`는 서버별 BCT·Principal·
+상태 조회·기존 capability 실행기 연결 계약이다. 부분 레시피는 서버를 역으로 import하거나
+MCP 도구를 등록하지 않는다. 기존 Direction/Watch/Operation 원장과 UNKNOWN 처리 경계를
+그대로 사용하며, 파일 분리 자체가 배포나 LIVE 검증을 뜻하지 않는다.
+
 공개 도구의 입구는 `src/bct/mcp_server.py`에 등록된다. 일부 보존된 공개명은 같은 내부 함수를
 호출하므로 공개명과 내부 함수가 모두 1:1인 것은 아니다. 내부 재사용 함수·파일은 부품 조회의
 `implementation`에서 확인한다. 새 이름을 추측하지 않는다.

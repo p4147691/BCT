@@ -35,7 +35,8 @@
       "kind": "full_recipe",
       "maturity": "bounded",
       "implementation": [
-        {"path": "src/bct/mcp_server.py", "symbol": "bct_chain_recipe"},
+        {"path": "src/bct/mcp_server.py", "symbol": "bct_chain_recipe (public adapter)"},
+        {"path": "src/bct/recipes/chain.py", "symbol": "chain_recipe"},
         {"path": "src/bct/chain_direction.py", "symbol": "prepare_direction_review / compose_target_direction"},
         {"path": "src/bct/chain_manager_recovery.py", "symbol": "ChainManagerRecoveryLedger"}
       ],
@@ -43,6 +44,161 @@
       "effects": ["direction-and-target-ledger", "declared-conversation-network-updates", "exact-browser-message", "durable-response-watch", "manager-return-checkpoint"],
       "safety": ["actual-ai-turn-boundaries", "fresh-recipient-uuid", "role-label-is-advisory", "supervisor-never-acts-as-manager", "manager-return-persisted-before-delivery", "ambiguous-manager-state-never-falls-back", "per-target-instructions-and-receipts", "work-authorization", "partial-effects-reported", "unknown-no-replay"],
       "used_by": ["ordinary-user-assigned-work"]
+    },
+    {
+      "id": "bct.chain_input",
+      "kind": "partial_recipe",
+      "maturity": "isolated",
+      "implementation": [
+        {
+          "path": "src/bct/recipes/input.py",
+          "symbol": "input_recipe / manager_return_chain_link_recipe / manager_return_save_context"
+        }
+      ],
+      "contract": "Input R validates an original request or the exact owned Manager-return Task/generation and preserves the parent Direction relationship. It does not observe runtime, record a Direction, or send.",
+      "effects": [],
+      "safety": [
+        "work-owner-bound",
+        "exact-return-source",
+        "read-only"
+      ],
+      "used_by": [
+        "bct.chain_recipe"
+      ]
+    },
+    {
+      "id": "bct.chain_state",
+      "kind": "partial_recipe",
+      "maturity": "isolated",
+      "implementation": [
+        {
+          "path": "src/bct/recipes/state.py",
+          "symbol": "state_recipe / check_conversation_network_recipe"
+        }
+      ],
+      "contract": "State R reads exactly one current snapshot, durable networks, exact return-plan checks and recovery notices. It compares facts without changing routing or choosing roles.",
+      "effects": [],
+      "safety": [
+        "one-current-snapshot",
+        "read-only",
+        "no-role-selection"
+      ],
+      "used_by": [
+        "bct.chain_recipe"
+      ]
+    },
+    {
+      "id": "bct.chain_direction_recipe",
+      "kind": "partial_recipe",
+      "maturity": "isolated",
+      "implementation": [
+        {
+          "path": "src/bct/recipes/direction.py",
+          "symbol": "prepare_direction_recipe / write_direction_recipe / save_direction_recipe"
+        }
+      ],
+      "contract": "Write/Save Direction R composes Input and State, preserves the continuity handle, validates A-authored direction and assessment, and writes the existing Direction ledger only after validation. No AI judgment or message delivery is hidden here.",
+      "effects": [
+        "existing-direction-ledger"
+      ],
+      "safety": [
+        "entry-context-continuity",
+        "work-owner-bound",
+        "existing-validation",
+        "no-message-send"
+      ],
+      "used_by": [
+        "bct.chain_recipe"
+      ]
+    },
+    {
+      "id": "bct.chain_network_recipe",
+      "kind": "partial_recipe",
+      "maturity": "isolated",
+      "implementation": [
+        {
+          "path": "src/bct/recipes/network.py",
+          "symbol": "apply_conversation_network_recipe / set_conversation_network"
+        }
+      ],
+      "contract": "Validate all declared network updates before applying them through the injected existing authenticated capability gateway; reread routes and retain partial-effect receipts.",
+      "effects": [
+        "declared-conversation-network-update"
+      ],
+      "safety": [
+        "existing-work-operation-fence",
+        "exact-declared-updates",
+        "partial-results-preserved",
+        "unknown-no-replay"
+      ],
+      "used_by": [
+        "bct.chain_recipe"
+      ]
+    },
+    {
+      "id": "bct.chain_send_recipe",
+      "kind": "partial_recipe",
+      "maturity": "isolated",
+      "implementation": [
+        {
+          "path": "src/bct/recipes/delivery.py",
+          "symbol": "prepare_send_direction_recipe / send_direction_recipe / send_chain_delivery"
+        }
+      ],
+      "contract": "Compose existing saved Direction, target preparation, response-watch prearming and exact sending. Preserve public task/operation identities, fresh per-target routing, partial outcomes and durable continuation evidence.",
+      "effects": [
+        "existing-send-operation",
+        "existing-response-watch"
+      ],
+      "safety": [
+        "watch-before-send",
+        "exact-target",
+        "partial-results-preserved",
+        "unknown-no-replay"
+      ],
+      "used_by": [
+        "bct.chain_recipe"
+      ]
+    },
+    {
+      "id": "bct.chain_runtime_ports",
+      "kind": "module",
+      "maturity": "isolated",
+      "implementation": [
+        {
+          "path": "src/bct/recipes/runtime.py",
+          "symbol": "ChainRecipeRuntime"
+        }
+      ],
+      "contract": "Immutable per-server dependency contract: BCT service, authenticated principal, current-state provider and existing capability-executor factory. No globals, MCP registration, new permission or second execution gateway.",
+      "effects": [],
+      "safety": [
+        "per-instance-isolation",
+        "existing-capability-gateway"
+      ],
+      "used_by": [
+        "bct.chain_recipe"
+      ]
+    },
+    {
+      "id": "bct.chain_recipe_outline",
+      "kind": "module",
+      "maturity": "isolated",
+      "implementation": [
+        {
+          "path": "src/bct/recipes/outline.py",
+          "symbol": "chain_recipe_outline / chain_recipe_progress"
+        }
+      ],
+      "contract": "Pure stage descriptions and progress values for the unchanged full Chain Recipe sequence.",
+      "effects": [],
+      "safety": [
+        "no-effects",
+        "unchanged-stage-order"
+      ],
+      "used_by": [
+        "bct.chain_recipe"
+      ]
     },
     {
       "id": "bct.component_library",
@@ -605,7 +761,8 @@
       "kind": "partial_recipe",
       "maturity": "isolated",
       "implementation": [
-        {"path": "src/bct/mcp_server.py", "symbol": "recover_node_recipe / bct_chain_recipe(action=recover_node)"}
+        {"path": "src/bct/recipes/recovery.py", "symbol": "recover_node_recipe"},
+        {"path": "src/bct/mcp_server.py", "symbol": "bct_chain_recipe(action=recover_node)"}
       ],
       "contract": "A Direction may declare one exact node UUID for Recover Node R. It composes Check Node R with a fresh State R reread before send preparation. It never silently pauses, replaces, resets, or sends; those remain separately selected recipes.",
       "effects": ["node.check"],
