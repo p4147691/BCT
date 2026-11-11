@@ -105,6 +105,105 @@ class LoopMcpContractTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotEqual(stale["status"], "OK")
         self.assertEqual(ledger.get("loop-mcp-work")["operation_id"], "original-receipt")
 
+    async def test_current_owner_reobserves_stale_then_busy_without_sending(self):
+        from unittest.mock import AsyncMock, patch
+        from bct.loop_store import LoopStore
+        from test_loop_self_dispatch import OWNER, production_snapshot
+        ledger = LoopStore(self.store)
+        ledger.start(work_id="loop-mcp-work", direction_id="loop-mcp-direction",
+                     task_id="loop-mcp-task", owner=OWNER, plan_text="plan", now=100)
+        snapshots = iter([{"monitor": None}, {"monitor": None},
+                          {"monitor": production_snapshot(generating=True)}])
+        self.server = build_mcp(
+            SimpleNamespace(store=self.store, operations=SimpleNamespace(capabilities=("read", "browser"))),
+            status_provider=lambda: next(snapshots))
+        with patch("bct.mcp_server.asyncio.sleep", new_callable=AsyncMock) as sleep:
+            result = await self.result("claim", owner=OWNER, epoch=1)
+        self.assertEqual(result["status"], "OK", result)
+        self.assertEqual(result["loop"]["epoch"], 2)
+        self.assertEqual(sleep.await_count, 2)
+        self.assertIsNone(result["loop"]["operation_id"])
+
+    async def test_reobservation_preserves_unknown_original_operation(self):
+        from unittest.mock import AsyncMock, patch
+        from bct.loop_store import LoopStore
+        from test_loop_self_dispatch import OWNER, production_snapshot
+        ledger = LoopStore(self.store)
+        ledger.start(work_id="loop-mcp-work", direction_id="loop-mcp-direction",
+                     task_id="loop-mcp-task", owner=OWNER, plan_text="plan", now=100)
+        ledger.prepare_operation(work_id="loop-mcp-work", owner=OWNER,
+                                 epoch=1, operation_id="original-unknown", now=101)
+        ledger.reconcile(work_id="loop-mcp-work", owner=OWNER, epoch=1,
+                         operation_id="original-unknown", result="UNKNOWN", now=102)
+        snapshots = iter([{"monitor": None}, {"monitor": production_snapshot(generating=True)}])
+        self.server = build_mcp(
+            SimpleNamespace(store=self.store, operations=SimpleNamespace(capabilities=("read", "browser"))),
+            status_provider=lambda: next(snapshots))
+        with patch("bct.mcp_server.asyncio.sleep", new_callable=AsyncMock):
+            result = await self.result("claim", owner=OWNER, epoch=1)
+        self.assertEqual(result["status"], "OK", result)
+        self.assertEqual(result["loop"]["operation_id"], "original-unknown")
+        self.assertEqual(result["loop"]["operation_state"], "UNKNOWN")
+        self.assertEqual(result["loop"]["next_step"], 0)
+
+    async def test_permanently_stale_owner_is_bounded_and_unchanged(self):
+        from unittest.mock import AsyncMock, patch
+        from bct.loop_store import LoopStore
+        from test_loop_self_dispatch import OWNER
+        ledger = LoopStore(self.store)
+        before = ledger.start(work_id="loop-mcp-work", direction_id="loop-mcp-direction",
+                              task_id="loop-mcp-task", owner=OWNER, plan_text="plan", now=100)
+        observations = []
+        def stale():
+            observations.append(1)
+            return {"monitor": None}
+        self.server = build_mcp(
+            SimpleNamespace(store=self.store, operations=SimpleNamespace(capabilities=("read", "browser"))),
+            status_provider=stale)
+        with patch("bct.mcp_server.asyncio.sleep", new_callable=AsyncMock):
+            result = await self.result("claim", owner=OWNER, epoch=1)
+        self.assertEqual(result["reason"], "LOOP_NODE_OBSERVATION_STALE")
+        self.assertEqual(len(observations), 5)
+        self.assertEqual(ledger.get("loop-mcp-work"), before)
+
+    async def test_stale_successor_observation_is_not_retried(self):
+        from unittest.mock import AsyncMock, patch
+        from bct.loop_store import LoopStore
+        from test_loop_self_dispatch import OWNER
+        ledger = LoopStore(self.store)
+        ledger.start(work_id="loop-mcp-work", direction_id="loop-mcp-direction",
+                     task_id="loop-mcp-task", owner=OWNER, plan_text="plan", now=100)
+        self.server = build_mcp(
+            SimpleNamespace(store=self.store, operations=SimpleNamespace(capabilities=("read", "browser"))),
+            status_provider=lambda: {"monitor": None})
+        with patch("bct.mcp_server.asyncio.sleep", new_callable=AsyncMock) as sleep:
+            result = await self.result("claim", owner="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", epoch=1)
+        self.assertEqual(result["reason"], "LOOP_NODE_OBSERVATION_STALE")
+        sleep.assert_not_awaited()
+        self.assertEqual(ledger.get("loop-mcp-work")["owner"], OWNER)
+
+    async def test_owner_epoch_change_during_observation_retry_is_fenced(self):
+        from unittest.mock import AsyncMock, patch
+        from bct.loop_store import LoopStore
+        from test_loop_self_dispatch import OWNER
+        ledger = LoopStore(self.store)
+        ledger.start(work_id="loop-mcp-work", direction_id="loop-mcp-direction",
+                     task_id="loop-mcp-task", owner=OWNER, plan_text="plan", now=100)
+        successor = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+        observations = []
+        def stale_after_takeover():
+            observations.append(1)
+            ledger.claim(work_id="loop-mcp-work", owner=successor, epoch=1)
+            return {"monitor": None}
+        self.server = build_mcp(
+            SimpleNamespace(store=self.store, operations=SimpleNamespace(capabilities=("read", "browser"))),
+            status_provider=stale_after_takeover)
+        with patch("bct.mcp_server.asyncio.sleep", new_callable=AsyncMock):
+            result = await self.result("claim", owner=OWNER, epoch=1)
+        self.assertEqual(result["reason"], "LOOP_FENCED")
+        self.assertEqual(len(observations), 1)
+        self.assertEqual(ledger.get("loop-mcp-work")["owner"], successor)
+
     async def test_busy_successor_and_disconnected_owner_cannot_claim(self):
         from bct.loop_store import LoopStore
         from test_loop_self_dispatch import OWNER, production_snapshot
