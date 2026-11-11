@@ -118,9 +118,21 @@ class ChainExecutionPlanLedger:
         direction = ChainDirectionLedger(self.store).get(direction_id=direction_id)
         if direction is None or direction["work_id"] != work_id:
             raise ValueError("CHAIN_DIRECTION_NOT_FOUND")
-        if (direction["decision"] != "NEW_TASK"
-                or direction["chain_state"] != "CHAIN_STARTED"
-                or direction["chain_task_id"] != task_id):
+        chain_started = (
+            direction["decision"] == "NEW_TASK"
+            and direction["chain_state"] == "CHAIN_STARTED"
+            and direction["chain_task_id"] == task_id
+        )
+        loop_started = False
+        if not chain_started and direction["decision"] == "NEW_TASK":
+            from bct.loop_store import LoopStore
+            loop = LoopStore(self.store).get(work_id)
+            loop_started = bool(
+                loop and loop["direction_id"] == direction_id
+                and loop["task_id"] == task_id
+                and loop["state"] in {"LOOP_STARTED", "COMPLETED"}
+            )
+        if not (chain_started or loop_started):
             raise ValueError("CHAIN_EXECUTION_PLAN_SOURCE_NOT_STARTED")
         plan_sha = hashlib.sha256(plan_text.encode("utf-8")).hexdigest()
         proposed = (work_id, direction_id, task_id, generation, plan_text, plan_sha)

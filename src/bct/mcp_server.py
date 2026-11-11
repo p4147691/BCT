@@ -42,7 +42,7 @@ MCP_PRINCIPAL_ID = "bct-mcp-local"
 _GENERAL_TOOLS = (
     "bct_capabilities", "bct_status", "queue_message", "bct_get_conversation_network", "bct_check_conversation_network", "scan_code_blocks", "organize_code_blocks",
     "bct_execution_context", "bct_set_direction", "bct_get_direction", "bct_chain_branch",
-    "bct_set_execute_plan", "bct_get_execute_plan", "bct_set_project_plan",
+    "bct_loop_recipe", "bct_set_execute_plan", "bct_get_execute_plan", "bct_set_project_plan",
     "bct_check_node", "bct_recheck_node", "bct_pause_node", "bct_replace_node", "bct_reset_node",
     "bct_work_create", "bct_operation_get",
 )
@@ -3097,6 +3097,154 @@ def build_mcp(
             return {"status": branch["state"], "branch_request": branch,
                     "next_safe_step": branch["next_safe_step"]}
         except ValueError as exc:
+            return {"status": "INVALID_REQUEST", "reason": str(exc)}
+
+    @server.tool(
+        name="bct_loop_recipe",
+        description=("Durable SINGLE_PERSISTENT start/status/claim/reconcile/advance; "
+                     "reconcile verifies the original BCT Operation receipt. "
+                     "It also records exact SELF wake intent without directly sending."),
+        structured_output=True,
+    )
+    async def bct_loop_recipe(
+        action: str = "status", work_id: str = "", direction_id: str = "",
+        task_id: str = "", owner: str = "", plan_text: str = "",
+        epoch: int = 1, operation_id: str = "", next_step: int = 0,
+        message_text: str = "", verified: bool = False,
+    ) -> dict[str, Any]:
+        from bct.loop_store import LoopStore
+        from bct.chain_direction import ChainDirectionLedger
+        from bct.chain_execution_plan import ChainExecutionPlanLedger
+
+        if not work_id and action == "recover":
+            from bct.loop_recovery_executor import LoopRecoveryExecutor
+            try:
+                work_id = await asyncio.to_thread(
+                    LoopRecoveryExecutor.resolve_single_work,
+                    bct.store, principal_id=MCP_PRINCIPAL_ID,
+                )
+            except ValueError as exc:
+                return {"status": "INVALID_REQUEST", "reason": str(exc)}
+        if not work_id:
+            return {"status": "INVALID_REQUEST", "reason": "LOOP_WORK_REQUIRED"}
+        try:
+            work = await asyncio.to_thread(bct.store.get_work, work_id)
+            if work.owner_principal_id != MCP_PRINCIPAL_ID:
+                return {"status": "ACCESS_DENIED"}
+            ledger = LoopStore(bct.store)
+            if action == "recover":
+                if status_provider is None:
+                    return {"status": "UNAVAILABLE", "reason": "LOOP_FRESH_STATUS_REQUIRED"}
+                from bct.loop_recovery_executor import LoopRecoveryExecutor
+                snapshot = await asyncio.to_thread(status_provider)
+                nodes = status_view(snapshot, "node").get("current_nodes", {})
+                if nodes.get("observation", {}).get("state") != "FRESH":
+                    return {"status": "UNAVAILABLE", "reason": "LOOP_NODES_NOT_FRESH"}
+                ready = {
+                    node.get("conversation_uuid")
+                    for node in nodes.get("items", [])
+                    if node.get("status") == "CONFIRMED"
+                    and node.get("generating") is False
+                    and not node.get("connection", {}).get("disconnected", True)
+                    and node.get("telemetry", {}).get("readiness") == "IDLE"
+                }
+                result = await asyncio.to_thread(
+                    LoopRecoveryExecutor(
+                        bct.store, principal_id=MCP_PRINCIPAL_ID,
+                        owner_ready=lambda value: value in ready,
+                    ).run_once, work_id_filter=work_id,
+                )
+                return {"status": "OK", "recovery": result}
+            if action == "status":
+                loop = await asyncio.to_thread(ledger.get, work_id)
+                return {"status": "OK" if loop else "NOT_FOUND", "loop": loop}
+            if action == "start":
+                direction = await asyncio.to_thread(
+                    ChainDirectionLedger(bct.store).get, direction_id=direction_id,
+                )
+                if (not direction or direction["work_id"] != work_id
+                        or direction["decision"] != "NEW_TASK"
+                        or direction["chain_state"] != "NOT_PLANNED"):
+                    return {"status": "INVALID_REQUEST", "reason": "LOOP_DIRECTION_NOT_READY"}
+                loop = await asyncio.to_thread(
+                    ledger.start, work_id=work_id, direction_id=direction_id,
+                    task_id=task_id, owner=owner, plan_text=plan_text,
+                )
+                plan_id = "loop-plan-" + hashlib.sha256(
+                    (work_id+":"+direction_id+":"+task_id).encode("utf-8")
+                ).hexdigest()[:20]
+                plan = await asyncio.to_thread(
+                    ChainExecutionPlanLedger(bct.store).save,
+                    plan_id=plan_id, work_id=work_id, direction_id=direction_id,
+                    task_id=task_id, generation=1, plan_text=plan_text,
+                )
+                return {"status": "OK", "loop": loop, "plan": plan}
+            if action in {"queue_self", "self_status", "reconcile_self"}:
+                from bct.loop_self_outbox import LoopSelfOutbox
+                outbox = LoopSelfOutbox(bct.store)
+                if action == "queue_self":
+                    value = await asyncio.to_thread(
+                        outbox.queue,work_id=work_id,epoch=epoch,step=next_step,
+                        owner=owner,message=message_text,
+                    )
+                elif action == "self_status":
+                    value = await asyncio.to_thread(
+                        outbox.get,work_id=work_id,epoch=epoch,step=next_step,
+                    )
+                else:
+                    value = await asyncio.to_thread(
+                        outbox.reconcile,work_id=work_id,epoch=epoch,
+                        step=next_step,principal_id=MCP_PRINCIPAL_ID,
+                    )
+                # Do not expose user instruction text in status responses.
+                if value is not None:
+                    value = {k:v for k,v in value.items() if k != "message_text"}
+                return {"status": "OK" if value else "NOT_FOUND",
+                        "self_outbox": value}
+            if action == "claim":
+                current = await asyncio.to_thread(ledger.get, work_id)
+                if current is not None and current["state"] == "COMPLETED":
+                    return {"status": "INVALID_REQUEST", "reason": "LOOP_COMPLETED"}
+                if status_provider is None:
+                    return {"status": "UNAVAILABLE",
+                            "reason": "LOOP_EXACT_SUCCESSOR_STATUS_REQUIRED"}
+                from bct.loop_self_dispatch import LoopSelfDispatcher
+                from bct.loop_store import LoopStateError
+                observed = await asyncio.to_thread(status_provider)
+                LoopSelfDispatcher.exact_route(
+                    observed.get("monitor",observed),owner,
+                )
+                loop = await asyncio.to_thread(
+                    ledger.claim, work_id=work_id, owner=owner, epoch=epoch,
+                )
+            elif action == "prepare_operation":
+                loop = await asyncio.to_thread(
+                    ledger.prepare_operation, work_id=work_id, owner=owner,
+                    epoch=epoch, operation_id=operation_id,
+                )
+            elif action == "reconcile":
+                loop = await asyncio.to_thread(
+                    ledger.reconcile_from_bct, work_id=work_id, owner=owner,
+                    epoch=epoch, operation_id=operation_id,
+                    principal_id=MCP_PRINCIPAL_ID,
+                )
+            elif action == "advance":
+                loop = await asyncio.to_thread(
+                    ledger.advance, work_id=work_id, owner=owner,
+                    epoch=epoch, next_step=next_step,
+                )
+            elif action == "complete":
+                if verified is not True:
+                    return {"status": "INVALID_REQUEST",
+                            "reason": "LOOP_COMPLETION_VERIFICATION_REQUIRED"}
+                loop = await asyncio.to_thread(
+                    ledger.complete, work_id=work_id, owner=owner,
+                    epoch=epoch, verified=True,
+                )
+            else:
+                return {"status": "INVALID_REQUEST", "reason": "LOOP_ACTION_INVALID"}
+            return {"status": "OK", "loop": loop}
+        except (ValueError, KeyError) as exc:
             return {"status": "INVALID_REQUEST", "reason": str(exc)}
 
     @server.tool(
