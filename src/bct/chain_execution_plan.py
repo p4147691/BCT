@@ -28,6 +28,8 @@ def check_execute_plan(*, plan: dict[str, Any] | None,
     change durable state.  Its result is suitable for later status display and
     for the separate observation-recording primitive.
     """
+    # Normalize only this parsing view. Callers retain/hash the original bytes.
+    response_text = response_text.replace("\r\n", "\n")
     issues: list[str] = []
     reported_revision: int | None = None
     completed_steps: int | None = None
@@ -35,20 +37,27 @@ def check_execute_plan(*, plan: dict[str, Any] | None,
     if plan is None:
         issues.append("PLAN_MISSING")
     else:
-        revision = re.search(r"(?m)^PLAN REVISION:\s*(\d+)\s*$", response_text)
-        if revision is None:
+        revisions = re.findall(r"(?m)^PLAN REVISION:[ \t]*(\d+)[ \t]*$", response_text)
+        if not revisions or len(revisions) != len(re.findall(r"(?m)^PLAN REVISION:", response_text)):
             issues.append("PLAN_REVISION_MISMATCH")
         else:
-            reported_revision = int(revision.group(1))
-            if reported_revision != int(plan.get("revision", 0)):
+            reported_revision = int(revisions[-1])
+            if any(int(value) != int(plan.get("revision", 0)) for value in revisions):
                 issues.append("PLAN_REVISION_MISMATCH")
-    progress = re.search(r"(?m)^PROGRESS:\s*(\d+)\s*/\s*(\d+)\s*[-—]", response_text)
-    if progress is None:
+    # A captured terminal turn can contain an earlier progress update and the
+    # final answer. Select the latest declaration only when all declarations
+    # describe one consistent, monotonically advancing plan.
+    progress = re.findall(r"(?m)^PROGRESS:[ \t]*(\d+)[ \t]*/[ \t]*(\d+)[ \t]*[-—]", response_text)
+    if not progress or len(progress) != len(re.findall(r"(?m)^PROGRESS:", response_text)):
         issues.append("PROGRESS_MISSING")
     else:
-        completed_steps, total_steps = int(progress.group(1)), int(progress.group(2))
-        if completed_steps > total_steps or total_steps < 1:
+        values = [(int(done), int(total)) for done, total in progress]
+        completed_steps, total_steps = values[-1]
+        if any(done > total or total < 1 for done, total in values):
             issues.append("PROGRESS_MISSING")
+        if any(total != total_steps for _, total in values) or any(
+                later[0] < earlier[0] for earlier, later in zip(values, values[1:])):
+            issues.append("PROGRESS_CONFLICT")
     return {
         "plan_id": str((plan or {}).get("plan_id") or ""),
         "reported_revision": reported_revision,

@@ -1,6 +1,6 @@
 {
   "schema": "bct.component-library.bundle.v1",
-  "source_fingerprint": "ea8a84d56809259b9f79b58c42c4cb2127d195b0bc05d8f88f335ae8d85f388e",
+  "source_fingerprint": "f4895dd8a085b9f6478db5733493e685ba4cc795342933555a63fe80ff4b1669",
   "source_hashes": {
     "docs/CHAIN_MESSAGE_RECIPE_V2.md": "cc5cd93a73dbdbd5a13922fc68237a3390798a61f05178047b84b223b66b4012",
     "docs/component-library.v1.json": "1aa4ba9d4a0798ea357fe3721a24f3e7a2ecde5b74250636938c52a58f6e4ad8",
@@ -21,7 +21,7 @@
     "modules/rcc/extension/domain/conversation_rename_service.js": "a1462e7a55ce0922a5a56943b5d2c3b99710c5c0e941483550869254a8ecdaa5",
     "src/bct/chain_direction.py": "81c3e8b31e0c42e6d6e96cfd7f7b4050f667c6132fb1c7f1828b1a264602baa0",
     "src/bct/chain_entry_policy.py": "2f8b585702ed615deb83598fbb5755cb62315ad9e9454fe2caa2c8fdd28d7ecf",
-    "src/bct/chain_execution_plan.py": "9a8281a95682362b3f4420ef72aaa474629d4a3e90ad26b3e04517217c988c22",
+    "src/bct/chain_execution_plan.py": "ce22f9a66d90c9bc0d1aabb5ed69d1ec4cf34031cd668b307bead7fb49affc73",
     "src/bct/chain_manager_recovery.py": "191f9c5bcc63b3d2508640f44a3cf4d2eac24cba3c6294e50afeea81614d6787",
     "src/bct/chain_message_preflight.py": "daa47a7eb84b3e3e3fdef08bb3823f8c189a9789570c0a3664d1c9eb053ba206",
     "src/bct/chat_input_queue.py": "0873721a88bdca3a84f16e5be9426a63360e98253ce02ceb6ec0dcf1fe9b3a87",
@@ -41,8 +41,8 @@
     "src/bct/loop_self_continuation.py": "5e0bd46876278c27e87e0c716f38702cc608229e018abc128d47f5076d661851",
     "src/bct/loop_store.py": "232e7b8d7362ba20b17d601be62d04f7c9f165c3aa27958ca956b1de7e5128ec",
     "src/bct/loop_successor.py": "1779d48bb2109bf57f046e327e98c84d7aaba9baa6c5dbda543200572a09d40b",
-    "src/bct/loop_supervisor_handoff.py": "ed25b0d1e3ab46a78b1ac79fedc5562793c8294caa91698eb251ff14fffc58f7",
-    "src/bct/mcp_server.py": "1eade259dff8c2d6fed363a6790e9ddb6542e522cd564fc909a64b07e74fa872",
+    "src/bct/loop_supervisor_handoff.py": "07729120ee9d3f9169037b6d23240d0c5bef5b04ea34c2c851d2528e190596ea",
+    "src/bct/mcp_server.py": "eba6a01bcfeb6c5c6e5f48df217e3dcede7b94b3a009a883381aa40334294e7c",
     "src/bct/node_recovery.py": "1c84150ae1af8cc285432565097ac071a2af6c4b2534f1d19ac7f75d7bec2438",
     "src/bct/runtime_server.py": "569a09dde80ac38aba37fa608275622ca0e2a56481c190d373b9f0b9c0d099b8",
     "src/bct/send_delayed_message.py": "3ccd131cda4baaf798ecf0b29b54d0c9427c7a1f20f072138fc4194ed83c9c94",

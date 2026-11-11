@@ -151,6 +151,51 @@ class LoopReviewTests(unittest.TestCase):
         adapter.run_once(snapshot=snapshot(owner=SUPERVISOR))
         return adapter,receipts
 
+    def test_reprocess_original_final_progress_without_replay_or_check_overwrite(self):
+        import json
+        from bct.chain_execution_plan import ChainExecutionPlanLedger
+        adapter, receipts = self.delivered()
+        payload = "LOOP ACCEPTANCE: PASS\nLOOP CANDIDATE SHA: " + SHA
+        text = "PLAN REVISION: 0\nPROGRESS: 6/7 — checking\nPLAN REVISION: 0\nPROGRESS: 7/7 — done\nNEXT TASK — MANAGER\n" + payload
+        ctx = self.returned_context(payload)
+        digest = hashlib.sha256(text.encode()).hexdigest()
+        ctx["decision"]["response_sha256"] = digest
+        ctx["prior_turn"] = {"response_text":text}
+        key = hashlib.sha256(f"{ctx['task_id']}|1|exact-review-response".encode()).hexdigest()[:24]
+        receipts["delayed-manager-"+key] = SimpleNamespace(state=SimpleNamespace(value="FINISHED"),outcome=SimpleNamespace(value="APPLIED"))
+        plans = ChainExecutionPlanLedger(self.store)
+        plans.save(plan_id="review-plan",work_id="work",direction_id="dir",task_id=ctx["task_id"],generation=1,plan_text="Verify candidate")
+        plans.record_execute_plan_check(work_id="work",direction_id="dir",task_id=ctx["task_id"],generation=1,
+            response_sha256=digest,assessment={"plan_id":"review-plan","reported_revision":0,"completed_steps":6,"total_steps":7,"issues":[]})
+        original = plans.get_latest_execute_plan_check(work_id="work",direction_id="dir",task_id=ctx["task_id"])
+        with patch("bct.loop_supervisor_handoff.DurableWatchLedger.read_execution_context",return_value=ctx):
+            self.assertEqual(adapter.run_once(snapshot={})[0]["state"],"REVIEW_HOLD")
+            with self.assertRaisesRegex(LoopStateError,"RETURN_PROOF_REQUIRED"):
+                self.ledger.reconcile_return(work_id="work",owner=OWNER,epoch=1,response_sha256="0"*64)
+            result = self.ledger.reconcile_return(work_id="work",owner=OWNER,epoch=1,response_sha256=digest)
+            self.assertEqual(result["state"],"ACCEPTED")
+            self.assertEqual(self.loop.get("work")["state"],"COMPLETED")
+            self.assertEqual(adapter.run_once(snapshot={}),[])
+        self.assertEqual(plans.get_latest_execute_plan_check(work_id="work",direction_id="dir",task_id=ctx["task_id"]),original)
+        history = self.ledger.history("work")
+        self.assertEqual(len(history),1)
+        proof = json.loads(history[0]["payload_json"])["proof"]
+        self.assertEqual(proof["assessment"]["completed_steps"],7)
+        self.assertEqual(proof["original_check"]["completed_steps"],6)
+        self.assertEqual(self.ledger.get("work")["task_id"],ctx["task_id"])
+
+    def test_final_progress_parser_rejects_inconsistent_or_regressing_updates(self):
+        from bct.chain_execution_plan import check_execute_plan
+        plan = {"plan_id":"p", "revision":0}
+        good = "PLAN REVISION: 0\nPROGRESS: 6/7 — checking\nPLAN REVISION: 0\nPROGRESS: 7/7 — done"
+        checked = check_execute_plan(plan=plan,response_text=good)
+        self.assertEqual(checked["completed_steps"],7)
+        self.assertFalse(checked["issues"])
+        self.assertEqual(check_execute_plan(plan=plan,response_text=good.replace("\n", "\r\n")),checked)
+        for bad in (good + "\nPROGRESS: unreadable", good + "\nPLAN REVISION: unknown", good.replace("6/7", "7/8"), good.replace("7/7 — done", "5/7 — done"),
+                    good.replace("6/7", "8/7"), good.replace("PLAN REVISION: 0", "PLAN REVISION: 1", 1)):
+            self.assertTrue(check_execute_plan(plan=plan,response_text=bad)["issues"],bad)
+
     def test_acceptance_requires_exact_sha_and_return_receipt(self):
         adapter,receipts=self.delivered()
         ctx=self.returned_context("LOOP ACCEPTANCE: PASS\nLOOP CANDIDATE SHA: "+SHA)
