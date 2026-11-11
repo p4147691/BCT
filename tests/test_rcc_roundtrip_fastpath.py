@@ -89,6 +89,31 @@ class FastPathTest(unittest.TestCase):
             self.service.latest_many([item, item])
         self.client.request.assert_not_called()
 
+    def test_response_watch_uses_bound_exact_target(self):
+        from unittest.mock import patch
+        self.service.latest = Mock(return_value={"ok": False})
+        self.service.read_timing_sink = lambda x: None
+        row = {"conversation_key": UUID, "context": {
+            "instance_id": "instance-1", "watched_session_id": SESSION,
+            "watched_tab_id": 101, "watched_window_id": 202,
+        }}
+        self.service.ledger = Mock()
+        self.service._response_for(row)
+        self.service.latest.assert_called_once_with(
+            instance_id="instance-1", conversation_key=UUID,
+            verified_target=self.target, timing_sink=self.service.read_timing_sink,
+        )
+
+    def test_response_watch_legacy_without_binding_keeps_discovery(self):
+        self.service.latest = Mock(return_value={"ok": False})
+        self.service.ledger = Mock()
+        row = {"conversation_key": UUID, "context": {"instance_id": "instance-1"}}
+        self.service._response_for(row)
+        self.service.latest.assert_called_once_with(
+            instance_id="instance-1", conversation_key=UUID,
+            verified_target=None, timing_sink=None,
+        )
+
     def test_request_failure_still_emits_timing(self):
         self.client.request.side_effect = TimeoutError("rcc")
         timings = []

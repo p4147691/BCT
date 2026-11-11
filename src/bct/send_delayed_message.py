@@ -1921,8 +1921,17 @@ class SendDelayedMessageService:
                 raise ValueError("DELAYED_PLANNED_SEND_OPERATION_FOREIGN") from exc
             else:
                 raise ValueError("DELAYED_PLANNED_SEND_OPERATION_ALREADY_EXISTS")
-        observed = self.latest(instance_id=instance_id,
-                               conversation_key=conversation_key)
+        observed = self.latest(
+            instance_id=instance_id, conversation_key=conversation_key,
+            verified_target={
+                "instance_id": instance_id,
+                "conversation_key": conversation_key,
+                "session_id": located_session,
+                "tab_id": located_tab,
+                "window_id": located_window,
+            },
+            timing_sink=getattr(self, "read_timing_sink", None),
+        )
         if observed.get("ok") is not True:
             raise ValueError("DELAYED_OBSERVATION_UNAVAILABLE")
         return self.ledger.prearm_task(
@@ -1953,7 +1962,18 @@ class SendDelayedMessageService:
                 self.ledger.record_watch_diagnostic(row, reason)
             return {}
         instance, worker=ctx["instance_id"],row["conversation_key"]
-        observed=self.latest(instance_id=instance,conversation_key=worker)
+        watched_session = str(ctx.get("watched_session_id") or "")
+        watched_tab = int(ctx.get("watched_tab_id") or 0)
+        watched_window = int(ctx.get("watched_window_id") or 0)
+        exact_target = ({
+            "instance_id": instance, "conversation_key": worker,
+            "session_id": watched_session, "tab_id": watched_tab,
+            "window_id": watched_window,
+        } if re.fullmatch(r"[a-f0-9]{32}", watched_session)
+             and watched_tab > 0 and watched_window > 0 else None)
+        observed=self.latest(instance_id=instance,conversation_key=worker,
+                             verified_target=exact_target,
+                             timing_sink=getattr(self, "read_timing_sink", None))
         if observed.get("ok") is not True:
             return reject("RCC_READ_UNAVAILABLE")
         current_count=observed.get("responseTurnCount")
