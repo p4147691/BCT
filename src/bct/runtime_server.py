@@ -555,6 +555,9 @@ def main() -> int:
         while not recovery_stop.is_set():
             try:
                 due = observer.scan(limit=8)
+                reconciled = outbox.reconcile_uncertain(
+                    principal_id=MCP_PRINCIPAL_ID, limit=8,
+                )
                 pending = outbox.list_pending(limit=2)
                 delivered = outbox.list_delivered(limit=2)
                 recovered = {"checked": 0, "results": [], "external_effect": "NONE"}
@@ -621,6 +624,7 @@ def main() -> int:
                     "delivered_waiting_response": len(delivered),
                     "last_outcome": recovered, "last_delivery": delivery,
                     "last_continuations": continuations,
+                    "last_receipt_reconciliation": reconciled,
                     "last_succession": succession,
                     "last_error": None, "last_run_at": time.time(),
                 }
