@@ -407,14 +407,20 @@ if (message.type === 'relay:readLatestAssistant') {
       '#prompt-textarea, div[contenteditable="true"][data-virtualkeyboard="true"], '
       + 'textarea[name="prompt-textarea"], form div[contenteditable="true"][role="textbox"]'
     );
-    const inputReady = !!(terminal && composer
+    const composerReady = !!(composer
       && !composer.disabled && composer.getAttribute('aria-disabled') !== 'true'
       && !composer.closest('[inert]'));
+    const latestTurn = getConversationTurns().at(-1);
+    const latestUserTurnCompleted = !!(latestUserUnit && latestTurn?.contains(latestUserUnit)
+      && turnCompletionState(latestTurn) === 'complete'
+      && !generating && composerReady && !turnGenerationInterrupted(latestTurn)
+      && !turnIsGenerating(latestTurn) && !connectionProblem().disconnected);
     return {
       ok: true, conversationKey: actualConversationKey,
       observationState: node ? (terminal ? 'TERMINAL' : 'IN_PROGRESS') : 'EMPTY',
-      generating, terminal, inputReady, responseTurnKey,
+      generating, terminal, inputReady: terminal && composerReady, responseTurnKey,
       latestUserTurnKey, latestUserSha256, latestUserTextOccurrenceCount,
+      completedLatestUserTurnKey: latestUserTurnCompleted ? turnIdentity(latestTurn) : '',
       responseSourceUserTurnKey, responseSourceUserSha256,
       responseSourceUserTextOccurrenceCount,
       responseTurnCount: assistantUnits.length,
