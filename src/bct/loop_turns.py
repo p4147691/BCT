@@ -130,7 +130,10 @@ class LoopTurns:
                 context = json.loads(watched["context_json"] or "{}") if watched else {}
                 if context.get("recovery_needed"):
                     recovery = {"case_id": self.recovery_case_id(loop_id, turn["turn"]),
-                                "signal": context["recovery_needed"]}
+                                "signal": context["recovery_needed"],
+                                "watch_operation_id": turn["watch_operation_id"],
+                                "send_operation_id": turn["send_operation_id"],
+                                "next_action": "RECHECK"}
                     latest = db.execute("""SELECT kind,result,evidence_json,created_at
                         FROM node_recovery_checks WHERE case_id=?
                         ORDER BY sequence DESC LIMIT 1""", (recovery["case_id"],)).fetchone()
@@ -140,6 +143,11 @@ class LoopTurns:
                             "created_at": latest["created_at"],
                             "evidence": json.loads(latest["evidence_json"]),
                         }
+                        if latest["kind"] == "RECHECK":
+                            recovery["next_action"] = (
+                                "MANAGER_REVIEW" if latest["result"] == "CHECK"
+                                else "WAIT_FOR_EXACT_RESPONSE"
+                            )
         objective["completion_conditions"] = json.loads(objective.pop("conditions_json"))
         objective["completion"] = json.loads(objective.pop("completion_json") or "null")
         result = {"status": "OK", "objective": objective, "turn": self._turn_view(turn),
@@ -486,18 +494,11 @@ class LoopTurnRunner:
         snapshot = self.snapshot()
         view = status_view(snapshot if "monitor" in snapshot else {"monitor": snapshot}, "node")
         evidence = observe_node(view, row["conversation_key"])
-        if latest:
-            self.node_recovery.check(
-                work=work, case_id=case_id, task_id=objective["task_id"],
-                conversation_key=row["conversation_key"], evidence=evidence,
-                kind="RECHECK",
-            )
-        else:
-            self.node_recovery.check(
-                work=work, case_id=case_id, task_id=objective["task_id"],
-                conversation_key=row["conversation_key"], evidence=evidence,
-                kind="CHECK",
-            )
+        self.node_recovery.check(
+            work=work, case_id=case_id, task_id=objective["task_id"],
+            conversation_key=row["conversation_key"], evidence=evidence,
+            kind="RECHECK" if latest else "CHECK",
+        )
 
     def _watch_binding(self, row, objective):
         watch = self.service.ledger.get(row["watch_id"], 1)
