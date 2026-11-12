@@ -1,10 +1,10 @@
 importScripts("browser/tab-focus-adapter.js");
-importScripts("browser/bc-tool-refresh-adapter.js");
+importScripts("browser/bct-control-tool-refresh-adapter.js");
 importScripts("browser/tab-close-adapter.js");
 
 const HOST_NAME = "com.pas40.desktop_window_monitor";
 const monitorTabFocusAdapter = globalThis.MonitorTabFocusAdapter.create(chrome);
-const monitorBcToolRefreshAdapter = globalThis.MonitorBcToolRefreshAdapter.create(chrome);
+const monitorBctControlToolRefreshAdapter = globalThis.MonitorBctControlToolRefreshAdapter.create(chrome);
 const monitorTabCloseAdapter = globalThis.MonitorTabCloseAdapter.create(chrome);
 
 
@@ -2326,8 +2326,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return false;
   }
 
-  if (message?.type === "monitor-refresh-exact-chatgpt-tab") {
-    monitorBcToolRefreshAdapter.refreshExactChatTab(message).then(sendResponse)
+  if (message?.type === "monitor-refresh-bct-control-tools") {
+    monitorBctControlToolRefreshAdapter.refreshTools().then(sendResponse)
       .catch((error) => sendResponse({ ok:false, error:error?.message || String(error) }));
     return true;
   }

@@ -14,15 +14,17 @@ BWM 상단의 기존 비활성 버튼을 임의 shell/UI 자동화 없이 검증
   실행 전후 `127.0.0.1:18790/health`의 service/ready를 확인한다.
 - `MCP 터널 복구`: Monitor Native Host가 고정된 `BCT Tunnel Supervisor` 예약 작업만 실행하며,
   사용자 프로필의 공식 health URL 포인터가 가리키는 loopback endpoint의 health/ready를 확인한다.
-- `BC 도구 새로고침`: 사용자가 선택한 정확한 ChatGPT conversation/tab/window를 다시 대조한 뒤
-  그 탭만 `chrome.tabs.reload`한다. 생성 중인 대화, 대화 키 누락, 식별 불일치는 거부한다.
+- `BCT 도구 새로고침`: 정확한 BCT Control 플러그인 설정 URL을 대조하고, 해당 설정 화면의
+  `도구 새로 고침` 버튼 하나만 실행한다. 설정 탭이 없으면 정확한 URL을 비활성 탭으로 열고,
+  버튼의 실행 중 비활성화와 완료 후 재활성화를 확인한다. 수락 후 완료 미확인은 `UNKNOWN`으로
+  남기며 자동 재시도하지 않는다. 이 동작은 일반 ChatGPT 대화 탭 F5와 분리된다.
 - 사용자 제공 command/path를 실행하지 않으며 `cmd.exe`, 임의 PowerShell, Chrome UI 클릭을 사용하지 않는다.
 
 ## 변경 범위
 
 - Core: `src/bct/runtime_server.py`
 - Monitor shell/UI/background: `modules/monitor/extension/*`
-- exact BC tab adapter: `modules/monitor/extension/browser/bc-tool-refresh-adapter.js`
+- exact BCT Control tool refresh adapter: `modules/monitor/extension/browser/bct-control-tool-refresh-adapter.js`
 - Native Host: `modules/monitor/native/src/MonitorDesktopHost.cs`
 - 계약/회귀 검사와 Python tests
 
