@@ -62,12 +62,13 @@ def _claim_executor_identity(pid: int | None, fingerprint: str | None) -> tuple[
 
 
 class Store:
+    monitor_display_changed = None
+
     def __init__(self, path: str | Path):
         self.path = str(path)
         self._lock = threading.RLock()
         self._node_label_notifier = None
         self._node_label_last_topology = None
-        self.monitor_display_changed = None
         self._initialize()
 
     def _connect(self) -> sqlite3.Connection:
