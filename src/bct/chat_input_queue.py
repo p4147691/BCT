@@ -5,6 +5,7 @@ prove target identity and non-duplicated external effects before dispatch.
 """
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import re
 import time
@@ -363,3 +364,47 @@ class ChatInputQueue:
             self._event(self.store, db, "CHAT_QUEUE_RESUMED_PRE_DISPATCH", message_id,
                         {"prior_claim_id": claim_id})
             return {"status": "QUEUED", "message": self._row(updated)}
+
+
+async def queue_message_command(
+    store: Any, *, work_id: str, target_conversation_key: str,
+    action: str = "status", message_id: str = "", instruction: str = "",
+    origin_conversation_key: str = "", claim_id: str = "",
+    result_sha256: str = "", reason: str = "", hold_kind: str = "UNKNOWN",
+    limit: int = 30,
+) -> dict[str, Any]:
+    """Apply one public queue command without MCP registration or side effects.
+
+    The active-Work check is deliberately retained here.  It is a ledger
+    partition fence, not an action, role, or external-delivery authorization.
+    """
+    work = await asyncio.to_thread(store.get_work, work_id)
+    if work.state != "ACTIVE":
+        raise ValueError("CHAT_QUEUE_WORK_INACTIVE")
+    selected = str(action or "").strip().lower()
+    if selected not in {"enqueue", "status", "claim", "complete", "hold", "resume"}:
+        raise ValueError("CHAT_QUEUE_ACTION_INVALID")
+    ledger = await asyncio.to_thread(ChatInputQueue, store)
+    common = {"work_id": work_id, "target_conversation_key": target_conversation_key}
+    if selected == "status":
+        return await asyncio.to_thread(ledger.status, **common, limit=limit)
+    if selected == "enqueue":
+        return await asyncio.to_thread(
+            ledger.enqueue, **common, message_id=message_id,
+            instruction=instruction, origin_conversation_key=origin_conversation_key,
+        )
+    if selected == "claim":
+        return await asyncio.to_thread(ledger.claim, **common, claim_id=claim_id)
+    if selected == "complete":
+        return await asyncio.to_thread(
+            ledger.complete, **common, message_id=message_id, claim_id=claim_id,
+            result_sha256=result_sha256,
+        )
+    if selected == "hold":
+        return await asyncio.to_thread(
+            ledger.hold, **common, message_id=message_id, claim_id=claim_id,
+            reason=reason, kind=hold_kind,
+        )
+    return await asyncio.to_thread(
+        ledger.resume, **common, message_id=message_id, claim_id=claim_id,
+    )

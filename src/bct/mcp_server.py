@@ -14,7 +14,7 @@ from mcp.server.fastmcp import FastMCP, Image
 from starlette.responses import JSONResponse
 
 from .background_operations import BACKGROUND_CAPABILITIES, launch_background_operation
-from .chat_input_queue import ChatInputQueue
+from .chat_input_queue import queue_message_command
 from .code_block_scan import resolve_scan_root
 from .code_block_organize import plan_block_replacement, prepare_block_apply
 from .core.models import Principal, Work
@@ -291,39 +291,13 @@ def build_mcp(
         hold_kind: str = "UNKNOWN",
         limit: int = 30,
     ) -> dict[str, Any]:
-        work = await asyncio.to_thread(bct.store.get_work, work_id)
-        if work.state != "ACTIVE":
-            raise ValueError("CHAT_QUEUE_WORK_INACTIVE")
-        selected = str(action or "").strip().lower()
-        if selected not in {"enqueue", "status", "claim", "complete", "hold", "resume"}:
-            raise ValueError("CHAT_QUEUE_ACTION_INVALID")
-        # Queue operations alter only the durable queue ledger. Work actions,
-        # principal ownership, and Manager/Worker role tags are not permissions
-        # for that ledger. External dispatch remains separately fenced by its
-        # exact target identity, operation receipt, and UNKNOWN-effect rules.
-        ledger = await asyncio.to_thread(ChatInputQueue, bct.store)
-        common = {"work_id": work_id, "target_conversation_key": target_conversation_key}
-        if selected == "status":
-            return await asyncio.to_thread(ledger.status, **common, limit=limit)
-        if selected == "enqueue":
-            return await asyncio.to_thread(
-                ledger.enqueue, **common, message_id=message_id,
-                instruction=instruction, origin_conversation_key=origin_conversation_key,
-            )
-        if selected == "claim":
-            return await asyncio.to_thread(ledger.claim, **common, claim_id=claim_id)
-        if selected == "complete":
-            return await asyncio.to_thread(
-                ledger.complete, **common, message_id=message_id, claim_id=claim_id,
-                result_sha256=result_sha256,
-            )
-        if selected == "hold":
-            return await asyncio.to_thread(
-                ledger.hold, **common, message_id=message_id, claim_id=claim_id,
-                reason=reason, kind=hold_kind,
-            )
-        return await asyncio.to_thread(
-            ledger.resume, **common, message_id=message_id, claim_id=claim_id,
+        return await queue_message_command(
+            bct.store, work_id=work_id,
+            target_conversation_key=target_conversation_key, action=action,
+            message_id=message_id, instruction=instruction,
+            origin_conversation_key=origin_conversation_key, claim_id=claim_id,
+            result_sha256=result_sha256, reason=reason, hold_kind=hold_kind,
+            limit=limit,
         )
 
     @server.tool(

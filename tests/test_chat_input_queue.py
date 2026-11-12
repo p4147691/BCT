@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import ast
 import hashlib
 import tempfile
 import unittest
@@ -240,6 +241,20 @@ class ChatInputQueueMCPTests(unittest.TestCase):
                     "instruction": "must retain exact conversation identity",
                 })
         asyncio.run(check())
+
+    def test_server_entry_only_forwards_to_queue_owned_command(self):
+        source = (Path(__file__).resolve().parents[1] / "src/bct/mcp_server.py").read_text(
+            encoding="utf-8")
+        entries = {node.name: node for node in ast.walk(ast.parse(source))
+                   if isinstance(node, ast.AsyncFunctionDef)}
+        body = [node for node in entries["queue_message"].body if not (
+            isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant)
+            and isinstance(node.value.value, str))]
+        self.assertEqual(1, len(body))
+        self.assertIsInstance(body[0], ast.Return)
+        value = body[0].value
+        self.assertIsInstance(value, ast.Await)
+        self.assertEqual("queue_message_command", ast.unparse(value.value.func))
 
 
 if __name__ == "__main__":
