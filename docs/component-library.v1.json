@@ -907,6 +907,57 @@
       ]
     },
     {
+      "id": "bct.persistent_loop_recipe",
+      "kind": "recipe",
+      "maturity": "bounded",
+      "implementation": [
+        {
+          "path": "src/bct/loop_recipe_contracts.py",
+          "symbol": "ProcessingBlock / AssemblyTable / Continuation / RouteTable"
+        },
+        {
+          "path": "src/bct/loop_recipe_assembly.py",
+          "symbol": "persistent_loop_assembly"
+        },
+        {
+          "path": "src/bct/loop_recipe_ledger.py",
+          "symbol": "LoopRecipeLedger"
+        },
+        {
+          "path": "src/bct/persistent_loop_runtime.py",
+          "symbol": "PersistentLoopCoordinator / persistent_loop_command"
+        },
+        {
+          "path": "src/bct/persistent_loop_recovery.py",
+          "symbol": "PersistentLoopRecovery"
+        },
+        {
+          "path": "src/bct/mcp_server.py",
+          "symbol": "bct_persistent_loop_recipe (public adapter)"
+        }
+      ],
+      "contract": "Separate block-and-link persistent Loop. Store the original instruction, Direction, exact Manager and Supervisor identities, and a new Loop network. Processing blocks end only through CONTINUE, WAIT, HANDOFF, COMPLETE, or BLOCKED. WAIT prearms the current response without an initial self-send. HANDOFF persists first, prearms the exact target Watch, and sends once. Sync reads the same Watch; Node Recovery reuses the existing Check/Recheck/Pause/Replace ledger through a Loop-only adapter.",
+      "effects": [
+        "durable-loop-run-and-continuation",
+        "loop-specific-conversation-network",
+        "existing-delayed-watch-prearm",
+        "conditional-exact-message",
+        "node-recovery-state"
+      ],
+      "safety": [
+        "chain-recipe-unchanged",
+        "five-link-public-contract",
+        "persist-before-effect",
+        "watch-before-send",
+        "exact-manager-supervisor-uuid",
+        "duplicate-continuation-no-replay",
+        "unknown-original-receipt-only"
+      ],
+      "used_by": [
+        "bct_persistent_loop_recipe"
+      ]
+    },
+    {
       "id": "bct.loop_supervisor_handoff",
       "kind": "partial_recipe",
       "maturity": "bounded",

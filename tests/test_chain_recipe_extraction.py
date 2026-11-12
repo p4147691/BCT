@@ -29,9 +29,9 @@ CAPABILITIES = ("browser", "conversation_network_update", "read")
 # names, descriptions, inputSchema and outputSchema. No Git history is needed
 # at test time (release archives and shallow CI checkouts remain supported).
 BASELINE_CATALOGUES = {
-    "full": (50, "e56622414cb4eb6ad5f141d630f5b266da74825f204d19e62c207a7af75915cd"),
-    "compact": (48, "20934ee8913f1f45cbee82fea68e34d4cc005316f1ba67f424df6adb5cbefb74"),
-    "hybrid": (49, "ef40539cc217655d4721c3b2f25624903a66ddd0ae4bfc2309d4aca6f98b51ce"),
+    "full": (51, "185594594834db2dfab3403da692bcd116cade7dc7bc3c62714895334ca7e0ea"),
+    "compact": (49, "c674dfc13dc8ffbb367b72ef5f4221c9528acdfe2ee57460e2910c091eb6ae24"),
+    "hybrid": (50, "25ec94d956fc7f19db95463a6905f704284ad89c26e46965d84c8426628a3fba"),
 }
 BASELINE_CHAIN = "6bd459c6682f8464632fc75d8b27418b79307a47130e0678899b7843b32eea12"
 OWNERS = {

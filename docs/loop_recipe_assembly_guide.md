@@ -33,7 +33,7 @@ turn.  For example, the standard graph connects `plan -> execute -> assess`
 directly.  No Watch, endpoint selection, or delivery is implied by that link.
 
 ```text
-[plan] --ready--> [execute] --ready--> [assess]
+[plan] --continue--> [execute] --continue--> [assess]
 ```
 
 ## When to create a Continuation
@@ -67,10 +67,10 @@ and output slots, then add links in the assembly table.
 
 ```text
 before
-  execute --ready--> assess
+  execute --continue--> assess
 
 after adding a verification step
-  execute --ready--> verify --ready--> assess
+  execute --continue--> verify --continue--> assess
 ```
 
 Only the assembly table changes around the new block.  `execute` and `assess`
@@ -123,9 +123,18 @@ load exact Continuation
 -> on UNKNOWN, reconcile the original receipt only; never create a replacement
 ```
 
-Existing Chain capabilities may be called unchanged by that adapter only when
+Existing BCT capabilities may be called unchanged by that adapter only when
 their side effects and record ownership match the Loop operation.  Chain
 Recipe, its state transitions, and its public commands remain unchanged.
+
+The production adapter is exposed through `bct_persistent_loop_recipe`. It
+uses the existing BCT conversation-network, delayed-Watch, exact-message, and
+Node Recovery capabilities without editing them. `WAIT` prearms the current
+response and performs no initial self-send. `HANDOFF` persists first, prearms
+the target response, and then makes one exact send. `sync` reads the original
+Watch state; it never sends. The unchanged delayed-Watch wire vocabulary uses
+`NEXT TASK — SELF` and `NEXT TASK — MANAGER`; inside this Loop the second route
+means the other bound endpoint (A to Supervisor or Supervisor to A).
 
 ## Extension checklist
 

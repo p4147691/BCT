@@ -31,6 +31,7 @@ from .node_recovery_commands import NodeRecoveryCommands
 from .execution_plan_commands import ExecutionPlanCommands
 from .execution_context_queries import read_execution_context
 from .chain_direction_commands import ChainDirectionCommands
+from .persistent_loop_runtime import PersistentLoopRuntime, persistent_loop_command
 
 
 from .trace_timing import TRACE_ID as _MCP_TRACE_ID, trace_stage as _trace_stage
@@ -45,7 +46,7 @@ MCP_PRINCIPAL_ID = "bct-mcp-local"
 _GENERAL_TOOLS = (
     "bct_capabilities", "bct_status", "queue_message", "bct_get_conversation_network", "bct_check_conversation_network", "scan_code_blocks", "organize_code_blocks",
     "bct_execution_context", "bct_set_direction", "bct_get_direction", "bct_chain_branch",
-    "bct_loop_recipe", "bct_set_execute_plan", "bct_get_execute_plan", "bct_set_project_plan",
+    "bct_loop_recipe", "bct_persistent_loop_recipe", "bct_set_execute_plan", "bct_get_execute_plan", "bct_set_project_plan",
     "bct_check_node", "bct_recheck_node", "bct_pause_node", "bct_replace_node", "bct_reset_node",
     "bct_work_create", "bct_operation_get",
 )
@@ -704,6 +705,41 @@ def build_mcp(
         )
 
     @server.tool(
+        name="bct_persistent_loop_recipe",
+        description=(
+            "New block-and-link persistent Loop entry. outline is read-only; start creates only a "
+            "durable Loop run; transition accepts exactly continue, wait, handoff, complete, or blocked. "
+            "wait prearms the current exact response without an initial self-send. handoff durably stages, "
+            "prearms the exact target Watch, then sends once. sync reads the original Watch and never "
+            "replays UNKNOWN. recovery_plan chooses check/recheck/reconcile/prepare-replace without "
+            "performing recovery. Existing bct_loop_recipe and every Chain Recipe function remain separate."
+        ),
+        structured_output=True,
+    )
+    async def bct_persistent_loop_recipe(
+        action: str = "outline", work_id: str = "", loop_id: str = "",
+        block_id: str = "", link: str = "", continuation_id: str = "",
+        watch_operation_id: str = "", task_id: str = "", instance_id: str = "",
+        conversation_key: str = "", return_conversation_key: str = "",
+        return_instance_id: str = "", send_operation_id: str = "",
+        send_text: str = "", session_id: str = "", tab_id: int = 0,
+        window_id: int = 0, required_capabilities: list[str] | None = None,
+        artifact_refs: list[str] | None = None, receipt_observation: str = "",
+        node_observation: str = "", unchanged_rechecks: int = 0,
+        instruction_text: str = "", direction_text: str = "",
+        manager_conversation_key: str = "", supervisor_conversation_key: str = "",
+        network_project_id: str = "", project_operation_id: str = "",
+        manager_operation_id: str = "", supervisor_operation_id: str = "",
+        network_display_name: str = "", expected_manager_scope_id: str = "",
+        expected_supervisor_scope_id: str = "",
+        recovery_action: str = "", recovery_case_id: str = "",
+        recovery_conversation_key: str = "", recovery_task_id: str = "",
+        recovery_reason: str = "", successor_conversation_key: str = "",
+        inheritance_task_id: str = "",
+    ) -> dict[str, Any]:
+        return await persistent_loop_command(loop_recipe_runtime, **locals())
+
+    @server.tool(
         name="bct_loop_recipe",
         description=("New Loop starts are disabled after Chain restoration; existing status/claim/reconcile/advance remain. "
                      "reconcile verifies the original BCT Operation receipt. "
@@ -1286,6 +1322,10 @@ def build_mcp(
         return execute
 
     recipe_runtime = ChainRecipeRuntime(
+        bct=bct, principal=principal, status_provider=status_provider,
+        make_executor=make_executor,
+    )
+    loop_recipe_runtime = PersistentLoopRuntime(
         bct=bct, principal=principal, status_provider=status_provider,
         make_executor=make_executor,
     )

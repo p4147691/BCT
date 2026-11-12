@@ -8,6 +8,7 @@ UNKNOWN result can only be reconciled, never silently re-issued.
 from __future__ import annotations
 
 import json
+import re
 import time
 from typing import Any
 
@@ -50,6 +51,16 @@ class LoopRecipeLedger:
                 );
                 CREATE INDEX IF NOT EXISTS loop_recipe_v2_continuations_pending
                     ON loop_recipe_v2_continuations(loop_id, state, revision);
+                CREATE TABLE IF NOT EXISTS loop_recipe_v2_contexts (
+                    loop_id TEXT PRIMARY KEY,
+                    instruction_text TEXT NOT NULL,
+                    direction_text TEXT NOT NULL,
+                    manager_conversation_key TEXT NOT NULL,
+                    supervisor_conversation_key TEXT NOT NULL,
+                    network_project_id TEXT NOT NULL,
+                    created_at REAL NOT NULL,
+                    FOREIGN KEY(loop_id) REFERENCES loop_recipe_v2_runs(loop_id)
+                );
             """)
 
     @staticmethod
@@ -75,6 +86,55 @@ class LoopRecipeLedger:
     def get_run(self, loop_id: str) -> dict[str, Any] | None:
         with self.store.transaction() as db:
             row = db.execute("SELECT * FROM loop_recipe_v2_runs WHERE loop_id=?", (loop_id,)).fetchone()
+            return dict(row) if row is not None else None
+
+    def bind_context(self, *, loop_id: str, instruction_text: str, direction_text: str,
+                     manager_conversation_key: str, supervisor_conversation_key: str,
+                     network_project_id: str) -> dict[str, Any]:
+        values = (
+            instruction_text.strip(), direction_text.strip(),
+            manager_conversation_key.strip().lower(),
+            supervisor_conversation_key.strip().lower(), network_project_id.strip(),
+        )
+        if any(not value for value in values):
+            raise LoopContractError("LOOP_CONTEXT_REQUIRED")
+        if max(len(values[0]), len(values[1])) > 12000:
+            raise LoopContractError("LOOP_CONTEXT_TOO_LONG")
+        uuid_pattern = r"[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}"
+        if (not re.fullmatch(uuid_pattern, values[2])
+                or not re.fullmatch(uuid_pattern, values[3]) or values[2] == values[3]):
+            raise LoopContractError("LOOP_TOPOLOGY_IDENTITY_INVALID")
+        if not re.fullmatch(r"[A-Za-z0-9_.:-]{1,96}", values[4]):
+            raise LoopContractError("LOOP_NETWORK_PROJECT_ID_INVALID")
+        now = time.time()
+        with self.store.transaction() as db:
+            run = db.execute("SELECT 1 FROM loop_recipe_v2_runs WHERE loop_id=?", (loop_id,)).fetchone()
+            if run is None:
+                raise LoopContractError("LOOP_RUN_NOT_FOUND")
+            existing = db.execute(
+                "SELECT * FROM loop_recipe_v2_contexts WHERE loop_id=?", (loop_id,),
+            ).fetchone()
+            if existing is not None:
+                actual = tuple(existing[key] for key in (
+                    "instruction_text", "direction_text", "manager_conversation_key",
+                    "supervisor_conversation_key", "network_project_id",
+                ))
+                if actual != values:
+                    raise LoopContractError("LOOP_CONTEXT_CONFLICT")
+                return dict(existing)
+            db.execute(
+                "INSERT INTO loop_recipe_v2_contexts VALUES(?,?,?,?,?,?,?)",
+                (loop_id, *values, now),
+            )
+            return dict(db.execute(
+                "SELECT * FROM loop_recipe_v2_contexts WHERE loop_id=?", (loop_id,),
+            ).fetchone())
+
+    def get_context(self, loop_id: str) -> dict[str, Any] | None:
+        with self.store.transaction() as db:
+            row = db.execute(
+                "SELECT * FROM loop_recipe_v2_contexts WHERE loop_id=?", (loop_id,),
+            ).fetchone()
             return dict(row) if row is not None else None
 
     def get_continuation(self, continuation_id: str) -> dict[str, Any] | None:

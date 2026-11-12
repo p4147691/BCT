@@ -31,19 +31,32 @@ class PersistentLoopCommands:
         return {"status": "OK", "assembly": persistent_loop_outline(),
                 "effects": "NONE_READ_ONLY"}
 
-    def start(self, *, loop_id: str, work_id: str) -> dict:
+    def start(self, *, loop_id: str, work_id: str, instruction_text: str = "",
+              direction_text: str = "", manager_conversation_key: str = "",
+              supervisor_conversation_key: str = "", network_project_id: str = "") -> dict:
         self._owned_work(work_id)
         run = self.ledger.start(loop_id=loop_id, work_id=work_id)
         if run["work_id"] != work_id:
             raise LoopContractError("LOOP_RUN_ID_CONFLICT")
-        return {"status": "OK", "run": run, "effects": "STATE_ONLY"}
+        context = None
+        supplied = any((instruction_text, direction_text, manager_conversation_key,
+                        supervisor_conversation_key, network_project_id))
+        if supplied:
+            context = self.ledger.bind_context(
+                loop_id=loop_id, instruction_text=instruction_text,
+                direction_text=direction_text,
+                manager_conversation_key=manager_conversation_key,
+                supervisor_conversation_key=supervisor_conversation_key,
+                network_project_id=network_project_id,
+            )
+        return {"status": "OK", "run": run, "context": context, "effects": "STATE_ONLY"}
 
     def status(self, *, loop_id: str) -> dict:
         run = self.ledger.get_run(loop_id)
         if run is None:
             return {"status": "NOT_FOUND"}
         self._owned_work(run["work_id"])
-        return {"status": "OK", "run": run}
+        return {"status": "OK", "run": run, "context": self.ledger.get_context(loop_id)}
 
     def transition(self, *, loop_id: str, block_id: str, link: str,
                    required_capabilities: tuple[str, ...] = (),

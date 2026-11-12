@@ -437,7 +437,38 @@ Chain/Set Direction의 prepare 응답에 `manual_guidance`로 자동 포함한�
 업데이트된 것은 아니다. source fingerprint·manual hash, `bct_status`의 release SHA,
 테스트·CI·설치·E2E 영수증은 각각 구분한다.
 
-## 단일 Manager Loop의 독립 Supervisor 인계 (후보)
+## 블록 조립형 영속 Loop
+
+새 표준 Loop의 공개 입구는 `bct_persistent_loop_recipe`다. 아래의 보존된
+`bct_loop_recipe`와 별개이며 Chain Recipe의 함수·명령·상태 전이는 변경하지 않는다.
+사용자는 처리 블록과 `CONTINUE`, `WAIT`, `HANDOFF`, `COMPLETE`, `BLOCKED` 다섯 연결점만
+선택한다. Watch, 정확한 신원, Operation 영수증, 재시작과 UNKNOWN 조정은 Loop 전용
+연결 어댑터가 맡는다.
+
+```text
+outline
+  -> start: 원 입력·Direction·정확한 A/S UUID·새 Loop 대화망 ID를 불변 저장
+  -> topology: 새 대화망 생성 후 정확한 A=Manager, S=Supervisor 구성
+  -> resume -> direction -> topology -> plan -> execute -> assess
+       assess --CONTINUE--> plan
+              --WAIT------> 현재 응답 Watch 선등록, 최초 자기 메시지 없음
+              --HANDOFF---> Continuation 저장, 대상 Watch 선등록, 정확히 한 번 전달
+              --BLOCKED---> 상태 보존과 Node Recovery
+              --COMPLETE--> 완료 기록
+  -> sync: 기존 Watch 결과만 읽어 재개; UNKNOWN이면 같은 영수증 조정
+```
+
+`WAIT`와 `HANDOFF`가 돌려주는 출력 계약은 기존 Delayed Send의 검증된
+`NEXT TASK — SELF` / `NEXT TASK — MANAGER` 문법을 그대로 쓴다. Loop에서 MANAGER는
+역할 이름이 아니라 반대쪽 결속 endpoint를 뜻한다. A의 MANAGER 반환은 S로, S의 MANAGER
+반환은 A로 간다. 이 변환은 처리 블록 안에 들어가지 않는다.
+
+`action="node_recovery"`는 기존 BCT Check/Recheck/Pause/Prepare Replace/Commit Replace
+원장을 Loop 전용 어댑터에서 호출한다. 새 전송으로 복구하지 않는다. `UNKNOWN`은
+`recovery_plan`과 원 Operation/Watch 조회로만 조정하며 같은 continuation ID의 중복 호출은
+Watch나 메시지를 다시 만들지 않는다.
+
+## 단일 Manager Loop의 독립 Supervisor 인계 (보존된 기존 명령)
 
 현재 Chain 공통 코드 복원에 따라 새 `bct_loop_recipe(start)`는 기록 생성 전에
 `LOOP_NEW_START_DISABLED_CHAIN_RESTORED`로 거절한다. 아래 Loop 내용은 기존 기록의

@@ -1,8 +1,8 @@
 # Persistent Loop assembly contract
 
-This is a design and source-level contract only.  It does not register an MCP
-command, change Chain Recipe, create a conversation, arm a Watch, or send a
-message.
+This contract is implemented by the separate `bct_persistent_loop_recipe`
+public command. It does not change Chain Recipe or the retained
+`bct_loop_recipe` command.
 
 For extension decisions and examples, see
 [`loop_recipe_assembly_guide.md`](loop_recipe_assembly_guide.md).
@@ -17,9 +17,9 @@ processing blocks  ->  assembly table  ->  continuation gateway
    endpoint choice, or delivery code.
 2. The assembly table maps a fact outcome to the next processing block.  It
    never selects an endpoint or performs an effect.
-3. A route table selects an endpoint from declared required capabilities.  A
-   later runtime adapter will turn that selection into a prearmed, receipted
-   delivery or a local re-entry.  It is not implemented by this contract.
+3. A route table selects an endpoint from declared required capabilities. The
+   Loop-only runtime adapter turns that selection into a prearmed, receipted
+   delivery or local re-entry through existing BCT capabilities.
 
 ## Boundary rules
 
@@ -44,9 +44,18 @@ This is a processing graph, not a delivery graph.  The `assess` block reports
 whether more work exists; a route table and a future generic continuation
 gateway choose where that next execution occurs.
 
-## Next implementation boundary
+## Runtime boundary
 
-The next change may add Loop-only adapters for topology, Watch registration,
-transport, and recovery.  Each adapter must consume a `DeliveryIntent` and
-call existing BCT capabilities through their documented Operation/receipt
-contracts.  It must not modify or reinterpret existing Chain records.
+Loop-only topology, Watch, transport, synchronization, and recovery adapters
+consume the Loop records and call existing BCT capabilities through their
+documented Operation/receipt contracts. They do not modify or reinterpret
+existing Chain records. A new run stores the original instruction, Direction,
+exact Manager and Supervisor UUIDs, and a Loop-specific network ID. The
+topology action creates that new network and assigns only those exact members.
+
+`WAIT` and `HANDOFF` create durable Continuations before any effect. Repeating
+the same continuation is read-only; changing its target, return endpoint, or
+payload is a conflict. `UNKNOWN` enters reconciliation and `sync` checks the
+same delayed Watch instead of issuing a new Operation. Node recovery uses the
+unchanged Check, Recheck, Pause, Prepare Replace, and Commit Replace ledger
+behind a Loop-specific adapter.
