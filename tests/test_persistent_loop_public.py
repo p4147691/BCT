@@ -6,10 +6,15 @@ from pathlib import Path
 import tempfile
 from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 
+from bct.conversation_network import set_membership, upsert_conversation, upsert_project
 from bct.core.models import Work
 from bct.core.store import Store
 from bct.mcp_server import build_mcp
+from bct.persistent_loop_runtime import PersistentLoopCoordinator
+from bct.send_delayed_message import _rcc_submitted_text_sha256
+from test_loop_self_dispatch import snapshot as loop_snapshot
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -25,6 +30,64 @@ class NoEffects:
 
 
 class PersistentLoopPublicTests(unittest.IsolatedAsyncioTestCase):
+    async def test_start_from_chat_uses_unique_rcc_turn_and_reuses_armed_run(self):
+        source = "BCT Control Start this task in LOOP."
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "state.sqlite")
+            store.create_work(Work(
+                "loop-public-work", "persistent loop", (),
+                frozenset({"browser", "conversation_network_update"}), "bct-mcp-local",
+            ))
+            monitor = loop_snapshot(owner=MANAGER, generating=True)
+            monitor["current_nodes"]["items"].append({
+                "conversation_uuid": SUPERVISOR, "status": "CONFIRMED",
+                "generating": False, "roles": ["Loop Supervisor"],
+            })
+            operations = NoEffects()
+            operations._features = {"browser": object()}
+            server = build_mcp(SimpleNamespace(store=store, operations=operations),
+                               status_provider=lambda: {"monitor": monitor}, compact_catalogue=True)
+            arguments = {
+                "action": "start", "work_id": "loop-public-work",
+                "instruction_text": "Start this task in LOOP.", "direction_text": "Verify results.",
+                "overall_plan": "Execute and verify.",
+                "completion_conditions": {"result": "Result independently verified."},
+            }
+
+            async def configure(coordinator, *, loop_id, **kwargs):
+                project = coordinator.commands.status(loop_id=loop_id)["context"]["network_project_id"]
+                upsert_project(store, project_id=project, display_name="Test LOOP")
+                upsert_conversation(store, conversation_key=MANAGER, display_name="Manager")
+                set_membership(store, project_id=project, conversation_key=MANAGER)
+                return {"status": "READY"}
+
+            observed = {"ok": True, "conversationKey": MANAGER, "latestUserTurnKey": "turn-1",
+                        "latestUserTextOccurrenceCount": 1,
+                        "latestUserSha256": _rcc_submitted_text_sha256(source)}
+            with patch("bct.send_delayed_message.SendDelayedMessageService.latest",
+                       return_value={**observed, "latestUserTextOccurrenceCount": 2}), patch.object(
+                           PersistentLoopCoordinator, "configure_topology", autospec=True
+                       ) as topology:
+                _, rejected = await server.call_tool("bct_loop_recipe", arguments)
+                self.assertEqual(rejected["reason"], "LOOP_START_SOURCE_NOT_FOUND")
+                topology.assert_not_awaited()
+            with patch("bct.send_delayed_message.SendDelayedMessageService.latest",
+                       return_value=observed), patch.object(
+                           PersistentLoopCoordinator, "configure_topology", autospec=True,
+                           side_effect=configure,
+                       ) as topology:
+                _, started = await server.call_tool("bct_loop_recipe", arguments)
+                self.assertEqual(started.get("status"), "OK", started)
+                self.assertEqual(started["objective"]["manager_conversation_key"], MANAGER)
+                self.assertEqual(started["objective"]["supervisor_conversation_key"], SUPERVISOR)
+                self.assertEqual(started["objective"]["instruction_text"], source)
+                self.assertEqual(started["turn"]["state"], "PREPARING")
+                self.assertIsNone(started["turn"]["send_operation_id"])
+                _, retry = await server.call_tool("bct_loop_recipe", arguments)
+                self.assertEqual(retry["turn"]["watch_operation_id"],
+                                 started["turn"]["watch_operation_id"])
+                topology.assert_awaited_once()
+
     async def test_public_entry_outlines_starts_and_reads_durable_context(self):
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "state.sqlite")
