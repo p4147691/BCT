@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import hmac
-import math
 import re
 import time
 import uuid
@@ -17,11 +16,13 @@ from .background_operations import BACKGROUND_CAPABILITIES, launch_background_op
 from .chat_input_queue import queue_message_command
 from .code_block_scan import resolve_scan_root
 from .code_block_organize import plan_block_replacement, prepare_block_apply
-from .core.models import Principal, Work
+from .core.models import Principal
 from .mcp_catalogue_config import CatalogueSettings
 from .status_views import status_view
 from .task_message import prepare_task_message_instruction
 from .discovery_views import capability_view, rcc_command_view, rcc_recipe_view
+from .operation_queries import read_github_inbox, read_operation
+from .work_services import create_or_update_work
 from .status_queries import read_status, read_conversation_network
 from .project_plan import prepare_project_plan
 from .recipes.code_blocks import scan_work_code_blocks
@@ -1398,100 +1399,27 @@ def build_mcp(
         roots: list[str],
         actions: list[str],
     ) -> dict[str, Any]:
-        requested_actions = frozenset(actions)
-        if not work_id or not request_summary or not roots:
-            raise ValueError("WORK_FIELDS_REQUIRED")
-        if not requested_actions or not requested_actions.issubset(principal.capabilities):
-            raise ValueError("WORK_ACTION_INVALID")
-        normalized_roots = tuple(str(Path(root).resolve()) for root in roots)
-        if any(not Path(root).is_absolute() for root in roots):
-            raise ValueError("WORK_ROOT_ABSOLUTE_REQUIRED")
-        expected = Work(
-            work_id,
-            request_summary,
-            normalized_roots,
-            requested_actions,
-            principal.principal_id,
+        return await create_or_update_work(
+            bct.store, principal_id=principal.principal_id,
+            capabilities=principal.capabilities, work_id=work_id,
+            request_summary=request_summary, roots=roots, actions=actions,
         )
-        try:
-            current = bct.store.get_work(work_id)
-        except KeyError:
-            current = bct.store.create_work(expected)
-            duplicate = False
-            updated = False
-        else:
-            if current.owner_principal_id != principal.principal_id:
-                # Work ownership coordinates the current executor; it is not a
-                # permanent permission boundary. Once every prior operation is
-                # terminal, hand the Work to the current trusted principal and
-                # advance the epoch so a late former executor cannot write.
-                current = await asyncio.to_thread(
-                    bct.store.handoff_work,
-                    work_id=work_id,
-                    old_principal_id=current.owner_principal_id,
-                    new_principal_id=principal.principal_id,
-                    expected_epoch=current.assignment_epoch,
-                )
-            current, updated = await asyncio.to_thread(
-                bct.store.update_work_scope,
-                work_id=work_id,
-                principal_id=principal.principal_id,
-                expected_epoch=current.assignment_epoch,
-                request_summary=request_summary,
-                roots=normalized_roots,
-                actions=requested_actions,
-            )
-            duplicate = not updated
-        return {"work": _work_dict(current), "duplicate": duplicate, "updated": updated}
 
     @server.tool(description="Read one exact operation receipt owned by the current MCP work.", structured_output=True)
     async def bct_operation_get(work_id: str, operation_id: str, wait_seconds: float = 0) -> dict[str, Any]:
-        if not math.isfinite(wait_seconds) or not 0 <= wait_seconds <= 25:
-            raise ValueError("OPERATION_WAIT_INVALID")
-        started_ns = time.perf_counter_ns()
-        wait_ms = 0.0
-        deadline = time.monotonic() + wait_seconds
-        while True:
-            result = await asyncio.to_thread(bct.store.get_operation_for,
-                operation_id=operation_id, work_id=work_id, principal_id=principal.principal_id)
-            if result.state.value == "FINISHED" or time.monotonic() >= deadline:
-                value = result.as_dict()
-                steps = await asyncio.to_thread(
-                    bct.store.get_operation_steps_for,
-                    operation_id=operation_id, work_id=work_id,
-                    principal_id=principal.principal_id,
-                )
-                if steps:
-                    value["step_journal"] = steps
-                effect_journal = await asyncio.to_thread(
-                    bct.store.get_effect_journal_for,
-                    operation_id=operation_id, work_id=work_id,
-                    principal_id=principal.principal_id,
-                )
-                if effect_journal:
-                    value["effect_journal"] = effect_journal
-                handler_ms = (time.perf_counter_ns()-started_ns)/1e6
-                _trace_stage("handler_done", tool_kind="operation_get", handler_ms=handler_ms, wait_ms=wait_ms, execution_ms=max(0.0, handler_ms-wait_ms))
-                return value
-            sleep_start = time.perf_counter_ns()
-            await asyncio.sleep(min(0.25, max(0, deadline - time.monotonic())))
-            wait_ms += (time.perf_counter_ns()-sleep_start)/1e6
+        return await read_operation(
+            bct.store, principal_id=principal.principal_id, work_id=work_id,
+            operation_id=operation_id, wait_seconds=wait_seconds, trace_stage=_trace_stage,
+        )
 
     @server.tool(description="Read GitHub CI/completion notifications for an owned BCT Work. acknowledge marks returned notifications read.", structured_output=True)
     async def bct_github_inbox_get(initiator_node_id: str = "", work_id: str = "",
                                    acknowledge: bool = False, limit: int = 80) -> dict[str, Any]:
-        if not work_id:
-            raise ValueError("INBOX_WORK_REQUIRED")
-        # MCP has one local principal.  Requiring an owned Work keeps this read
-        # scoped to the caller's Work rather than exposing a node-wide inbox.
-        work = await asyncio.to_thread(bct.store.get_work, work_id)
-        if work.owner_principal_id != principal.principal_id:
-            raise PermissionError("INBOX_WORK_ACCESS_DENIED")
-        rows = await asyncio.to_thread(
-            bct.store.get_github_run_inbox, node_id=initiator_node_id,
-            work_id=work_id, acknowledge=acknowledge, limit=limit,
+        return await read_github_inbox(
+            bct.store, principal_id=principal.principal_id,
+            initiator_node_id=initiator_node_id, work_id=work_id,
+            acknowledge=acknowledge, limit=limit,
         )
-        return {"items": rows, "wake": "AUTO_WAKE_NOT_CONFIGURED"}
 
     @server.tool(description="Legacy compatibility alias for bct_github_inbox_get; GitHub completion notifications only.", structured_output=True)
     async def bct_inbox_get(initiator_node_id: str = "", work_id: str = "",

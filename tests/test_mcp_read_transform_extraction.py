@@ -30,6 +30,8 @@ MODULES = {
     "status_queries": ("read_status", "read_conversation_network"),
     "project_plan": ("prepare_project_plan",),
     "recipes.code_blocks": ("scan_work_code_blocks",),
+    "operation_queries": ("read_operation", "read_github_inbox"),
+    "work_services": ("create_or_update_work",),
 }
 
 
@@ -79,6 +81,9 @@ class ExtractionStructureTests(unittest.TestCase):
             "scan_code_blocks": "scan_work_code_blocks",
             "bct_rcc_command_catalog": "rcc_command_view",
             "bct_rcc_recipe_catalog": "rcc_recipe_view",
+            "bct_operation_get": "read_operation",
+            "bct_github_inbox_get": "read_github_inbox",
+            "bct_work_create": "create_or_update_work",
         }.items():
             statements = [node for node in entries[name].body if not (
                 isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant)
