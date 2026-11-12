@@ -148,6 +148,7 @@ files = [
   "src/bct/runtime_server.py",
   "src/bct/supervisor.py",
   "src/bct/mcp_server.py",
+  "src/bct/execution_context_queries.py",
   "src/bct/execution_plan_commands.py",
   "src/bct/node_recovery_commands.py",
   "src/bct/operation_queries.py",

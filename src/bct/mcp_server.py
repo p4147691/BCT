@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import hmac
-import re
 import time
 import uuid
 from pathlib import Path
@@ -28,6 +27,7 @@ from .project_plan import prepare_project_plan
 from .recipes.code_blocks import scan_work_code_blocks
 from .node_recovery_commands import NodeRecoveryCommands
 from .execution_plan_commands import ExecutionPlanCommands
+from .execution_context_queries import read_execution_context
 
 
 from .trace_timing import TRACE_ID as _MCP_TRACE_ID, trace_stage as _trace_stage
@@ -650,31 +650,9 @@ def build_mcp(
     async def bct_execution_context(
         work_id: str, task_id: str, generation: int = 0,
     ) -> dict[str, Any]:
-        if (not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", task_id)
-                or generation < 0):
-            return {"status": "INVALID_REQUEST", "reason": "EXECUTION_CONTEXT_INPUT_INVALID"}
-        try:
-            work = await asyncio.to_thread(bct.store.get_work, work_id)
-            from bct.send_delayed_message import DurableWatchLedger
-            context = await asyncio.to_thread(
-                DurableWatchLedger(bct.store).read_execution_context,
-                task_id=task_id,
-                generation=None if generation == 0 else generation,
-            )
-        except KeyError:
-            return {"status": "NOT_FOUND", "reason": "WORK_NOT_FOUND"}
-        if context is None:
-            return {"status": "NOT_FOUND", "task_id": task_id,
-                    "generation": generation or None}
-        binding = context.get("binding") or {}
-        if (binding.get("work_id") != work.work_id
-                or binding.get("principal_id") != work.owner_principal_id
-                or binding.get("assignment_epoch") != work.assignment_epoch):
-            return {"status": "NOT_FOUND", "task_id": task_id,
-                    "generation": context["generation"]}
-        # The full binding contains only the exact existing target identity and
-        # is needed by a later, separately authorized wake-delivery adapter.
-        return {"status": "OK", "execution": context}
+        return await read_execution_context(
+            bct.store, work_id=work_id, task_id=task_id, generation=generation,
+        )
 
 
     def _node_recovery_commands() -> NodeRecoveryCommands:
