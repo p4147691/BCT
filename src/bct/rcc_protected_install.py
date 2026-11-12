@@ -104,6 +104,9 @@ COMPOSER_REBIND_ROLLBACK = COMPOSER_REBIND_ROOT / "rollback_installed_1_0_69"
 COMPOSER_REBIND_MANIFEST = COMPOSER_REBIND_ROOT / "release_manifest_composer_rebind_immutable.json"
 COMPOSER_REBIND_MANIFEST_SHA256 = "15cd91df77cca9f317ea41423568b4d105dca06907357178132237c54da0257e"
 COMPOSER_REBIND_JOURNAL = Path(r"D:\BCT\runtime\backups\rcc-guarded-install-composer-rebind")
+VISIBLE_EDITOR_ROOT = Path(r"D:\BCT\data\RCC_VISIBLE_COMPOSER_20261112")
+VISIBLE_EDITOR_MANIFEST_SHA256 = "8f671bc5f05faafa42cd7e5283122674c0edcece0fa174ed0fa26a287da2a6b4"
+VISIBLE_EDITOR_JOURNAL = Path(r"D:\BCT\runtime\backups\rcc-guarded-install-visible-editor")
 EXTENSION_ID = "ocbidbaplechjjdacmokhnfbdmgjkphf"
 OP_ID = re.compile(r"[A-Za-z0-9_.-]{1,80}\Z")
 

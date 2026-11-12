@@ -987,9 +987,16 @@ class DeployFeature:
                 source_lock.close()
 
     @staticmethod
-    def _rcc_route_config(operation: str) -> dict[str, Any]:
+    def _rcc_route_config(operation: str, manifest_sha256: str = "") -> dict[str, Any]:
         """Choose one immutable release without weakening prior install receipts."""
         from bct import rcc_protected_install as rcc
+        if operation.endswith("-composer-rebind") and manifest_sha256 == rcc.VISIBLE_EDITOR_MANIFEST_SHA256:
+            return {"pinned_manifest_sha256": manifest_sha256, "live": rcc.EXACT_INSTALLED,
+                    "candidate": rcc.VISIBLE_EDITOR_ROOT / "candidate_1_0_70_visible_editor",
+                    "backup_source": rcc.VISIBLE_EDITOR_ROOT / "rollback_1_0_70_visible_editor",
+                    "manifest_file": rcc.VISIBLE_EDITOR_ROOT / "release_manifest_visible_editor_immutable.json",
+                    "journal_root": rcc.VISIBLE_EDITOR_JOURNAL, "candidate_version": "1.0.70",
+                    "installed_version": "1.0.70"}
         routes = (
             ("-composer-rebind", rcc.COMPOSER_REBIND_MANIFEST_SHA256,
              rcc.COMPOSER_REBIND_STAGE, rcc.COMPOSER_REBIND_ROLLBACK,
@@ -1087,7 +1094,7 @@ class DeployFeature:
         def covered(target):
             target = target.resolve(strict=False)
             return any(target == base or base in target.parents for base in roots)
-        route = DeployFeature._rcc_route_config(operation)
+        route = DeployFeature._rcc_route_config(operation, manifest)
         if not covered(route["live"]) or not covered(route["manifest_file"]):
             raise PreconditionError("RCC_INSTALL_WORK_ROOT_NOT_AUTHORIZED")
         resources = (
@@ -1124,7 +1131,7 @@ class DeployFeature:
             values["installed_aggregate"], values["candidate_aggregate"],
             values["manifest_sha256"],
         )
-        route = DeployFeature._rcc_route_config(values["operation"])
+        route = DeployFeature._rcc_route_config(values["operation"], values["manifest_sha256"])
         if values["operation"].endswith(("-pr388", "-rename-actions", "-source-proof", "-source-proof-v2", "-semantic-turn", "-submit-activation-fence", "-rendered-prompt-provenance", "-rendered-markdown-identity", "-rename-resilience", "-command-namespace", "-canonical-wire", "-dot-title-rename", "-composer-rebind")):
             from hashlib import sha256
             release_path = route["manifest_file"]
