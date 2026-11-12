@@ -38,7 +38,9 @@ class PersistentLoopPublicTests(unittest.IsolatedAsyncioTestCase):
                 "loop-public-work", "persistent loop", (),
                 frozenset({"browser", "conversation_network_update"}), "bct-mcp-local",
             ))
-            monitor = loop_snapshot(owner=MANAGER, generating=True)
+            # Tool execution can occur between generation signals. The exact
+            # RCC turn proof, rather than the sampled BUSY bit, must select A.
+            monitor = loop_snapshot(owner=MANAGER, generating=False)
             monitor["current_nodes"]["items"].append({
                 "conversation_uuid": SUPERVISOR, "status": "CONFIRMED",
                 "generating": False, "roles": ["Loop Supervisor"],
