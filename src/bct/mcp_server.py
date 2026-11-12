@@ -21,6 +21,7 @@ from .task_message_commands import task_message_command
 from .delayed_send_commands import send_delayed_message_command
 from .browser_command_adapters import close_tab as close_tab_command, move_tab as move_tab_command, send_message as send_message_command
 from .capability_command_adapters import cancel_delayed_send, run_project_plan, run_task
+from .desktop_command_adapters import desktop_capture, desktop_session_status
 from .discovery_views import capability_view, rcc_command_view, rcc_recipe_view
 from .operation_queries import read_github_inbox, read_operation
 from .work_services import create_or_update_work
@@ -1151,19 +1152,9 @@ def build_mcp(
         structured_output=True,
     )
     async def bct_desktop_session_status(work_id: str, operation_id: str) -> dict[str, Any]:
-        result = await asyncio.to_thread(
-            bct.operations.run,
-            principal=principal, work_id=work_id, operation_id=operation_id,
-            capability="desktop_session_status", arguments={}, approval_ref=None,
+        return await desktop_session_status(
+            lambda **kwargs: asyncio.to_thread(bct.operations.run, principal=principal, work_id=work_id, operation_id=operation_id, approval_ref=None, **kwargs),
         )
-        value = result.as_dict()
-        if result.duplicate and "output" not in value:
-            value["output"] = {
-                "instanceId": result.evidence.get("instance_id"),
-                "session": result.evidence.get("session"),
-                "monitors": result.evidence.get("monitors"),
-            }
-        return value
 
     @server.tool(
         description="Capture the verified current Windows virtual screen, monitor, or exact HWND and return the PNG as MCP image content.",
@@ -1178,26 +1169,12 @@ def build_mcp(
         max_width: int = 1600,
         max_height: int = 1200,
     ) -> Any:
-        result = await asyncio.to_thread(
-            bct.operations.run,
+        return await desktop_capture(
+            lambda **kwargs: asyncio.to_thread(bct.operations.run, **kwargs), Image,
             principal=principal, work_id=work_id, operation_id=operation_id,
-            capability="desktop_capture",
-            arguments={
-                "target_type": target_type, "monitor_index": monitor_index,
-                "hwnd": hwnd, "max_width": max_width, "max_height": max_height,
-            },
-            approval_ref=None,
+            target_type=target_type, monitor_index=monitor_index, hwnd=hwnd,
+            max_width=max_width, max_height=max_height,
         )
-        value = result.as_dict()
-        capture = result.output.get("capture") if isinstance(result.output, dict) else None
-        if not isinstance(capture, dict):
-            capture = result.evidence.get("capture")
-        if result.outcome is not None and result.outcome.value == "APPLIED" and isinstance(capture, dict):
-            path = Path(str(capture.get("path") or ""))
-            if path.is_file():
-                value.pop("output", None)
-                return value, Image(path=path, format="png")
-        return value
 
     @server.tool(
         description=("List every RCC command exposed through bct_browser, grouped by its "
