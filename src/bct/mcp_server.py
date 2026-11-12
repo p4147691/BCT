@@ -19,6 +19,7 @@ from .mcp_catalogue_config import CatalogueSettings
 from .status_views import status_view
 from .task_message_commands import task_message_command
 from .delayed_send_commands import send_delayed_message_command
+from .browser_command_adapters import close_tab as close_tab_command, move_tab as move_tab_command, send_message as send_message_command
 from .discovery_views import capability_view, rcc_command_view, rcc_recipe_view
 from .operation_queries import read_github_inbox, read_operation
 from .work_services import create_or_update_work
@@ -479,16 +480,7 @@ def build_mcp(
         tab_id: int, window_id: int, conversation_key: str, text: str,
         create_operation_id: str = "", approval_ref: str | None = None,
     ) -> dict[str, Any]:
-        arguments = {
-            "command": "send-message", "instance_id": instance_id,
-            "session_id": session_id, "tab_id": tab_id, "window_id": window_id,
-            "conversation_key": conversation_key, "text": text,
-        }
-        if create_operation_id:
-            arguments["create_operation_id"] = create_operation_id
-        return await make_executor("browser")(
-            work_id, operation_id, arguments, approval_ref,
-        )
+        return await send_message_command(make_executor("browser"), **locals())
 
     @server.tool(
         name="bct_move_tab",
@@ -505,16 +497,7 @@ def build_mcp(
         conversation_key: str = "", create_operation_id: str = "",
         approval_ref: str | None = None,
     ) -> dict[str, Any]:
-        return await make_executor("browser")(
-            work_id, operation_id,
-            {
-                "command": "move-tab", "instance_id": instance_id,
-                "session_id": session_id, "tab_id": tab_id, "window_id": window_id,
-                "target_window_id": target_window_id, "index": index,
-                "conversation_key": conversation_key,
-                "create_operation_id": create_operation_id,
-            }, approval_ref,
-        )
+        return await move_tab_command(make_executor("browser"), **locals())
 
     @server.tool(
         name="bct_close_tab",
@@ -530,14 +513,7 @@ def build_mcp(
         tab_id: int, window_id: int, conversation_key: str,
         approval_ref: str | None = None,
     ) -> dict[str, Any]:
-        return await make_executor("browser")(
-            work_id, operation_id,
-            {
-                "command": "close-conversation-tab", "instance_id": instance_id,
-                "session_id": session_id, "tab_id": tab_id, "window_id": window_id,
-                "conversation_key": conversation_key,
-            }, approval_ref,
-        )
+        return await close_tab_command(make_executor("browser"), **locals())
 
     @server.tool(
         name="bct_execution_context",
