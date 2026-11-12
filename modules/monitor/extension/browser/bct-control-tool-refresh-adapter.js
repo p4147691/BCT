@@ -77,18 +77,8 @@
   }
 
   function create(chromeApi) {
-    if (!chromeApi?.tabs?.query || !chromeApi?.tabs?.create || !chromeApi?.tabs?.get ||
-        !chromeApi?.scripting?.executeScript) {
+    if (!chromeApi?.tabs?.query || !chromeApi?.scripting?.executeScript) {
       throw new Error("BCT_CONTROL_REFRESH_CHROME_API_REQUIRED");
-    }
-
-    async function waitForComplete(tabId) {
-      for (let attempt = 0; attempt < 60; attempt += 1) {
-        const tab = await chromeApi.tabs.get(tabId);
-        if (tab?.status === "complete") return tab;
-        await new Promise((resolve) => setTimeout(resolve, 250));
-      }
-      throw new Error("BCT_CONTROL_SETTINGS_LOAD_TIMEOUT");
     }
 
     async function resolveSettingsTab() {
@@ -96,15 +86,13 @@
       const exact = (Array.isArray(tabs) ? tabs : []).filter((tab) =>
         normalizeUrl(tab?.url) === BCT_CONTROL_SETTINGS_URL);
       if (exact.length > 1) throw new Error("BCT_CONTROL_REFRESH_AMBIGUOUS_SETTINGS_TABS");
-      if (exact.length === 1) return { tab:exact[0], opened:false };
-      const created = await chromeApi.tabs.create({ url:BCT_CONTROL_SETTINGS_URL, active:false });
-      if (!Number.isInteger(created?.id)) throw new Error("BCT_CONTROL_SETTINGS_TAB_CREATE_FAILED");
-      return { tab:await waitForComplete(created.id), opened:true };
+      if (exact.length === 0) throw new Error("BCT_CONTROL_SETTINGS_TAB_NOT_OPEN");
+      return exact[0];
     }
 
     async function refreshTools() {
-      const resolved = await resolveSettingsTab();
-      const tabId = Number(resolved.tab?.id);
+      const tab = await resolveSettingsTab();
+      const tabId = Number(tab?.id);
       if (!Number.isInteger(tabId) || tabId < 0) throw new Error("BCT_CONTROL_SETTINGS_TAB_ID_REQUIRED");
       const results = await chromeApi.scripting.executeScript({
         target: { tabId },
@@ -118,9 +106,9 @@
       return Object.freeze({
         ...value,
         tabId,
-        windowId: Number.isInteger(resolved.tab?.windowId) ? resolved.tab.windowId : null,
+        windowId: Number.isInteger(tab?.windowId) ? tab.windowId : null,
         settingsUrl: BCT_CONTROL_SETTINGS_URL,
-        opened: resolved.opened,
+        existingTabOnly: true,
       });
     }
 

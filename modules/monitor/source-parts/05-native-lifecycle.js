@@ -160,7 +160,7 @@ monitorMcpTunnelRecover?.addEventListener("click", () => {
 });
 
 monitorBctControlRefresh?.addEventListener("click", () => {
-  void runMonitorUtilityAction(monitorBctControlRefresh, "BCT Control 플러그인의 도구 정의를 새로고침하는 중…", async () => {
+  void runMonitorUtilityAction(monitorBctControlRefresh, "열려 있는 BCT Control 설정 탭의 도구 새로 고침 버튼을 누르는 중…", async () => {
     const result = await chrome.runtime.sendMessage({
       type:"monitor-refresh-bct-control-tools",
     });
@@ -173,7 +173,13 @@ monitorBctControlRefresh?.addEventListener("click", () => {
     }
     setMonitorStatus("BCT 도구 새로고침 완료 · 새 ChatGPT/Codex 작업에서 최신 도구를 사용하세요.", true, 8000);
     return result;
-  }).catch((error) => setMonitorStatus(`BCT 도구 새로고침 실패 · ${error?.message || error}`, false, 8000));
+  }).catch((error) => {
+    const message = String(error?.message || error);
+    const detail = message === "BCT_CONTROL_SETTINGS_TAB_NOT_OPEN"
+      ? "BCT Control 플러그인 설정 탭을 먼저 열어 주세요. 새 탭은 자동으로 열지 않습니다."
+      : message;
+    setMonitorStatus(`BCT 도구 새로고침 실패 · ${detail}`, false, 8000);
+  });
 });
 if (monitorNodeSync) monitorNodeSync.addEventListener("click", async () => {
   if (monitorNodeSync.disabled) return;

@@ -5,7 +5,6 @@ const { BCT_CONTROL_SETTINGS_URL, create } = require("./bct-control-tool-refresh
 
 (async () => {
   const executions = [];
-  const creates = [];
   let tabs = [{ id:17, windowId:9, status:"complete", url:BCT_CONTROL_SETTINGS_URL }];
   let injectedResult = {
     schema:"monitor.bct-control.tool-refresh.receipt.v1",
@@ -17,11 +16,6 @@ const { BCT_CONTROL_SETTINGS_URL, create } = require("./bct-control-tool-refresh
   const adapter = create({
     tabs: {
       async query() { return tabs; },
-      async create(options) {
-        creates.push(options);
-        return { id:21, windowId:11, status:"complete", url:options.url };
-      },
-      async get(id) { return { id, windowId:11, status:"complete", url:BCT_CONTROL_SETTINGS_URL }; },
     },
     scripting: {
       async executeScript(options) {
@@ -34,14 +28,12 @@ const { BCT_CONTROL_SETTINGS_URL, create } = require("./bct-control-tool-refresh
   const existing = await adapter.refreshTools();
   assert.equal(existing.status, "APPLIED");
   assert.equal(existing.tabId, 17);
-  assert.equal(existing.opened, false);
+  assert.equal(existing.existingTabOnly, true);
   assert.equal(executions[0].target.tabId, 17);
 
   tabs = [];
-  const opened = await adapter.refreshTools();
-  assert.equal(opened.tabId, 21);
-  assert.equal(opened.opened, true);
-  assert.deepEqual(creates, [{ url:BCT_CONTROL_SETTINGS_URL, active:false }]);
+  await assert.rejects(adapter.refreshTools(), /BCT_CONTROL_SETTINGS_TAB_NOT_OPEN/);
+  assert.equal(executions.length, 1);
 
   injectedResult = {
     schema:"monitor.bct-control.tool-refresh.receipt.v1",
