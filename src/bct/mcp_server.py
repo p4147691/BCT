@@ -18,6 +18,7 @@ from .core.models import Principal
 from .mcp_catalogue_config import CatalogueSettings
 from .status_views import status_view
 from .task_message_commands import task_message_command
+from .delayed_send_commands import send_delayed_message_command
 from .discovery_views import capability_view, rcc_command_view, rcc_recipe_view
 from .operation_queries import read_github_inbox, read_operation
 from .work_services import create_or_update_work
@@ -33,7 +34,6 @@ from .chain_direction_commands import ChainDirectionCommands
 from .trace_timing import TRACE_ID as _MCP_TRACE_ID, trace_stage as _trace_stage
 
 from .recipes.runtime import ChainRecipeRuntime
-from .recipes.recovery import _assert_node_send_allowed
 from .recipes.chain import chain_recipe
 from .recipes.network import set_conversation_network
 from .recipes.state import check_conversation_network_recipe
@@ -459,30 +459,8 @@ def build_mcp(
         planned_send_operation_id: str = "", planned_send_text: str = "",
         bootstrap_create_operation_id: str = "",
     ) -> dict[str, Any]:
-        guarded_conversation = conversation_key
-        try:
-            if guarded_conversation:
-                await asyncio.to_thread(
-                    _assert_node_send_allowed, recipe_runtime, work_id, guarded_conversation,
-                )
-            elif hasattr(bct, "store"):
-                from bct.node_recovery import NodeRecoveryLedger
-                await asyncio.to_thread(
-                    NodeRecoveryLedger(bct.store).assert_task_send_allowed,
-                    work_id=work_id, task_id=task_id,
-                )
-        except ValueError as exc:
-            return {"status":"PAUSED","reason":str(exc)}
-        generated = operation_id or ("send-delayed-" + uuid.uuid4().hex[:24])
-        return await make_executor("browser")(
-            work_id, generated,
-            {"command":"send-delayed-message","task_id":task_id,
-             "instance_id":instance_id,"conversation_key":conversation_key,
-             "manager_conversation_key":manager_conversation_key,
-             "manager_instance_id":manager_instance_id,
-             "planned_send_operation_id":planned_send_operation_id,
-             "planned_send_text":planned_send_text,
-             "bootstrap_create_operation_id":bootstrap_create_operation_id},
+        return await send_delayed_message_command(
+            getattr(bct, "store", None), recipe_runtime, make_executor("browser"), **locals(),
         )
 
     @server.tool(
