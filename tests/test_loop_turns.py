@@ -95,6 +95,7 @@ class LoopTurnTests(unittest.TestCase):
         self.ops.service = self.service
         self.responses = {}
         self.service.latest = lambda **arguments: self.responses.get(arguments["conversation_key"], {})
+        self.service._activity_for = lambda _watch: {}
         self.turns.start(work=self.work, loop_id="loop", task_id="task",
                          context=("original", "direction", OWNER, SUPERVISOR, "network"),
                          overall_plan="overall", conditions={"criterion": "criterion description"})
@@ -227,3 +228,39 @@ class LoopTurnTests(unittest.TestCase):
         self.runner = self.make_runner()
         self.assertEqual(self.runner.run_once()[0]["state"], "SEND_RECEIPT_PENDING_OR_HELD")
         self.assertEqual(len(self.ops.calls), 3)
+
+    def test_stopped_tab_records_check_recheck_without_replaying_send(self):
+        self.runner.snapshot = lambda: snapshot(owner=OWNER, disconnected=True)
+        self.service._activity_for = lambda _watch: {
+            "kind": "CONNECTION_DISCONNECTED", "session_id": "b" * 32,
+            "tab_id": 2, "window_id": 3,
+        }
+
+        def poll():
+            with self.store.transaction() as db:
+                db.execute("UPDATE loop_recipe_turns SET due_at=0 WHERE state='WATCHING'")
+            self.assertEqual(self.runner.run_once()[0]["state"], "WATCHING")
+
+        poll()  # One stop observation is not enough to open a recovery case.
+        self.assertIsNone(self.turns.status("loop")["node_recovery"])
+        poll()  # Repeated exact RCC stop signal records CHECK.
+        recovery = self.turns.status("loop")["node_recovery"]
+        self.assertEqual(recovery["latest_check"]["kind"], "CHECK")
+        self.assertEqual(recovery["latest_check"]["evidence"]["reason"],
+                         "NODE_CONNECTION_DISCONNECTED")
+        self.runner = self.make_runner()  # Core runner recreation keeps the case.
+        self.runner.snapshot = lambda: snapshot(owner=OWNER, disconnected=True)
+        with self.store.transaction() as db:
+            db.execute("UPDATE node_recovery_checks SET created_at=0 WHERE case_id=?",
+                       (recovery["case_id"],))
+        poll()  # Persistent failure records RECHECK, without sending again.
+        recovery = self.turns.status("loop")["node_recovery"]
+        self.assertEqual(recovery["latest_check"]["kind"], "RECHECK")
+        self.assertEqual(len(self.ops.calls), 1)
+        self.assertEqual(self.turns.status("loop")["turn"]["state"], "WATCHING")
+
+        self.service._activity_for = lambda _watch: {}
+        self.decision(1, OWNER, "continue")
+        with self.store.transaction() as db:
+            db.execute("UPDATE loop_recipe_turns SET due_at=0 WHERE state='WATCHING'")
+        self.reply(1, OWNER)  # The original Watch can still complete safely.
