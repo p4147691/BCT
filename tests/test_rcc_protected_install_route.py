@@ -302,6 +302,54 @@ class ProtectedRccRouteTests(unittest.TestCase):
         self.assertEqual(plan["candidate_files"], 58)
         self.assertFalse(self.journal.exists())
 
+    def test_version_identity_route_upgrades_exact_70_to_71(self):
+        route = DeployFeature._rcc_route_config("rcc-inspect-version-identity")
+        self.assertEqual(route["candidate_version"], "1.0.71")
+        self.assertEqual(route["installed_version"], "1.0.70")
+        self.assertEqual(
+            ri.VERSION_IDENTITY_ROOT,
+            Path(r"D:\BCT\data\RCC_VERSION_IDENTITY_20261111"),
+        )
+        self.assertEqual(route["manifest_file"], ri.VERSION_IDENTITY_MANIFEST)
+        self.assertEqual(route["candidate"], ri.VERSION_IDENTITY_STAGE)
+        self.assertEqual(route["backup_source"], ri.VERSION_IDENTITY_ROLLBACK)
+        self.assertEqual(route["journal_root"], ri.VERSION_IDENTITY_JOURNAL)
+        self.assertEqual(
+            route["pinned_manifest_sha256"],
+            ri.VERSION_IDENTITY_MANIFEST_SHA256,
+        )
+
+    def test_protected_inspect_accepts_version_identity_70_to_71(self):
+        for folder in (self.live, self.reference):
+            (folder / "f56.txt").write_text("56:1.0.70", encoding="utf-8")
+        for folder, version in (
+            (self.live, "1.0.70"),
+            (self.reference, "1.0.70"),
+            (self.source, "1.0.71"),
+        ):
+            manifest_path = folder / "manifest.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["version"] = version
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        self.release = {
+            "rollbackBaseline": self._inv(self.live),
+            "candidateInventory": self._inv(self.source),
+        }
+        self.policy_manifest.write_text(json.dumps(self.release), encoding="utf-8")
+        plan = ri.inspect(
+            "N73-TEST-VERSION-IDENTITY",
+            live=self.live,
+            candidate=self.source,
+            backup_source=self.reference,
+            manifest_file=self.policy_manifest,
+            journal_root=self.journal,
+            candidate_version="1.0.71",
+            installed_version="1.0.70",
+        )
+        self.assertEqual(plan["installed_files"], 58)
+        self.assertEqual(plan["candidate_files"], 58)
+        self.assertFalse(self.journal.exists())
+
     def test_protected_plan_accepts_canonical_wire_candidate_67(self):
         identities = {
             self.live: (self.extension_id, "1.0.66"),
