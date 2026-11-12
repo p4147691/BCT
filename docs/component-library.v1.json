@@ -206,12 +206,55 @@
       "maturity": "isolated",
       "implementation": [
         {"path": "src/bct/component_library.py", "symbol": "discover / get_manual_guidance"},
+        {"path": "src/bct/discovery_views.py", "symbol": "capability_view"},
         {"path": "src/bct/mcp_server.py", "symbol": "bct_capabilities"}
       ],
       "contract": "Read-only reusable-part search, exact runtime tool metadata and one packaged Chain Recipe manual shared by Chat, Work and Codex. Source-backed quick guidance is included in discovery, Chain prepare and new per-target instructions; looking up bct_chain_recipe returns the full manual. Existing recorded instructions remain immutable. Selection remains an A/B decision. Generated bundle is checked against canonical docs and affected sources.",
       "effects": [],
       "safety": ["no-tool-execution", "no-permission-grant", "runtime-schema-authority", "internal-parts-not-callable-tools", "source-not-live-proof"],
       "used_by": ["bct.manager_direction", "bct.target_execution_plan", "bct.chain_recipe"]
+    },
+    {
+      "id": "bct.discovery_views",
+      "kind": "module",
+      "maturity": "isolated",
+      "implementation": [
+        {"path": "src/bct/discovery_views.py", "symbol": "capability_view / rcc_command_view / rcc_recipe_view"},
+        {"path": "src/bct/mcp_server.py", "symbol": "bct_capabilities / bct_rcc_command_catalog / bct_rcc_recipe_catalog (public adapters)"}
+      ],
+      "contract": "Assemble read-only capability and RCC catalogue views from actual server metadata and existing discovery blocks. Transport-free functions do not register tools, invoke capabilities or grant authority.",
+      "effects": [],
+      "safety": ["actual-runtime-metadata", "no-tool-execution", "no-permission-grant", "catalogue-warning-preserved"],
+      "tests": ["tests/test_mcp_read_transform_extraction.py", "tests/test_component_library_discovery.py"],
+      "used_by": ["bct.component_library"]
+    },
+    {
+      "id": "bct.status_queries",
+      "kind": "module",
+      "maturity": "isolated",
+      "implementation": [
+        {"path": "src/bct/status_queries.py", "symbol": "read_status / read_conversation_network"},
+        {"path": "src/bct/mcp_server.py", "symbol": "bct_status / bct_get_conversation_network (public adapters)"}
+      ],
+      "contract": "Compose status and conversation-network query results with per-call store, principal and snapshot dependencies. Preserve one snapshot read, owned-Work branch attention, compact limits, legacy-store handling, trace context and existing query errors without delivery or capability execution.",
+      "effects": [],
+      "safety": ["single-snapshot", "owner-scoped-branch-attention", "no-new-ledger-write", "source-snapshot-preserved", "no-cross-server-runtime-state"],
+      "tests": ["tests/test_mcp_read_transform_extraction.py", "tests/test_status_views.py"],
+      "used_by": ["bct.chain_recipe"]
+    },
+    {
+      "id": "bct.project_plan_preparation",
+      "kind": "module",
+      "maturity": "isolated",
+      "implementation": [
+        {"path": "src/bct/project_plan.py", "symbol": "prepare_project_plan"},
+        {"path": "src/bct/mcp_server.py", "symbol": "bct_run_plan / bct_set_project_plan (separate persistence adapters)"}
+      ],
+      "contract": "Pure validation and project-context record preparation for an AI-authored project plan. Preparation returns an invalid-input result or prepared arguments; only the existing public adapter separately persists them through the authorized project_context capability. Does not execute the plan.",
+      "effects": [],
+      "safety": ["no-persistence-in-preparer", "existing-validation-order", "unchanged-project-context-payload", "existing-work-operation-approval-gateway"],
+      "tests": ["tests/test_mcp_read_transform_extraction.py", "tests/test_run_plan_network_bootstrap.py"],
+      "used_by": ["bct_set_project_plan", "bct_run_plan", "bct_plan_run"]
     },
     {
       "id": "bct.chain_entry_policy",
@@ -645,6 +688,7 @@
       "maturity": "isolated",
       "implementation": [
         {"path": "src/bct/code_block_scan.py", "symbol": "scan"},
+        {"path": "src/bct/recipes/code_blocks.py", "symbol": "scan_work_code_blocks"},
         {"path": "src/bct/mcp_server.py", "symbol": "scan_code_blocks"}
       ],
       "contract": "Read one Work-scoped source tree and produce a bounded static Block Map, Block Candidates, Refactor Targets, Block Cards, catalog candidates, and ordered work list.",

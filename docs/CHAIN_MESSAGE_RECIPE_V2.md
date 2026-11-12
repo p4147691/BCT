@@ -378,6 +378,13 @@ Chain 전체 구현은 `src/bct/recipes/chain.py`에서 관리한다. 부분 레
 MCP 도구를 등록하지 않는다. 기존 Direction/Watch/Operation 원장과 UNKNOWN 처리 경계를
 그대로 사용하며, 파일 분리 자체가 배포나 LIVE 검증을 뜻하지 않는다.
 
+읽기·변환 경계도 전송 코드와 분리한다. `discovery_views.py`는 실제 도구 메타데이터와
+기존 부품 검색/RCC 목록을 조합하고, `status_queries.py`는 같은 snapshot의 상태와
+저장된 대화망 조회를 담당한다. `project_plan.py`는 프로젝트 계획의 검증과 기록 형식
+변환만 수행하며 저장은 기존 MCP 어댑터의 `project_context` 실행 경로가 맡는다.
+`recipes/code_blocks.py`는 기존 Work 소유권·read·root 검사를 유지한 읽기 전용 스캔
+조합이다. 이 분리는 공개명·입력/출력 계약·기존 효과 순서나 Loop 신규 시작 차단을 바꾸지 않는다.
+
 공개 도구의 입구는 `src/bct/mcp_server.py`에 등록된다. 일부 보존된 공개명은 같은 내부 함수를
 호출하므로 공개명과 내부 함수가 모두 1:1인 것은 아니다. 내부 재사용 함수·파일은 부품 조회의
 `implementation`에서 확인한다. 새 이름을 추측하지 않는다.

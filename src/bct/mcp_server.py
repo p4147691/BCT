@@ -5,7 +5,6 @@ import hashlib
 import hmac
 import math
 import re
-import sqlite3
 import time
 import uuid
 from pathlib import Path
@@ -16,18 +15,16 @@ from starlette.responses import JSONResponse
 
 from .background_operations import BACKGROUND_CAPABILITIES, launch_background_operation
 from .chat_input_queue import ChatInputQueue
-from .chain_entry_policy import public_entry_policy
-from .component_library import discover
-from .code_block_scan import resolve_scan_root, scan as run_code_block_scan
+from .code_block_scan import resolve_scan_root
 from .code_block_organize import plan_block_replacement, prepare_block_apply
-from .conversation_network import (
-    ConversationNetworkError, project_view,
-    resolve_project_id,
-)
 from .core.models import Principal, Work
 from .mcp_catalogue_config import CatalogueSettings
-from .status_views import status_view, STATUS_SCOPES
+from .status_views import status_view
 from .task_message import prepare_task_message_instruction
+from .discovery_views import capability_view, rcc_command_view, rcc_recipe_view
+from .status_queries import read_status, read_conversation_network
+from .project_plan import prepare_project_plan
+from .recipes.code_blocks import scan_work_code_blocks
 
 
 from .trace_timing import TRACE_ID as _MCP_TRACE_ID, trace_stage as _trace_stage
@@ -158,22 +155,13 @@ def build_mcp(
                                include_manual: bool = False, limit: int = 8, offset: int = 0) -> dict[str, Any]:
         started_ns = time.perf_counter_ns()
         tool_metadata = [tool.model_dump(mode="json", exclude_none=True) for tool in await server.list_tools()]
-        from bct.features.rcc import command_catalog
-        value = {
-            "capabilities": list(capabilities),
-            "tools": [tool["name"] for tool in tool_metadata],
-            # The live runtime contract takes precedence over client-cached tool descriptions.
-            "browser_usage": _CAPABILITY_USAGE["browser"],
-            "browser_contract_version": "rcc-browser-command-v2",
-            "browser_public_commands": [item["command"] for item in command_catalog()],
-            "message_entry_policy": public_entry_policy(),
-            **discover(tools=tool_metadata, capabilities=capabilities, usage=_CAPABILITY_USAGE,
-                       query=query, tool_name=tool_name, component_id=component_id,
-                       include_manual=include_manual, limit=limit, offset=offset),
-        }
         settings = getattr(server, "catalogue_settings", None)
-        if settings is not None and settings.last_error:
-            value["catalogue_warning"] = settings.last_error
+        value = capability_view(
+            tool_metadata=tool_metadata, capabilities=capabilities, usage=_CAPABILITY_USAGE,
+            catalogue_warning=settings.last_error if settings is not None else None,
+            query=query, tool_name=tool_name, component_id=component_id,
+            include_manual=include_manual, limit=limit, offset=offset,
+        )
         handler_ms = (time.perf_counter_ns() - started_ns) / 1e6
         _trace_stage(
             "handler_done", tool_kind="capabilities", handler_ms=handler_ms,
@@ -250,80 +238,10 @@ def build_mcp(
         structured_output=True,
     )
     async def bct_status(compact: bool = True, scope: str = "bct", sort_by: str = "number") -> dict[str, Any]:
-        started_ns = time.perf_counter_ns()
-        if status_provider is None:
-            return {"status": "UNAVAILABLE", "reason": "STATUS_PROVIDER_NOT_CONFIGURED"}
-        if scope not in STATUS_SCOPES:
-            return {"status": "INVALID_REQUEST", "reason": "BCT_STATUS_SCOPE_INVALID"}
-        snapshot = await asyncio.to_thread(status_provider)
-        if scope != "bct":
-            return status_view(snapshot, scope, sort_by=sort_by)
-        # The default status is the common current-state block.  Include the
-        # current node projection (network/roles/activity) from the same
-        # snapshot rather than making callers request scope=node separately.
-        from bct.status_views import with_current_node_details
-        snapshot = with_current_node_details(snapshot, sort_by=sort_by)
-        from bct.chain_execution_plan import ChainExecutionPlanLedger
-        execute_plan_checks = await asyncio.to_thread(
-            ChainExecutionPlanLedger.list_latest_execute_plan_checks,
-            store=bct.store, limit=5 if compact else 20,
+        return await read_status(
+            bct, principal_id=principal.principal_id, status_provider=status_provider,
+            browser_usage=_CAPABILITY_USAGE["browser"], compact=compact, scope=scope, sort_by=sort_by,
         )
-        from bct.chain_direction import ChainDirectionLedger
-        pending_chain_starts = await asyncio.to_thread(
-            ChainDirectionLedger.list_pending_chain_starts,
-            store=bct.store, principal_id=principal.principal_id,
-            limit=5 if compact else 20,
-        )
-        # A compact Manager attention list supplements, but never replaces,
-        # the exact root-tree read. It is observation only and does not create
-        # a branch, Direction, Work, Operation, or delivery.
-        from bct.chain_direction import ChainBranchRequestLedger
-        chain_branch_attention = []
-        try:
-            with bct.store._readonly() as db:
-                roots = [str(row[0]) for row in db.execute(
-                    "SELECT work_id FROM works WHERE owner_principal_id=?", (principal.principal_id,)
-                ).fetchall()]
-            for root in roots:
-                tree = await asyncio.to_thread(ChainBranchRequestLedger.tree, store=bct.store, root_work_id=root)
-                chain_branch_attention.extend({"root_work_id": root, **item}
-                                              for item in tree["manager_attention"])
-        except (sqlite3.OperationalError, AttributeError):
-            # Status is a read-only summary even for legacy stores that do not
-            # yet have the additive chain tables.
-            chain_branch_attention = []
-        snapshot = {
-            **snapshot,
-            "execute_plan_checks": execute_plan_checks,
-            # A saved Direction is not a started Chain. Keep that handoff in
-            # the normal Manager status view so it cannot disappear between
-            # Set Direction and the exact start/send boundary.
-            "pending_chain_starts": pending_chain_starts,
-            "chain_branch_attention": chain_branch_attention[:5 if compact else 20],
-        }
-        if compact and isinstance(snapshot.get("monitor"), dict):
-            monitor = dict(snapshot["monitor"])
-            for key in (
-                "works", "operations", "events", "nodes", "connections",
-                "orchestration_sessions", "orchestration_assignments",
-                "github_run_inbox",
-            ):
-                rows = monitor.get(key)
-                if isinstance(rows, list):
-                    monitor[key] = rows[:5]
-            snapshot = {**snapshot, "monitor": monitor, "compact": True}
-        # Always expose the canonical RCC command contract during the required
-        # status preflight; client-side MCP tool metadata may be stale.
-        snapshot = {**snapshot, "browser_usage": _CAPABILITY_USAGE["browser"]}
-        current_trace_id = _MCP_TRACE_ID.get()
-        if current_trace_id is not None:
-            snapshot = {**snapshot, "mcp_trace_id": current_trace_id}
-        handler_ms = (time.perf_counter_ns() - started_ns) / 1e6
-        _trace_stage(
-            "handler_done", tool_kind="status", handler_ms=handler_ms,
-            wait_ms=0.0, execution_ms=handler_ms,
-        )
-        return snapshot
 
     @server.tool(
         description=(
@@ -335,26 +253,7 @@ def build_mcp(
     )
     async def bct_get_conversation_network(project: str) -> dict[str, Any]:
         """Read a user-facing conversation-network view without exposing route UUIDs."""
-        started_ns = time.perf_counter_ns()
-        try:
-            project_id = await asyncio.to_thread(
-                resolve_project_id, bct.store, project_reference=project,
-            )
-            view = await asyncio.to_thread(project_view, bct.store, project_id=project_id)
-        except ConversationNetworkError as exc:
-            reason = str(exc)
-            value = {
-                "status": "NOT_FOUND" if reason == "CONVERSATION_NETWORK_PROJECT_NOT_FOUND" else "INVALID_REQUEST",
-                "reason": reason,
-            }
-        else:
-            value = {"status": "OK", **view}
-        handler_ms = (time.perf_counter_ns() - started_ns) / 1e6
-        _trace_stage(
-            "handler_done", tool_kind="conversation_network_get", handler_ms=handler_ms,
-            wait_ms=0.0, execution_ms=handler_ms,
-        )
-        return value
+        return await read_conversation_network(bct, project=project)
 
     @server.tool(description="Check Conversation Network with read-only current node/RCC evidence, durable active and closed scope directory, current supervisor readiness, and optionally authorized project-context summaries. Does not create plans, conversation networks, or messages.", structured_output=True)
     async def bct_check_conversation_network(project: str = "", sort_by: str = "number", work_id: str = "", operation_id: str = "") -> dict[str, Any]:
@@ -443,18 +342,9 @@ def build_mcp(
         max_bytes_per_file: int = 1_000_000,
         max_blocks: int = 4000,
     ) -> dict[str, Any]:
-        if not hasattr(bct, "store"):
-            raise RuntimeError("CODE_BLOCK_SCAN_STORE_REQUIRED")
-        work = await asyncio.to_thread(bct.store.get_work, work_id)
-        if work.owner_principal_id != principal.principal_id:
-            raise PermissionError("CODE_BLOCK_SCAN_WORK_ACCESS_DENIED")
-        scan_root = resolve_scan_root(work, root)
-        return await asyncio.to_thread(
-            run_code_block_scan,
-            scan_root,
-            max_files=max_files,
-            max_bytes_per_file=max_bytes_per_file,
-            max_blocks=max_blocks,
+        return await scan_work_code_blocks(
+            recipe_runtime, work_id=work_id, root=root, max_files=max_files,
+            max_bytes_per_file=max_bytes_per_file, max_blocks=max_blocks,
         )
 
     @server.tool(
@@ -537,42 +427,15 @@ def build_mcp(
         assumptions: list[str] | None = None,
         approval_ref: str | None = None,
     ) -> dict[str, Any]:
-        import re
-        if not re.fullmatch(r"[A-Za-z0-9_.-]{1,80}", plan_id):
-            return {"status": "INVALID_REQUEST", "reason": "RUN_PLAN_ID_INVALID"}
-        if not project.strip() or not objective.strip() or not acceptance.strip():
-            return {"status": "INVALID_REQUEST", "reason": "RUN_PLAN_REQUIRED_FIELDS"}
-        if not isinstance(steps, list) or not 1 <= len(steps) <= 50:
-            return {"status": "INVALID_REQUEST", "reason": "RUN_PLAN_STEPS_INVALID"}
-        if discretion not in {"limited", "normal", "extended"}:
-            return {"status": "INVALID_REQUEST", "reason": "RUN_PLAN_DISCRETION_INVALID"}
-        checked = []
-        for idx, step in enumerate(steps):
-            if not isinstance(step, dict) or not {"instruction", "acceptance"} <= step.keys():
-                return {"status": "INVALID_REQUEST", "reason": "RUN_PLAN_STEP_INVALID"}
-            instruction = step["instruction"]
-            criterion = step["acceptance"]
-            if not isinstance(instruction, str) or not instruction.strip() or len(instruction) > 4000 or not isinstance(criterion, str) or not criterion.strip() or len(criterion) > 4000:
-                return {"status": "INVALID_REQUEST", "reason": "RUN_PLAN_STEP_INVALID"}
-            checked.append({"text": f"{idx + 1}/{len(steps)}: {instruction} | 완료: {criterion}", "evidence": []})
-        if not isinstance(expected_revision, int) or isinstance(expected_revision, bool) or expected_revision < 0:
-            return {"status": "INVALID_REQUEST", "reason": "RUN_PLAN_REVISION_INVALID"}
-        assumptions = assumptions or []
-        if not isinstance(assumptions, list) or len(assumptions) > 30 or any(not isinstance(x, str) or len(x) > 2000 for x in assumptions):
-            return {"status": "INVALID_REQUEST", "reason": "RUN_PLAN_ASSUMPTIONS_INVALID"}
-        record = {
-            "title": "Run plan " + plan_id, "goal": objective,
-            "scope_note": "Project: " + project + "; discretion: " + discretion,
-            "summary": acceptance, "links": [{"type": "bct_work", "id": work_id}],
-            "items": checked,
-            "decisions": [{"text": "재량: " + discretion, "evidence": []}],
-            "next_actions": [{"text": "가정: " + x, "evidence": []} for x in assumptions],
-            "checkpoints": {"external": {"plan_id": plan_id, "project": project, "stage": "PLANNED"}},
-        }
+        prepared = prepare_project_plan(
+            work_id=work_id, plan_id=plan_id, project=project, objective=objective,
+            acceptance=acceptance, steps=steps, author=author,
+            expected_revision=expected_revision, discretion=discretion, assumptions=assumptions,
+        )
+        if prepared["status"] != "READY":
+            return prepared
         return await make_executor("project_context")(
-            work_id, operation_id, {"operation": "central-save",
-            "project": "run-plan-" + plan_id.lower(), "record": record,
-            "author": author, "expected_revision": expected_revision}, approval_ref
+            work_id, operation_id, prepared["arguments"], approval_ref,
         )
 
     @server.tool(description="Set existing project membership or role tags through the authorized conversation_network_update capability; supports project-upsert, membership-assign and role-patch.", structured_output=True)
@@ -1770,16 +1633,7 @@ def build_mcp(
         structured_output=True,
     )
     async def bct_rcc_command_catalog() -> dict[str, Any]:
-        from bct.features.rcc import command_catalog
-        return {
-            "tool": "bct_browser",
-            "invocation": {
-                "required": ["work_id", "operation_id", "arguments.command"],
-                "note": ("Each command validates its own exact identifiers, target and receipt "
-                         "contract. An UNKNOWN effect is never automatically replayed."),
-            },
-            "commands": command_catalog(),
-        }
+        return rcc_command_view()
 
     @server.tool(
         description=("List RCC Recipe blocks. Each block is an ordered list of public "
@@ -1788,12 +1642,7 @@ def build_mcp(
         structured_output=True,
     )
     async def bct_rcc_recipe_catalog() -> dict[str, Any]:
-        from bct.features.rcc import recipe_catalog
-        return {
-            "tool": "bct_browser",
-            "invocation": {"required": ["work_id", "operation_id", "arguments.command"]},
-            "recipes": recipe_catalog(),
-        }
+        return rcc_recipe_view()
 
     def make_executor(capability: str) -> Callable[..., Coroutine[Any, Any, dict[str, Any]]]:
         async def execute(
