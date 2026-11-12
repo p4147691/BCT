@@ -157,13 +157,11 @@ class PersistentLoopCoordinator:
                 return target, source, observed["latestUserTurnKey"]
             return None
 
-        matches = []
-        candidates = sorted(keys)
-        for offset in range(0, len(candidates), 8):
-            observations = await asyncio.gather(
-                *(asyncio.to_thread(read, key) for key in candidates[offset:offset + 8])
-            )
-            matches.extend(match for match in observations if match)
+        def read_candidates():
+            # The native RCC host serves one pipe request at a time.
+            return [match for key in sorted(keys) if (match := read(key))]
+
+        matches = await asyncio.to_thread(read_candidates)
         if len(matches) != 1:
             reason = "LOOP_START_SOURCE_AMBIGUOUS" if matches else "LOOP_START_SOURCE_NOT_FOUND"
             raise LoopContractError(reason)
