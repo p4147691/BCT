@@ -28,6 +28,7 @@ from .recipes.code_blocks import scan_work_code_blocks
 from .node_recovery_commands import NodeRecoveryCommands
 from .execution_plan_commands import ExecutionPlanCommands
 from .execution_context_queries import read_execution_context
+from .chain_direction_commands import ChainDirectionCommands
 
 
 from .trace_timing import TRACE_ID as _MCP_TRACE_ID, trace_stage as _trace_stage
@@ -664,6 +665,9 @@ def build_mcp(
     def _execution_plan_commands() -> ExecutionPlanCommands:
         return ExecutionPlanCommands(bct.store)
 
+    def _chain_direction_commands() -> ChainDirectionCommands:
+        return ChainDirectionCommands(bct.store, principal_id=principal.principal_id)
+
     @server.tool(
         name="bct_check_node",
         description=(
@@ -800,19 +804,9 @@ def build_mcp(
         structured_output=True,
     )
     async def bct_get_direction(work_id: str, direction_id: str) -> dict[str, Any]:
-        from bct.chain_direction import ChainDirectionLedger
-        try:
-            work = await asyncio.to_thread(bct.store.get_work, work_id)
-        except KeyError:
-            return {"status":"NOT_FOUND","reason":"WORK_NOT_FOUND"}
-        if work.owner_principal_id != principal.principal_id:
-            return {"status":"NOT_FOUND","reason":"WORK_NOT_FOUND"}
-        direction = await asyncio.to_thread(
-            ChainDirectionLedger(bct.store).get, direction_id=direction_id,
+        return await _chain_direction_commands().get_direction(
+            work_id=work_id, direction_id=direction_id,
         )
-        if direction is None or direction.get("work_id") != work.work_id:
-            return {"status":"NOT_FOUND","direction_id":direction_id}
-        return {"status":"OK","chain_direction":direction}
 
     @server.tool(
         name="bct_chain_branch",
@@ -834,43 +828,14 @@ def build_mcp(
         reason: str = "", exact_refs: dict[str, Any] | None = None, required: bool = True,
         state: str = "", next_safe_step: str = "", evidence: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        from bct.chain_direction import ChainBranchRequestLedger
-        if action not in {"request", "report", "tree"}:
-            return {"status": "INVALID_REQUEST", "reason": "CHAIN_BRANCH_ACTION_INVALID"}
-        try:
-            work = await asyncio.to_thread(bct.store.get_work, work_id)
-        except (KeyError, ValueError):
-            return {"status": "NOT_FOUND", "reason": "WORK_NOT_FOUND"}
-        if work.owner_principal_id != principal.principal_id:
-            return {"status": "NOT_FOUND", "reason": "WORK_NOT_FOUND"}
-        if action == "tree":
-            tree = await asyncio.to_thread(
-                ChainBranchRequestLedger.tree, store=bct.store, root_work_id=work.work_id,
-            )
-            return {"status": "OK", "effects": "NONE_READ_ONLY", "chain_tree": tree}
-        ledger = ChainBranchRequestLedger(bct.store)
-        try:
-            if action == "request":
-                branch = await asyncio.to_thread(
-                    ledger.request, request_id=request_id, root_work_id=work.work_id,
-                    parent_work_id=parent_work_id or work.work_id,
-                    parent_direction_id=parent_direction_id, parent_step_id=parent_step_id,
-                    parent_task_id=parent_task_id, parent_generation=parent_generation,
-                    kind=kind, reason=reason, exact_refs=exact_refs, required=required,
-                )
-                return {
-                    "status": "WAITING_INPUT", "branch_request": branch,
-                    "next_safe_step": "MANAGER_REVIEW_BRANCH_REQUEST",
-                    "does_not": ["create_child_direction", "send_message", "create_operation"],
-                }
-            branch = await asyncio.to_thread(
-                ledger.report, request_id=request_id, state=state, reason=reason,
-                next_safe_step=next_safe_step, evidence=evidence,
-            )
-            return {"status": branch["state"], "branch_request": branch,
-                    "next_safe_step": branch["next_safe_step"]}
-        except ValueError as exc:
-            return {"status": "INVALID_REQUEST", "reason": str(exc)}
+        return await _chain_direction_commands().branch(
+            action=action, work_id=work_id, request_id=request_id,
+            parent_work_id=parent_work_id, parent_direction_id=parent_direction_id,
+            parent_step_id=parent_step_id, parent_task_id=parent_task_id,
+            parent_generation=parent_generation, kind=kind, reason=reason,
+            exact_refs=exact_refs, required=required, state=state,
+            next_safe_step=next_safe_step, evidence=evidence,
+        )
 
     @server.tool(
         name="bct_loop_recipe",
