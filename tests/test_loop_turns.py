@@ -180,6 +180,45 @@ class LoopTurnTests(unittest.TestCase):
         self.assertEqual(objective["completion"]["receipt"]["response_turn_key"], "assistant-6")
         self.assertEqual(self.runner.run_once(), [])
 
+    def test_saved_supervisor_return_needs_the_exact_completed_user_turn(self):
+        self.decision(1, OWNER, "handoff")
+        self.reply(1, OWNER)
+        self.prepare(SUPERVISOR)
+        self.decision(2, SUPERVISOR, "return")
+        original = self.turns.status("loop")["turn"]
+        source_sha = _rcc_submitted_text_sha256(self.ops.sends[SUPERVISOR])
+        read = {"ok": True, "conversationKey": SUPERVISOR, "responseTurnCount": 1,
+                "generating": False, "latestUserTurnKey": "new-user",
+                "latestUserSha256": source_sha, "latestUserTextOccurrenceCount": 1,
+                "responseSourceUserTurnKey": "previous-user",
+                "responseSourceUserTextOccurrenceCount": 1}
+        self.responses[SUPERVISOR] = read
+        self.assertEqual(self.runner.run_turn(self.turns.due(4)[0]), "WATCHING")
+        read.update(completedLatestUserTurnKey="new-turn", latestUserSha256="f" * 64)
+        with self.store.transaction() as db:
+            db.execute("UPDATE loop_recipe_turns SET due_at=0 WHERE state='WATCHING'")
+        self.assertEqual(self.runner.run_once()[0]["state"], "WATCHING")
+        read.update(latestUserSha256=source_sha, latestUserTextOccurrenceCount=2)
+        with self.store.transaction() as db:
+            db.execute("UPDATE loop_recipe_turns SET due_at=0 WHERE state='WATCHING'")
+        self.assertEqual(self.runner.run_once()[0]["state"], "WATCHING")
+        read["latestUserTextOccurrenceCount"] = 1
+        with self.store.transaction() as db:
+            db.execute("UPDATE loop_recipe_turns SET due_at=0 WHERE state='WATCHING'")
+        self.runner = self.make_runner()
+        self.assertEqual(self.runner.run_once()[0]["state"], "OBSERVED")
+        status = self.turns.status("loop")
+        self.assertEqual(status["turn"]["conversation_key"], OWNER)
+        self.assertEqual(status["supervisor_return_evidence"]["watch_operation_id"],
+                         original["watch_operation_id"])
+        self.assertEqual(status["supervisor_return_evidence"]["send_operation_id"],
+                         original["send_operation_id"])
+        self.assertEqual(sum(op == original["send_operation_id"] for op, _ in self.ops.calls), 1)
+        self.prepare(OWNER)
+        self.decision(3, OWNER, "complete", condition_evidence={"criterion": "verified"})
+        self.reply(3, OWNER)
+        self.assertEqual(self.turns.status("loop")["objective"]["run_state"], "COMPLETED")
+
     def test_direct_manager_watch_requires_original_user_instruction(self):
         row = self.turns.due()[0]
         with self.store.transaction() as db:

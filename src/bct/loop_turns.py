@@ -6,7 +6,7 @@ import json
 import re
 import time
 
-from bct.core.models import Outcome, Principal
+from bct.core.models import OperationState, Outcome, Principal
 from bct.loop_recipe_contracts import LoopContractError
 from bct.loop_recipe_ledger import LoopRecipeLedger
 from bct.node_recovery import NodeRecoveryLedger, observe_node
@@ -113,9 +113,18 @@ class LoopTurns:
                         (loop_id, plan["turn"], plan["plan_id"], plan["revision"])).fetchone()
                         if plan else None)
             receipts = {}
+            supervisor_return_evidence = None
             for item in (turn, prior):
                 if item is None:
                     continue
+                if item["actor"] == "SUPERVISOR":
+                    watched_return = db.execute("""SELECT context_json FROM delayed_send_watches
+                        WHERE task_id=? AND generation=1 AND source_send_receipt=?""",
+                        (item["watch_id"], item["watch_operation_id"])).fetchone()
+                    if watched_return:
+                        evidence = json.loads(watched_return["context_json"]).get(
+                            "loop_supervisor_return_evidence")
+                        supervisor_return_evidence = supervisor_return_evidence or evidence
                 for operation_id in (item["watch_operation_id"], item["send_operation_id"]):
                     if operation_id:
                         receipt = db.execute("""SELECT operation_id,state,outcome,error
@@ -153,7 +162,7 @@ class LoopTurns:
         result = {"status": "OK", "objective": objective, "turn": self._turn_view(turn),
                   "previous_turn": self._turn_view(prior), "plan": dict(plan) if plan else None,
                   "progress": dict(progress) if progress else None, "receipts": receipts,
-                  "node_recovery": recovery}
+                  "node_recovery": recovery, "supervisor_return_evidence": supervisor_return_evidence}
         if plan:
             result["plan"]["plan"] = json.loads(result["plan"].pop("plan_json"))
         return result
@@ -372,7 +381,7 @@ class LoopTurns:
                     revision=revision+1,updated_at=? WHERE loop_id=?""",
                     (run_state, block, now, row["loop_id"]))
 
-    def observe(self, row, *, turn_key, digest):
+    def observe(self, row, *, turn_key, digest, supervisor_return_evidence=None):
         with self.store.transaction() as db:
             objective = self._objective(db, row["loop_id"])
             self._check_owner(db, objective)
@@ -381,6 +390,16 @@ class LoopTurns:
                 return
             decision = json.loads(current["decision_json"] or "null")
             route = decision["route"] if decision else "blocked"
+            if supervisor_return_evidence is not None:
+                if current["actor"] != "SUPERVISOR" or route != "return":
+                    raise LoopContractError("LOOP_SUPERVISOR_RETURN_REQUIRED")
+                if not db.execute("""UPDATE delayed_send_watches SET
+                    context_json=json_set(context_json,'$.loop_supervisor_return_evidence',json(?))
+                    WHERE task_id=? AND generation=1 AND state='WATCHING'
+                      AND source_send_receipt=?""",
+                    (json.dumps(supervisor_return_evidence), row["watch_id"],
+                     row["watch_operation_id"])).rowcount:
+                    raise LoopContractError("LOOP_WATCH_RECEIPT_MISMATCH")
             state = "BLOCKED" if route == "blocked" else "OBSERVED"
             db.execute("""UPDATE loop_recipe_turns SET state=?,due_at=NULL,response_turn_key=?,
                            response_sha256=? WHERE watch_id=?""", (state, turn_key, digest, row["watch_id"]))
@@ -407,8 +426,11 @@ class LoopTurns:
                 if busy:
                     # Keep the source receipt and retry the atomic transition on the existing cadence.
                     raise LoopContractError("LOOP_TARGET_BUSY")
+                instruction = decision["next_instruction"]
+                if supervisor_return_evidence is not None:
+                    instruction += "\nAfter recording your decision, write a final reply in this chat."
                 self._insert_turn(db, objective, turn=row["turn"] + 1, actor=actor,
-                                  instruction=decision["next_instruction"], source_turn=row["turn"],
+                                  instruction=instruction, source_turn=row["turn"],
                                   delay=decision["delay_seconds"], deliver=True)
                 db.execute("""UPDATE loop_recipe_v2_runs SET state='WAITING',
                     current_block_id='resume',revision=revision+1,updated_at=? WHERE loop_id=?""",
@@ -478,8 +500,53 @@ class LoopTurnRunner:
             self.turns.observe(row, turn_key=observed["response_turn_key"],
                                digest=observed["response_sha256"])
             return "OBSERVED"
+        evidence = self._supervisor_return_evidence(current, watch, objective)
+        if evidence:
+            digest = hashlib.sha256(json.dumps(evidence, sort_keys=True).encode()).hexdigest()
+            self.turns.observe(row, turn_key=evidence["turn_key"], digest=digest,
+                               supervisor_return_evidence=evidence)
+            return "OBSERVED"
         self.turns.update(row, "WATCHING", 4)
         return "WATCHING"
+
+    def _supervisor_return_evidence(self, turn, watch, objective):
+        decision = json.loads(turn["decision_json"] or "{}")
+        if turn["actor"] != "SUPERVISOR" or decision.get("route") != "return":
+            return None
+        context = watch["context"]
+        send_id = turn["send_operation_id"]
+        source_sha = context.get("source_user_sha256") or ""
+        conversation = turn["conversation_key"]
+        instance = context["instance_id"]
+        if (not send_id or context.get("source_proof_kind") != "BCT_PLANNED_SOURCE_SEND"
+                or not re.fullmatch(r"[a-f0-9]{64}", source_sha)
+                or context.get("source_send_sha256") != source_sha):
+            return None
+        work = self.turns.store.get_work(objective["work_id"])
+        receipt = self._original(work, send_id)
+        if (not receipt or receipt.state != OperationState.FINISHED
+                or receipt.outcome != Outcome.APPLIED
+                or any(receipt.evidence.get(key) != value for key, value in {
+                    "command": "send-to-tab", "host_request_id": send_id,
+                    "instance_id": instance, "conversation_key": conversation,
+                    "source_message_sha256": source_sha,
+                }.items())):
+            return None
+        observed = self.service.latest(instance_id=instance, conversation_key=conversation)
+        turn_key = observed.get("completedLatestUserTurnKey")
+        user_turn_key = observed.get("latestUserTurnKey")
+        if (observed.get("ok") is not True or observed.get("conversationKey") != conversation
+                or observed.get("generating") is not False
+                or not isinstance(turn_key, str) or not turn_key.strip()
+                or not isinstance(user_turn_key, str) or not user_turn_key.strip()
+                or observed.get("latestUserSha256") != source_sha
+                or observed.get("latestUserTextOccurrenceCount") != 1):
+            return None
+        return {"kind": "RCC_COMPLETED_TURN_WITH_SAVED_SUPERVISOR_RETURN",
+                "conversation_key": conversation, "turn_key": turn_key,
+                "source_user_turn_key": user_turn_key, "source_user_sha256": source_sha,
+                "send_operation_id": send_id, "watch_operation_id": turn["watch_operation_id"],
+                "decision_sha256": hashlib.sha256(turn["decision_json"].encode()).hexdigest()}
 
     def _check_recovery(self, row, objective):
         work = self.turns.store.get_work(objective["work_id"])
