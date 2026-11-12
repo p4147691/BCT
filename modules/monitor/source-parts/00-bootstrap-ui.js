@@ -225,7 +225,7 @@ monitorRoot.innerHTML = `
 // Presentation-only layout: no controls or identities are recreated.
 const bwmUiLayoutControl = window.MonitorUiLayout?.create?.(
   monitorRoot, chrome.storage, (error) => console.warn("BWM UI layout rejected", error),
-  { onCaptureFallbackChange: () => globalThis.dispatchEvent(new Event("bwm-thumbnail-policy-changed")) }
+  { pollMs: 0, onCaptureFallbackChange: () => globalThis.dispatchEvent(new Event("bwm-thumbnail-policy-changed")) }
 );
 
 // Runtime feature boundaries. Keep these explicit so future isolation does not

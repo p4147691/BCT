@@ -585,7 +585,7 @@ private const string NaverProfileDirectory = @"D:\AI_TOOLS\CHATGPT-NAVER-PROFILE
 
         StartMoveSizeEndEvents();
         StartWallpaperChangeEvents();
-
+        StartDeploymentChangeEvents();
 
 
 
@@ -1277,8 +1277,7 @@ private const string NaverProfileDirectory = @"D:\AI_TOOLS\CHATGPT-NAVER-PROFILE
         catch { return string.Empty; }
     }
 
-    internal static void EmitMonitorEvent(Dictionary<string, object> message)
-    {
+    private static FileSystemWatcher DeploymentWatcher;    private static string FindMonitorManifest()    {        DirectoryInfo cursor = new DirectoryInfo(AppDomain.CurrentDomain.BaseDirectory);        for (int depth = 0; depth < 5 && cursor != null; depth++, cursor = cursor.Parent)        {            string candidate = Path.Combine(cursor.FullName, "extension", "manifest.json");            if (File.Exists(candidate)) return candidate;        }        return null;    }    private static void StartDeploymentChangeEvents()    {        try        {            string manifest = FindMonitorManifest();            if (manifest == null) return;            string extension = Path.GetDirectoryName(manifest);            string token = Path.Combine(extension, ".reload-token");            // Watch the installation root so a guarded extension directory            // swap does not detach the watcher from the next published token.            var watcher = new FileSystemWatcher(Path.GetDirectoryName(extension), ".reload-token");            watcher.IncludeSubdirectories = true;            watcher.NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size;            FileSystemEventHandler changed = (sender, change) =>            {                if (!string.Equals(change.FullPath, token, StringComparison.OrdinalIgnoreCase)) return;                EmitMonitorEvent(new Dictionary<string, object> {                    { "type", "monitorDeploymentChanged" }, { "event", true }                });            };            watcher.Changed += changed;            watcher.Created += changed;            watcher.Renamed += (sender, change) => changed(sender, change);            watcher.EnableRaisingEvents = true;            DeploymentWatcher = watcher;        }        catch (IOException) { }        catch (UnauthorizedAccessException) { }    }    internal static void EmitMonitorEvent(Dictionary<string, object> message)    {
         Stream output = NativeOutput;
         if (output != null) Write(output, message);
     }

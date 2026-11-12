@@ -238,8 +238,7 @@ async function handleMonitorWindowLifecycleEvent(event) {
   if (!desktopId) {
     for (const tile of monitorDesktopThumbs.children) {
       const id=String(tile.dataset.desktopId||"");
-      const visual=tile.querySelector(".monitor-desktop-thumb-visual");
-      if (id&&visual?.isConnected) void refreshDesktopThumb(visual,id).catch(()=>false);
+      if (id) scheduleMonitorV2WindowRefresh({desktopId:id});
     }
     return;
   }
@@ -266,7 +265,7 @@ async function handleMonitorWindowLifecycleEvent(event) {
   // HWND node immediately; the slower WGC refresh runs independently below.
   const eventTile=[...monitorDesktopThumbs.children].find((item)=>String(item.dataset.desktopId||"")===desktopId);
   const eventVisual=eventTile?.querySelector(".monitor-desktop-thumb-visual");
-  globalThis.MonitorDesktopThumbnailV2?.windowEvent?.(eventVisual,desktopId,event);
+  const geometryApplied=globalThis.MonitorDesktopThumbnailV2?.windowEvent?.(eventVisual,desktopId,event);
 
   monitorWindowDesktopLocations.set(hwnd,{...prior,hwnd,desktopId,desktop:monitorDesktopState.desktopIds.indexOf(desktopId)+1,title:String(event.title||prior.title||""),className:String(event.className||prior.className||""),left:Number(event.left),top:Number(event.top),width:Number(event.width),height:Number(event.height),iconic:minimized,iconicLifecycleLocked,visible:event.visible!==false,at:Date.now()});
   syncMonitorMinimizedNodeBadges(monitorLastAiState);
@@ -303,28 +302,28 @@ async function handleMonitorWindowLifecycleEvent(event) {
     return;
   }
 
+  const sameSize = Number(prior.width) === Number(event.width) && Number(prior.height) === Number(event.height);
+  const sameWindow = previousDesktopId === desktopId && prior.title === String(event.title || prior.title || "");
+  if (geometryApplied && sameSize && sameWindow && !prior.iconic && prior.visible !== false &&
+      (reason === "locationchange" || reason === "movesizeend") &&
+      !monitorWindowFrameRefreshes.has(desktopId) && !monitorFrameInflight.size) {
+    invalidateMonitorDesktopFrames(desktopId);
+    return;
+  }
+
   monitorThumbnailService.invalidate(hwnd);
 
   if (previousDesktopId && previousDesktopId!==desktopId) {
-    void actFetch("act:/monitor/node-state/refresh",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"}).then(()=>refreshAiMonitor()).catch(()=>{});
-    await actFetch("act:/monitor/node-state/refresh",{method:"POST"}).catch(()=>null);
-    await refreshAiMonitor().catch(()=>{});
-
     removeMonitorV2Window(hwnd,desktopId);
+    scheduleMonitorV2WindowRefresh({desktopId:previousDesktopId});
 
     scheduleMonitorV2WindowRefresh(event);
+    if (MONITOR_LEGACY_ACT_COMPATIBILITY_ENABLED) {
+      void actFetch("act:/monitor/node-state/refresh",{method:"POST"}).then(()=>refreshAiMonitor()).catch(()=>{});
+    }
 
     return;
 
-  }
-
-  invalidateMonitorDesktopFrames(desktopId);
-
-  const selectedDesktopId=String(monitorDesktopState.desktopIds[monitorDesktopState.selectedIndex]||"");
-  const selectedDesktop=desktopId===selectedDesktopId;
-  if (selectedDesktop) {
-    scheduleMonitorV2WindowRefresh(event);
-    return;
   }
 
   scheduleMonitorV2WindowRefresh(event);

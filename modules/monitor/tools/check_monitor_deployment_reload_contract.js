@@ -9,6 +9,7 @@ const publish = fs.readFileSync(path.join(__dirname, "Publish-MonitorDeployment.
 const request = fs.readFileSync(path.join(__dirname, "Request-MonitorDeploymentCheck.ps1"), "utf8");
 const installedRuntime = fs.readFileSync(path.join(__dirname, "check_monitor_installed_runtime.py"), "utf8");
 const structure = fs.readFileSync(path.join(__dirname, "check_monitor_structure.py"), "utf8");
+const native = fs.readFileSync(path.join(root, "native", "src", "MonitorDesktopHost.cs"), "utf8");
 
 const start = monitor.indexOf("async function checkMonitorDeploymentUpdate()");
 const end = monitor.indexOf("// Desktop selection is synchronized", start);
@@ -26,8 +27,10 @@ assert.match(update, /monitorInitialThumbBatchDone[\s\S]*?ackExtensionReload/,
   "reload ACK must wait for the initial thumbnail acceptance gate");
 assert.match(update, /monitorReloadAckToken !== reloadToken/,
   "the same accepted reload token is acknowledged at most once per runtime");
-assert.match(monitor, /setInterval\(\(\) => \{[\s\S]*?checkMonitorDeploymentUpdate\(\)[\s\S]*?\}, 2000\)/,
-  "the owned Monitor must observe gate-published ordinary-Chat tokens without focus or DevTools");
+assert.match(native, /new FileSystemWatcher\([^\n]+".reload-token"\)/);
+assert.match(native, /"type", "monitorDeploymentChanged"/);
+assert.match(monitor, /response\?\.type === "monitorDeploymentChanged"[\s\S]{0,250}checkMonitorDeploymentUpdate\(\)/,
+  "the owned Monitor must observe gate-published tokens without polling or focus");
 
 for (const source of [publish, request]) {
   assert.match(source, /shared-runtime\.json/);

@@ -16,8 +16,8 @@ assert.match(body,/MonitorDesktopThumbnailV2\?\.windowEvent\?\.\(eventVisual,des
   "native location data must update the V2 HWND geometry directly");
 assert.doesNotMatch(body,/await\s+refreshSelectedThumb\s*\(/,
   "a location event must not wait for a full selected-desktop WGC refresh");
-assert.match(body,/if\s*\(selectedDesktop\)\s*\{\s*scheduleMonitorV2WindowRefresh\(event\)/,
-  "selected-desktop pixels must refresh in the independent coalesced path");
+assert.match(body,/if \(geometryApplied && sameSize && sameWindow[\s\S]*?return;[\s\S]*?scheduleMonitorV2WindowRefresh\(event\)/,
+  "a move can retain existing pixels, while an actual pixel change still schedules a refresh");
 const missingId=body.slice(body.indexOf("if (!desktopId)"),body.indexOf("const previousDesktopId"));
 assert.doesNotMatch(missingId,/await\s+refreshDesktopThumb/,
   "an unidentified event must not serialize every desktop behind full capture");

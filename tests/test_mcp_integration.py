@@ -499,6 +499,14 @@ class MCPIntegrationTests(unittest.TestCase):
         self.assertEqual(1, roster_revision_view["schema"])
         self.assertEqual("READ_ONLY_MONITOR_ROSTER_REVISION", roster_revision_view["source"])
         self.assertRegex(roster_revision_view["revision"], r"^[a-f0-9]{64}$")
+        roster_events_url = f"http://127.0.0.1:{self.port}/monitor/roster-events"
+        self.assertEqual(httpx.get(roster_events_url, timeout=3).status_code, 403)
+        event_headers = {"X-BCT-Monitor-Events": "1"}
+        self.assertEqual(httpx.get(roster_events_url, headers={**event_headers, "Origin": "https://example.com"},
+                                   timeout=3).status_code, 403)
+        with httpx.stream("GET", roster_events_url, headers=event_headers, timeout=3) as event_stream:
+            self.assertEqual(event_stream.status_code, 200)
+            self.assertEqual(next(event_stream.iter_lines()), "data: changed")
 
         current_nodes = httpx.get(f"http://127.0.0.1:{self.port}/monitor/current-nodes", timeout=3)
         self.assertEqual(200, current_nodes.status_code)

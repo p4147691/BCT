@@ -173,10 +173,13 @@
     let pendingVersion = 0;
     let inflight = null;
     let pollTimer = null;
+    let applied = false;
 
     function apply(raw) {
       if (disposed) return copy(state);
       const next = normalize(raw);
+      if (applied && JSON.stringify(state) === JSON.stringify(next)) return copy(state);
+      applied = true;
       const parent = next.toolbar.placement === "inline" ? titleLine : titleBlock;
       parent.appendChild(toolbar);
       root.classList.toggle("bwm-ui-layout-inline", next.toolbar.placement === "inline");

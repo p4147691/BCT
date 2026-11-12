@@ -2437,9 +2437,28 @@ function scheduleMonitorV2WindowRefresh(event) {
   const tile=[...monitorDesktopThumbs.children].find(t=>String(t.dataset.desktopId||"")===id);
   const visual=tile?.querySelector(".monitor-desktop-thumb-visual");
   if (!visual?.isConnected || !globalThis.MonitorDesktopThumbnailV2) return false;
-  // Source of pixels remains getDesktopVisualSnapshot/captureDesktopFrame only.
-  // Never accept the old event's thumbnail-service snapshot, SVG or cache.
-  void refreshDesktopThumb(visual,id).catch(()=>false);
+  let refresh = monitorWindowFrameRefreshes.get(id);
+  if (refresh) {
+    if (refresh.running) refresh.pending = true;
+    return true;
+  }
+  refresh = { running:false, pending:false };
+  monitorWindowFrameRefreshes.set(id, refresh);
+  setTimeout(async () => {
+    try {
+      do {
+        refresh.running = true;
+        refresh.pending = false;
+        const currentTile = [...monitorDesktopThumbs.children].find(tile => tile.dataset.desktopId === id);
+        const currentVisual = currentTile?.querySelector(".monitor-desktop-thumb-visual");
+        if (!currentVisual?.isConnected) return;
+        invalidateMonitorDesktopFrames(id);
+        await refreshDesktopThumb(currentVisual, id).catch(() => false);
+      } while (refresh.pending);
+    } finally {
+      monitorWindowFrameRefreshes.delete(id);
+    }
+  }, 90);
   return true;
 }
 //@@FN_END:scheduleMonitorV2WindowRefresh

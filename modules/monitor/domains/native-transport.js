@@ -54,6 +54,11 @@ function ensureMonitorNativePort() {
   port.onMessage.addListener((response) => {
 
     if (response?.event === true && response?.type === "windowMoveSizeEnd") { scheduleMonitorWindowLifecycleEvent(response); return; }
+    if (response?.event === true && response?.type === "monitorDeploymentChanged") {
+      clearTimeout(monitorDeploymentEventTimer);
+      monitorDeploymentEventTimer = setTimeout(() => void checkMonitorDeploymentUpdate(), 100);
+      return;
+    }
     if (response?.event === true && response?.type === "externalWindowDropFinished") { void handleMonitorExternalWindowDropFinished(response); return; }
     if (response?.event === true && response?.type === "windowForegroundChanged") { handleMonitorForegroundChangedEvent(response); return; }
     if (response?.event === true && response?.type === "desktopWallpaperChanged") {

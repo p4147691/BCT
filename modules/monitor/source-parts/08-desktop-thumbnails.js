@@ -236,6 +236,7 @@ let monitorReloadAckToken = "";
 let monitorDeploymentReloadRequested = false;
 
 /*@@MONITOR_FUNCTION:checkMonitorDeploymentUpdate@@*/
+let monitorDeploymentEventTimer = 0;
 
 // Desktop selection is synchronized through the Native shared selection state so
 
@@ -274,13 +275,6 @@ if (MONITOR_ACTIVE_STARTUP_ENABLED) {
   void refreshWindowsCurrentState();
   checkMonitorDeploymentUpdate();
 
-  // Ordinary Chat can request the same bounded reload token used by the
-  // deployment path without focusing this window or using DevTools.  The
-  // function is re-entrancy guarded and the native read is intentionally
-  // low-frequency; only a changed, gate-published token can cause a reload.
-  globalThis.setInterval(() => {
-    void checkMonitorDeploymentUpdate();
-  }, 2000);
 }
 
 // Lightweight endpoint/node-state refresh keeps same-tab conversation changes responsive
@@ -337,6 +331,7 @@ window.addEventListener("focus", () => {
 
   void refreshMonitorBctStatus();
   void refreshMonitorBctWindowNodes();
+  void bwmUiLayoutControl?.refreshRemote();
 
   void refreshWindowsCurrentState();
 
