@@ -68,6 +68,28 @@ class PersistentLoopCoordinator:
             runtime.bct.store, principal_id=runtime.principal.principal_id,
         )
 
+    def _receipt(self, *, work: Any, operation_id: str,
+                 capability: str) -> dict[str, Any] | None:
+        """Read one exact owned receipt before considering an external effect."""
+        from bct.core.models import ConflictError
+        try:
+            metadata = self.runtime.bct.store.get_operation_metadata_for(
+                operation_id=operation_id, work_id=work.work_id,
+                principal_id=work.owner_principal_id,
+            )
+            if metadata.get("capability") != capability:
+                raise LoopContractError("LOOP_SUPERVISOR_RECEIPT_CAPABILITY_MISMATCH")
+            value = self.runtime.bct.store.get_operation_for(
+                operation_id=operation_id, work_id=work.work_id,
+                principal_id=work.owner_principal_id,
+            ).as_dict()
+            value["duplicate"] = True
+            return value
+        except KeyError:
+            return None
+        except ConflictError as exc:
+            raise LoopContractError("LOOP_SUPERVISOR_RECEIPT_FOREIGN") from exc
+
     def verify_topology_endpoints(self, manager_conversation_key: str,
                                   supervisor_conversation_key: str) -> dict[str, Any]:
         """Verify exact live A/S identities before a new Loop is recorded."""
@@ -129,7 +151,7 @@ class PersistentLoopCoordinator:
         receipts and binds a zero-response baseline.  Reusing the same BCT
         operation IDs reads their receipts; it never creates or sends again.
         """
-        self.commands._owned_work(work_id)
+        work = self.commands._owned_work(work_id)
         if self.runtime.status_provider is None:
             raise LoopContractError("LOOP_FRESH_STATUS_REQUIRED")
         from bct.node_recovery import observe_node
@@ -162,12 +184,16 @@ class PersistentLoopCoordinator:
         }
         if create_command == "create-chat-tab":
             create_args["window_id"] = window_id
-        try:
-            created = await browser(work_id, create_operation_id, create_args)
-        except Exception:
-            return {"status": "SUPERVISOR_CREATION_UNKNOWN",
-                    "operation_id": create_operation_id,
-                    "warning": "RECONCILE_ORIGINAL_RECEIPT_NO_REPLAY"}
+        created = self._receipt(
+            work=work, operation_id=create_operation_id, capability="browser",
+        )
+        if created is None:
+            try:
+                created = await browser(work_id, create_operation_id, create_args)
+            except Exception:
+                return {"status": "SUPERVISOR_CREATION_UNKNOWN",
+                        "operation_id": create_operation_id,
+                        "warning": "RECONCILE_ORIGINAL_RECEIPT_NO_REPLAY"}
         if created.get("outcome") != "APPLIED":
             return {"status": "SUPERVISOR_CREATION_" + str(created.get("outcome") or "UNKNOWN"),
                     "creation": created, "warning": "NO_UNKNOWN_REPLAY"}
@@ -180,15 +206,19 @@ class PersistentLoopCoordinator:
             return {"status": "WAITING_FOR_SUPERVISOR_TAB", "creation": created,
                     "warning": "REUSE_SAME_OPERATION_IDS_NO_REPLAY"}
         outgoing, contract_appended = loop_delivery_text(bootstrap_text)
-        try:
-            sent = await browser(work_id, send_operation_id, {
-                "command": "send-message", **attachment, "conversation_key": "",
-                "create_operation_id": create_operation_id, "text": outgoing,
-            })
-        except Exception:
-            return {"status": "SUPERVISOR_SEND_UNKNOWN", "creation": created,
-                    "operation_id": send_operation_id,
-                    "warning": "RECONCILE_ORIGINAL_RECEIPT_NO_REPLAY"}
+        sent = self._receipt(
+            work=work, operation_id=send_operation_id, capability="browser",
+        )
+        if sent is None:
+            try:
+                sent = await browser(work_id, send_operation_id, {
+                    "command": "send-message", **attachment, "conversation_key": "",
+                    "create_operation_id": create_operation_id, "text": outgoing,
+                })
+            except Exception:
+                return {"status": "SUPERVISOR_SEND_UNKNOWN", "creation": created,
+                        "operation_id": send_operation_id,
+                        "warning": "RECONCILE_ORIGINAL_RECEIPT_NO_REPLAY"}
         if sent.get("outcome") != "APPLIED":
             return {"status": "SUPERVISOR_SEND_" + str(sent.get("outcome") or "UNKNOWN"),
                     "creation": created, "send": sent, "warning": "NO_UNKNOWN_REPLAY"}
@@ -201,44 +231,53 @@ class PersistentLoopCoordinator:
             return {"status": "WAITING_FOR_SUPERVISOR_IDENTITY", "creation": created,
                     "send": sent, "supervisor_conversation_key": supervisor_key,
                     "warning": "REUSE_SAME_OPERATION_IDS_NO_REPLAY"}
-        try:
-            watched = await browser(work_id, watch_operation_id, {
-                "command": "send-delayed-message", "task_id": task_id,
-                "instance_id": instance_id, "conversation_key": supervisor_key,
-                "manager_conversation_key": manager_conversation_key,
-                "manager_instance_id": manager_attachment["instance_id"],
-                "planned_send_operation_id": send_operation_id,
-                "planned_send_text": outgoing,
-                "bootstrap_create_operation_id": create_operation_id,
-                "watched_session_id": attachment["session_id"],
-                "watched_tab_id": attachment["tab_id"],
-                "watched_window_id": attachment["window_id"],
-            })
-        except Exception:
-            return {"status": "SUPERVISOR_WATCH_UNKNOWN", "creation": created,
-                    "send": sent, "operation_id": watch_operation_id,
-                    "warning": "RECONCILE_ORIGINAL_RECEIPT_NO_REPLAY"}
+        watched = self._receipt(
+            work=work, operation_id=watch_operation_id, capability="browser",
+        )
+        if watched is None:
+            try:
+                watched = await browser(work_id, watch_operation_id, {
+                    "command": "send-delayed-message", "task_id": task_id,
+                    "instance_id": instance_id, "conversation_key": supervisor_key,
+                    "manager_conversation_key": manager_conversation_key,
+                    "manager_instance_id": manager_attachment["instance_id"],
+                    "planned_send_operation_id": send_operation_id,
+                    "planned_send_text": outgoing,
+                    "bootstrap_create_operation_id": create_operation_id,
+                    "watched_session_id": attachment["session_id"],
+                    "watched_tab_id": attachment["tab_id"],
+                    "watched_window_id": attachment["window_id"],
+                })
+            except Exception:
+                return {"status": "SUPERVISOR_WATCH_UNKNOWN", "creation": created,
+                        "send": sent, "operation_id": watch_operation_id,
+                        "warning": "RECONCILE_ORIGINAL_RECEIPT_NO_REPLAY"}
         if watched.get("outcome") != "APPLIED":
             return {"status": "SUPERVISOR_WATCH_" + str(watched.get("outcome") or "UNKNOWN"),
                     "creation": created, "send": sent, "watch": watched,
                     "warning": "NO_UNKNOWN_REPLAY"}
         from bct.conversation_network import role_tags_sha256
         network = self.runtime.make_executor("conversation_network_update")
-        try:
-            registered = await network(work_id, register_operation_id, {
-                "operation": "set-node-info", "conversation_key": supervisor_key,
-                # Registration deliberately stays unassigned.  The later
-                # topology action creates the exact requested Loop project and
-                # moves both endpoints into it using explicit CAS values.
-                "display_name": display_name.strip(), "scope_name": "",
-                "role_tags": [LOOP_SUPERVISOR_ROLE], "expected_scope_id": "",
-                "expected_role_tags_sha256": role_tags_sha256([]),
-                "assigned_task": task_id,
-            })
-        except Exception:
-            return {"status": "SUPERVISOR_REGISTRATION_UNKNOWN", "creation": created,
-                    "send": sent, "watch": watched, "operation_id": register_operation_id,
-                    "warning": "RECONCILE_ORIGINAL_RECEIPT_NO_REPLAY"}
+        registered = self._receipt(
+            work=work, operation_id=register_operation_id,
+            capability="conversation_network_update",
+        )
+        if registered is None:
+            try:
+                registered = await network(work_id, register_operation_id, {
+                    "operation": "set-node-info", "conversation_key": supervisor_key,
+                    # Registration deliberately stays unassigned.  The later
+                    # topology action creates the exact requested Loop project and
+                    # moves both endpoints into it using explicit CAS values.
+                    "display_name": display_name.strip(), "scope_name": "",
+                    "role_tags": [LOOP_SUPERVISOR_ROLE], "expected_scope_id": "",
+                    "expected_role_tags_sha256": role_tags_sha256([]),
+                    "assigned_task": task_id,
+                })
+            except Exception:
+                return {"status": "SUPERVISOR_REGISTRATION_UNKNOWN", "creation": created,
+                        "send": sent, "watch": watched, "operation_id": register_operation_id,
+                        "warning": "RECONCILE_ORIGINAL_RECEIPT_NO_REPLAY"}
         return {
             "status": "READY" if registered.get("outcome") == "APPLIED"
                       else "SUPERVISOR_REGISTRATION_" + str(registered.get("outcome") or "UNKNOWN"),

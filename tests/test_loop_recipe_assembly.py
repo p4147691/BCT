@@ -527,6 +527,79 @@ class PersistentLoopAssemblyTests(unittest.TestCase):
             self.assertEqual(assigned["project_id"], "loop-network-16")
             self.assertEqual(assigned["role_tags"], [LOOP_SUPERVISOR_ROLE])
 
+    def test_supervisor_reentry_reads_exact_receipts_before_effect_executor(self):
+        async def scenario():
+            manager_key = "11111111-1111-1111-1111-111111111111"
+            supervisor_key = "22222222-2222-2222-2222-222222222222"
+            instance_id, session_id = "instance-17", "b" * 32
+            snapshot = {"monitor": {
+                "current_nodes": {"observed_at": 1,
+                    "observation": {"state": "FRESH"}, "items": [
+                        {"conversation_uuid": manager_key, "status": "CONFIRMED",
+                         "generating": False, "connection": {"disconnected": False}},
+                        {"conversation_uuid": supervisor_key, "status": "CONFIRMED",
+                         "generating": False, "connection": {"disconnected": False}},
+                    ]},
+                "rcc": {"instances": [{"instance_id": instance_id,
+                    "session_id": session_id, "state": "OPEN", "cached": False,
+                    "tabs": [
+                        {"tab_id": 1, "window_id": 7,
+                         "conversation_key": manager_key},
+                        {"tab_id": 9, "window_id": 7,
+                         "conversation_key": supervisor_key},
+                    ]}]},
+            }}
+            with tempfile.TemporaryDirectory() as directory:
+                store = Store(Path(directory) / "state.sqlite")
+                store.create_work(Work(
+                    "work-17", "loop fixture", (),
+                    frozenset({"browser", "conversation_network_update"}), "owner-17",
+                ))
+                receipts = [
+                    ("create-supervisor-17", "browser", {"created_tab_id": 9}),
+                    ("send-supervisor-17", "browser",
+                     {"conversation_key": supervisor_key}),
+                    ("watch-supervisor-17", "browser",
+                     {"command": "send-delayed-message", "task_id": "supervisor-task-17"}),
+                ]
+                with store.transaction() as db:
+                    for operation_id, capability, evidence in receipts:
+                        db.execute(
+                            "INSERT INTO operations(operation_id,work_id,principal_id,request_digest,"
+                            "capability,target,state,outcome,evidence_json,error,assignment_epoch,"
+                            "policy_revision,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                            (operation_id, "work-17", "owner-17", operation_id, capability,
+                             instance_id, "FINISHED", "APPLIED", json.dumps(evidence), None,
+                             1, "test", 1.0, 1.0),
+                        )
+                calls = []
+                async def execute(work_id, operation_id, arguments):
+                    calls.append((operation_id, arguments.copy()))
+                    return {"operation_id": operation_id, "state": "FINISHED",
+                            "outcome": "APPLIED", "evidence": {}}
+                runtime = PersistentLoopRuntime(
+                    bct=type("Bct", (), {"store": store})(),
+                    principal=Principal("owner-17", "test", frozenset()),
+                    status_provider=lambda: snapshot,
+                    make_executor=lambda capability: execute,
+                )
+                result = await PersistentLoopCoordinator(runtime).prepare_supervisor(
+                    work_id="work-17", manager_conversation_key=manager_key,
+                    network_project_id="loop-network-17", instance_id=instance_id,
+                    create_operation_id="create-supervisor-17",
+                    send_operation_id="send-supervisor-17",
+                    watch_operation_id="watch-supervisor-17",
+                    register_operation_id="register-supervisor-17",
+                    task_id="supervisor-task-17", bootstrap_text="Supervise the Loop.",
+                    display_name="Loop Supervisor 17", scope_name="Loop 17", window_id=7,
+                )
+                self.assertEqual(result["status"], "READY")
+                self.assertEqual([item[0] for item in calls], ["register-supervisor-17"])
+                for stage in ("creation", "send", "watch"):
+                    self.assertTrue(result[stage]["duplicate"])
+
+        asyncio.run(scenario())
+
     def test_loop_recovery_adapter_reuses_check_recheck_and_pause_without_chain_mutation(self):
         async def scenario():
             key = "44444444-4444-4444-4444-444444444444"

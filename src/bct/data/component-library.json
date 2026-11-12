@@ -1,6 +1,6 @@
 {
   "schema": "bct.component-library.bundle.v1",
-  "source_fingerprint": "1bdfc4e22226e7bac0fe18037e6de789bbe0e60e1bea7501b3e76913686227c5",
+  "source_fingerprint": "a56c29c9195ba2b2d8e646fb4c02606a484ed967c63cb752b8e873ba75fb05c8",
   "source_hashes": {
     "docs/CHAIN_MESSAGE_RECIPE_V2.md": "c902e0ce4dceab1ed34b08f1f2b349aafed49c7862a23837094dd907fc36e4db",
     "docs/component-library.v1.json": "8d79f89533e605f1d8f9a93f251bdbf96b9dd8aa5f4038ecd4607a158f489abe",
@@ -49,7 +49,7 @@
     "src/bct/mcp_server.py": "897a4deb745d52fdbc9f1bf41dfbfbf1965674ce332b1552dd27c71f1ae43602",
     "src/bct/node_recovery.py": "1c84150ae1af8cc285432565097ac071a2af6c4b2534f1d19ac7f75d7bec2438",
     "src/bct/persistent_loop_recovery.py": "4508fdeeab8a960c16c4ca131476afc896ad46449298652fa7a24224e173c8bf",
-    "src/bct/persistent_loop_runtime.py": "964c7d1ba767ec64ad644145f20f8d8c4f72f305f87c3543fbe327087b01b301",
+    "src/bct/persistent_loop_runtime.py": "dbfd18ebb4bc482247b1d4c7375e2034e48bf8389cadabc442c2baeb6996fa71",
     "src/bct/project_plan.py": "8a2314e2227c590eb2af2a8e61b0281f2659c55c563825fc3436d31486999f95",
     "src/bct/recipes/__init__.py": "ed6578c117db9d5656e09858e4db6d15195802de93f9780090420213568ebd4a",
     "src/bct/recipes/chain.py": "e6a5dbf231053ca23495046f18a719f4ae93bbbb778bf7e5ef53f7db519c643c",
