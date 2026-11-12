@@ -14,11 +14,14 @@ import re
 from dataclasses import dataclass
 from typing import Any, Callable, Coroutine
 
-from bct.core.models import Principal
+from bct.core.models import PreconditionError, Principal
 from bct.loop_recipe_contracts import LoopContractError
 from bct.loop_recipe_flow import LinkKind
+from bct.loop_self_dispatch import LoopSelfDispatcher
+from bct.loop_store import LoopStateError
 from bct.persistent_loop_commands import PersistentLoopCommands
 from bct.loop_turns import LoopTurns
+from bct.send_delayed_message import SendDelayedMessageService, _rcc_submitted_text_sha256
 
 
 CapabilityExecutor = Callable[..., Coroutine[Any, Any, dict[str, Any]]]
@@ -108,6 +111,122 @@ class PersistentLoopCoordinator:
         return {"manager": manager, "supervisor": supervisor,
                 "effects": "NONE_READ_ONLY"}
 
+    async def resolve_start_manager(self, instruction: str) -> tuple[dict, str, str]:
+        """Bind one live RCC user turn by exact text, independent of tab focus."""
+        from bct.integrations.rcc import RelayEffectUnknown, RelayUnavailable
+        from bct.status_views import status_view
+
+        if not self.runtime.status_provider:
+            raise LoopContractError("LOOP_FRESH_STATUS_REQUIRED")
+        snapshot = await asyncio.to_thread(self.runtime.status_provider)
+        roster = status_view(snapshot, "node").get("current_nodes", {})
+        if (roster.get("observation", {}).get("state") != "FRESH"
+                or roster.get("unavailable_instances", 0)):
+            raise LoopContractError("LOOP_START_SOURCE_UNAVAILABLE")
+        keys = {node.get("conversation_uuid") for node in roster.get("items", [])
+                if node.get("generating") is True
+                and _UUID.fullmatch(node.get("conversation_uuid") or "")}
+        if len(keys) > 8:
+            raise LoopContractError("LOOP_START_SOURCE_TOO_MANY_ACTIVE_CHATS")
+        operations = self.runtime.bct.operations
+        service = SendDelayedMessageService(
+            store=self.runtime.bct.store, operations=operations,
+            browser_feature=operations._features["browser"],
+        )
+        texts = {_rcc_submitted_text_sha256(instruction): instruction}
+        if not instruction.startswith("BCT Control "):
+            rendered = "BCT Control " + instruction
+            texts[_rcc_submitted_text_sha256(rendered)] = rendered
+
+        def read(key):
+            try:
+                target = LoopSelfDispatcher.exact_route(snapshot, key, require_idle=False)
+                observed = service.latest(
+                    instance_id=target["instance_id"], conversation_key=key,
+                    expected_attachment=(target["session_id"], target["tab_id"], target["window_id"]),
+                )
+            except (LoopStateError, PreconditionError, RelayUnavailable, RelayEffectUnknown, ValueError):
+                raise LoopContractError("LOOP_START_SOURCE_UNAVAILABLE") from None
+            if observed.get("ok") is not True or observed.get("conversationKey") != key:
+                raise LoopContractError("LOOP_START_SOURCE_UNAVAILABLE")
+            source = texts.get(observed.get("latestUserSha256"))
+            if (source and observed.get("latestUserTurnKey")
+                    and observed.get("latestUserTextOccurrenceCount") == 1
+                    and not observed.get("completedLatestUserTurnKey")):
+                return target, source, observed["latestUserTurnKey"]
+            return None
+
+        matches = [match for match in await asyncio.gather(
+            *(asyncio.to_thread(read, key) for key in sorted(keys))
+        ) if match]
+        if len(matches) != 1:
+            reason = "LOOP_START_SOURCE_AMBIGUOUS" if matches else "LOOP_START_SOURCE_NOT_FOUND"
+            raise LoopContractError(reason)
+        return matches[0]
+
+    async def start_from_chat(self, *, work_id, instruction, direction, overall_plan, conditions):
+        work = self.commands._owned_work(work_id)
+        if not all((instruction.strip(), direction.strip(), overall_plan.strip(), conditions)):
+            raise LoopContractError("LOOP_START_PLAN_REQUIRED")
+        if max(len(instruction.strip()), len(direction.strip())) > 12000:
+            raise LoopContractError("LOOP_CONTEXT_TOO_LONG")
+        LoopTurns.validate_plan(overall_plan, conditions)
+        manager, source, turn_key = await self.resolve_start_manager(instruction.strip())
+        if len(source) > 12000:
+            raise LoopContractError("LOOP_CONTEXT_TOO_LONG")
+        manager_key = manager["conversation_key"]
+        suffix = hashlib.sha256(json.dumps(
+            [work_id, manager_key, turn_key, _rcc_submitted_text_sha256(source)]
+        ).encode()).hexdigest()[:32]
+        loop_id, task_id, project_id = (f"loop-{kind}-{suffix}" for kind in ("run", "task", "project"))
+        turns = LoopTurns(self.runtime.bct.store)
+        saved = await asyncio.to_thread(self.commands.status, loop_id=loop_id)
+        if saved.get("context"):
+            supervisor_key = saved["context"]["supervisor_conversation_key"]
+        else:
+            with self.runtime.bct.store._readonly() as db:
+                pending = db.execute("""SELECT 1 FROM loop_recipe_supervisor_preparations
+                    WHERE work_id=? AND network_project_id=?""", (work_id, project_id)).fetchone()
+            discovery = None
+            if not pending:
+                discovery = await asyncio.to_thread(
+                    self.discover_supervisor, manager_key, verified_active_manager=True,
+                )
+            if pending or discovery["status"] == "SUPERVISOR_NOT_FOUND":
+                discovery = await self.prepare_supervisor(
+                    work_id=work_id, manager_conversation_key=manager_key,
+                    network_project_id=project_id, instance_id=manager["instance_id"],
+                    create_operation_id=f"loop-s-create-{suffix}",
+                    send_operation_id=f"loop-s-send-{suffix}",
+                    watch_operation_id=f"loop-s-watch-{suffix}",
+                    register_operation_id=f"loop-s-register-{suffix}",
+                    task_id=f"loop-s-task-{suffix}",
+                    bootstrap_text="You are the BCT LOOP Supervisor. Verify the Manager's work "
+                                   "against its stored completion conditions when asked. Reply READY.",
+                    display_name="LOOP Supervisor", scope_name="LOOP",
+                    window_id=manager["window_id"], verified_active_manager=True,
+                )
+            if discovery["status"] != "READY":
+                return discovery
+            supervisor_key = discovery["supervisor_conversation_key"]
+        context = self.commands.ledger.context_values(
+            source, direction, manager_key, supervisor_key, project_id,
+        )
+        started = await asyncio.to_thread(
+            turns.start, work=work, loop_id=loop_id, task_id=task_id, context=context,
+            overall_plan=overall_plan, conditions=conditions,
+        )
+        if started["turn"] is not None:
+            return started
+        topology = await self.configure_topology(
+            loop_id=loop_id, project_operation_id=f"loop-project-op-{suffix}",
+            manager_operation_id=f"loop-manager-op-{suffix}", supervisor_operation_id="",
+            display_name="LOOP " + suffix[:8],
+        )
+        if topology["status"] != "READY":
+            return {**topology, "loop_id": loop_id}
+        return await asyncio.to_thread(turns.arm, loop_id, manager_key)
+
     def _attachment(self, *, instance_id: str = "", tab_id: int = 0,
                     conversation_key: str = "") -> dict[str, Any] | None:
         """Resolve one fresh RCC attachment without choosing a fallback node."""
@@ -136,7 +255,9 @@ class PersistentLoopCoordinator:
                 })
         return matches[0] if len(matches) == 1 else None
 
-    def discover_supervisor(self, manager_conversation_key: str) -> dict[str, Any]:
+    def discover_supervisor(
+        self, manager_conversation_key: str, *, verified_active_manager: bool = False,
+    ) -> dict[str, Any]:
         from bct.node_recovery import observe_node
         from bct.status_views import status_view
 
@@ -145,7 +266,9 @@ class PersistentLoopCoordinator:
         view = status_view(self.runtime.status_provider(), "node")
         roster = view.get("current_nodes", {})
         manager = observe_node(view, manager_conversation_key)
-        if manager.get("result") != "OK" or roster.get("observation", {}).get("state") != "FRESH":
+        manager_ready = (manager.get("result") == "OK" or
+                         verified_active_manager and manager.get("reason") == "NODE_GENERATING")
+        if not manager_ready or roster.get("observation", {}).get("state") != "FRESH":
             raise LoopContractError("LOOP_MANAGER_IDENTITY_UNVERIFIED")
         if roster.get("unavailable_instances", 0):
             raise LoopContractError("LOOP_SUPERVISOR_AVAILABILITY_UNVERIFIED")
@@ -175,6 +298,7 @@ class PersistentLoopCoordinator:
         register_operation_id: str, task_id: str, bootstrap_text: str,
         display_name: str, scope_name: str, create_command: str = "create-chat-tab",
         window_id: int = 0,
+        verified_active_manager: bool = False,
     ) -> dict[str, Any]:
         """Create and bind one missing Supervisor through existing BCT effects.
 
@@ -194,7 +318,9 @@ class PersistentLoopCoordinator:
             manager_conversation_key,
         )
         manager_attachment = self._attachment(conversation_key=manager_conversation_key)
-        if manager.get("result") != "OK" or manager_attachment is None:
+        manager_ready = (manager.get("result") == "OK" or
+                         verified_active_manager and manager.get("reason") == "NODE_GENERATING")
+        if not manager_ready or manager_attachment is None:
             raise LoopContractError("LOOP_MANAGER_IDENTITY_UNVERIFIED")
         identifiers = (
             create_operation_id, send_operation_id, watch_operation_id,
@@ -221,7 +347,10 @@ class PersistentLoopCoordinator:
             existing = db.execute("""SELECT request_sha256 FROM loop_recipe_supervisor_preparations
                                       WHERE work_id=? AND network_project_id=?""", preparation_key).fetchone()
         if not existing:
-            discovery = await asyncio.to_thread(self.discover_supervisor, manager_conversation_key)
+            discovery = await asyncio.to_thread(
+                self.discover_supervisor, manager_conversation_key,
+                verified_active_manager=verified_active_manager,
+            )
             if discovery["status"] != "SUPERVISOR_NOT_FOUND":
                 return discovery
         with store.transaction() as db:
@@ -624,6 +753,7 @@ async def persistent_loop_command(
                 "manager_decisions": ["continue", "wait", "handoff", "blocked", "complete"],
                 "supervisor_decisions": ["continue", "wait", "return", "blocked"],
                 "sequence": [
+                    "In a general chat, call start with work_id, the exact current user message, Direction, plan and conditions. Omit identity and topology IDs to verify the current RCC turn, prepare topology and arm automatically.",
                     "Save original instruction, Direction, overall plan and conditions.",
                     "Place only the Manager in the new project. Keep the Supervisor unassigned.",
                     "Arm the Manager response to the exact original user message. Wait for WATCHING before working.",
@@ -646,6 +776,12 @@ async def persistent_loop_command(
                 create_command=supervisor_create_command, window_id=supervisor_window_id,
             )
         if action == "start":
+            if work_id and not any((manager_conversation_key, supervisor_conversation_key,
+                                    network_project_id, loop_id, task_id)):
+                return await coordinator.start_from_chat(
+                    work_id=work_id, instruction=instruction_text, direction=direction_text,
+                    overall_plan=overall_plan, conditions=completion_conditions,
+                )
             if not loop_id or not work_id:
                 raise LoopContractError("LOOP_RUN_IDENTITY_REQUIRED")
             if not all((instruction_text, direction_text, manager_conversation_key,

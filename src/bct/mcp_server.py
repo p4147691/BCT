@@ -709,7 +709,12 @@ def build_mcp(
         title="LOOP",
         description=(
             "LOOP — the official BCT single persistent Loop Recipe. Start saves the original "
-            "instruction, Direction, overall plan and completion conditions. Configure topology "
+            "instruction, Direction, overall plan and completion conditions. In an ordinary RCC "
+            "chat, call start during the response with the existing work_id, exact latest user "
+            "message as instruction_text, direction_text, overall_plan and completion_conditions. "
+            "Omit loop_id, task_id, manager_conversation_key, supervisor_conversation_key and "
+            "network_project_id to resolve the current turn, prepare topology and arm. Read the "
+            "returned loop_id and wait for status WATCHING before working. Explicit start callers can configure topology "
             "with a Manager-only project and an unassigned Supervisor. Arm reserves the current "
             "Manager response. Read status on every turn, save_plan before execution, and "
             "decide before ending the response. The exact RCC Watch drives continuation, "

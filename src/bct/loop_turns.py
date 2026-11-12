@@ -35,12 +35,7 @@ class LoopTurns:
     def start(self, *, work, loop_id, task_id, context, overall_plan, conditions):
         if not _ID.fullmatch(loop_id) or not _ID.fullmatch(task_id):
             raise LoopContractError("LOOP_RUN_IDENTITY_REQUIRED")
-        overall_plan = _text(overall_plan)
-        if (not conditions or len(conditions) > 64
-                or any(not _ID.fullmatch(key) for key in conditions)):
-            raise LoopContractError("LOOP_COMPLETION_CONDITIONS_REQUIRED")
-        conditions_json = json.dumps({key: _text(value, 2000)
-                                      for key, value in conditions.items()}, sort_keys=True)
+        overall_plan, conditions_json = self.validate_plan(overall_plan, conditions)
         now = time.time()
         with self.store.transaction() as db:
             self._check_owner(db, {"work_id": work.work_id,
@@ -75,6 +70,16 @@ class LoopTurns:
                         VALUES(?,?,?,?,?,?)""", (loop_id, task_id, work.owner_principal_id,
                                                 work.assignment_epoch, overall_plan, conditions_json))
         return self.status(loop_id)
+
+    @staticmethod
+    def validate_plan(overall_plan, conditions):
+        overall_plan = _text(overall_plan)
+        if (not conditions or len(conditions) > 64
+                or any(not _ID.fullmatch(key) for key in conditions)):
+            raise LoopContractError("LOOP_COMPLETION_CONDITIONS_REQUIRED")
+        conditions_json = json.dumps({key: _text(value, 2000)
+                                      for key, value in conditions.items()}, sort_keys=True)
+        return overall_plan, conditions_json
 
     @staticmethod
     def _objective(db, loop_id):
