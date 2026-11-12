@@ -27,6 +27,7 @@ from .status_queries import read_status, read_conversation_network
 from .project_plan import prepare_project_plan
 from .recipes.code_blocks import scan_work_code_blocks
 from .node_recovery_commands import NodeRecoveryCommands
+from .execution_plan_commands import ExecutionPlanCommands
 
 
 from .trace_timing import TRACE_ID as _MCP_TRACE_ID, trace_stage as _trace_stage
@@ -682,6 +683,9 @@ def build_mcp(
             browser_execute=make_executor("browser"),
         )
 
+    def _execution_plan_commands() -> ExecutionPlanCommands:
+        return ExecutionPlanCommands(bct.store)
+
     @server.tool(
         name="bct_check_node",
         description=(
@@ -1210,18 +1214,10 @@ def build_mcp(
         work_id: str, direction_id: str, task_id: str, plan_text: str,
         generation: int = 1, plan_id: str = "",
     ) -> dict[str, Any]:
-        from bct.chain_execution_plan import ChainExecutionPlanLedger
-        if not plan_id:
-            plan_id = "chain-execution-plan-" + uuid.uuid4().hex[:18]
-        try:
-            plan = await asyncio.to_thread(
-                ChainExecutionPlanLedger(bct.store).save,
-                plan_id=plan_id, work_id=work_id, direction_id=direction_id,
-                task_id=task_id, generation=generation, plan_text=plan_text,
-            )
-        except ValueError as exc:
-            return {"status":"INVALID_REQUEST","reason":str(exc)}
-        return {"status":"OK","chain_execution_plan":plan}
+        return await _execution_plan_commands().set(
+            work_id=work_id, direction_id=direction_id, task_id=task_id,
+            plan_text=plan_text, generation=generation, plan_id=plan_id,
+        )
 
     @server.tool(
         name="bct_update_execute_plan",
@@ -1236,22 +1232,10 @@ def build_mcp(
         plan_id: str, plan_text: str, update_reason: str,
         work_id: str = "", task_id: str = "", generation: int | None = None,
     ) -> dict[str, Any]:
-        from bct.chain_execution_plan import ChainExecutionPlanLedger
-        ledger = ChainExecutionPlanLedger(bct.store)
-        existing = await asyncio.to_thread(ledger.get, plan_id=plan_id)
-        if existing is None:
-            return {"status": "NOT_FOUND", "reason": "CHAIN_EXECUTION_PLAN_NOT_FOUND"}
-        plan = await asyncio.to_thread(
-            ledger.update, plan_id=plan_id, plan_text=plan_text, update_reason=update_reason,
+        return await _execution_plan_commands().update(
+            plan_id=plan_id, plan_text=plan_text, update_reason=update_reason,
+            work_id=work_id, task_id=task_id, generation=generation,
         )
-        supplied = {"work_id": work_id, "task_id": task_id, "generation": generation}
-        recorded = {key: existing[key] for key in supplied}
-        mismatched = [key for key, value in supplied.items() if value not in {"", None} and value != recorded[key]]
-        return {
-            "status": "OK", "chain_execution_plan": plan,
-            "continuity": "CONTEXT_CHANGED" if mismatched else "CONTINUED",
-            "context_mismatches": mismatched,
-        }
 
     @server.tool(
         name="bct_get_execute_plan",
@@ -1259,16 +1243,7 @@ def build_mcp(
         structured_output=True,
     )
     async def bct_get_execute_plan(plan_id: str, work_id: str = "") -> dict[str, Any]:
-        from bct.chain_execution_plan import ChainExecutionPlanLedger
-        plan = await asyncio.to_thread(
-            ChainExecutionPlanLedger(bct.store).get, plan_id=plan_id,
-        )
-        if plan is None:
-            return {"status":"NOT_FOUND","plan_id":plan_id}
-        return {
-            "status": "OK", "chain_execution_plan": plan,
-            "continuity": "CONTEXT_CHANGED" if work_id and work_id != plan["work_id"] else "CONTINUED",
-        }
+        return await _execution_plan_commands().get(plan_id=plan_id, work_id=work_id)
 
     @server.tool(
         name="bct_delayed_send_cancel",
