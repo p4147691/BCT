@@ -17,6 +17,7 @@ from bct.core.store import Store
 from bct.loop_recipe_gateway import (
     DeliveryReceipt, LoopContinuationGateway, WatchReceipt,
 )
+from bct.loop_recipe_recovery import RecoveryAction, RecoveryEvidence, plan_recovery
 
 
 def sample_continuation(**changes):
@@ -148,6 +149,23 @@ class PersistentLoopAssemblyTests(unittest.TestCase):
             outcome = LoopContinuationGateway(ledger, FailWatch(), FailTransport()).connect(
                 continuation=continuation, link=LinkKind.BLOCKED)
             self.assertEqual(outcome.state, "BLOCKED")
+
+    def test_recovery_planner_never_replays_unknown_and_requires_rechecks_before_replace(self):
+        self.assertEqual(
+            plan_recovery(RecoveryEvidence("UNKNOWN", "OK")),
+            RecoveryAction.RECONCILE_ORIGINAL_RECEIPT,
+        )
+        self.assertEqual(
+            plan_recovery(RecoveryEvidence("DELIVERED", "CHECK", unchanged_rechecks=1)),
+            RecoveryAction.RECHECK,
+        )
+        self.assertEqual(
+            plan_recovery(RecoveryEvidence("DELIVERED", "CHECK", unchanged_rechecks=2)),
+            RecoveryAction.PREPARE_REPLACE,
+        )
+        self.assertEqual(
+            plan_recovery(RecoveryEvidence("DELIVERED", "OK")), RecoveryAction.RESUME,
+        )
 
     def test_route_table_can_replace_endpoint_without_changing_any_block(self):
         continuation = sample_continuation()
