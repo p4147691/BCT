@@ -18,6 +18,8 @@ from bct.loop_recipe_gateway import (
     DeliveryReceipt, LoopContinuationGateway, WatchReceipt,
 )
 from bct.loop_recipe_recovery import RecoveryAction, RecoveryEvidence, plan_recovery
+from bct.persistent_loop_commands import PersistentLoopCommands
+from bct.core.models import Work
 
 
 def sample_continuation(**changes):
@@ -210,3 +212,46 @@ class PersistentLoopAssemblyTests(unittest.TestCase):
                 route_table=RouteTable((EndpointBinding(frozenset({"execute"}), "endpoint-next"),)),
                 endpoints=(Endpoint("endpoint-next", frozenset({"review"})),),
             )
+
+    def test_public_command_service_walks_standard_blocks_to_completion(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "state.sqlite")
+            store.create_work(Work("work-9", "loop fixture", (), frozenset(), "owner-9"))
+            commands = PersistentLoopCommands(store, principal_id="owner-9")
+            self.assertEqual(commands.outline()["effects"], "NONE_READ_ONLY")
+            started = commands.start(loop_id="loop-9", work_id="work-9")
+            self.assertEqual(started["run"]["current_block_id"], "resume")
+            for block_id, next_block_id in (
+                ("resume", "direction"), ("direction", "topology"),
+                ("topology", "plan"), ("plan", "execute"),
+                ("execute", "assess"),
+            ):
+                advanced = commands.transition(
+                    loop_id="loop-9", block_id=block_id, link="continue")
+                self.assertEqual(advanced["next_block_id"], next_block_id)
+            completed = commands.transition(
+                loop_id="loop-9", block_id="assess", link="complete")
+            self.assertEqual(completed["status"], "COMPLETED")
+            self.assertEqual(completed["run"]["state"], "COMPLETED")
+
+    def test_public_command_service_prepares_handoff_and_plans_recovery(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "state.sqlite")
+            store.create_work(Work("work-10", "loop fixture", (), frozenset(), "owner-10"))
+            commands = PersistentLoopCommands(store, principal_id="owner-10")
+            commands.start(loop_id="loop-10", work_id="work-10")
+            for block_id in ("resume", "direction", "topology", "plan", "execute"):
+                commands.transition(loop_id="loop-10", block_id=block_id, link="continue")
+            prepared = commands.transition(
+                loop_id="loop-10", block_id="assess", link="handoff",
+                continuation_id="continuation-10", operation_id="operation-10",
+                watch_id="watch-10", receipt_ref="receipt-10",
+                required_capabilities=("review",), artifact_refs=("progress-10",),
+            )
+            self.assertEqual(prepared["status"], "PREPARED")
+            self.assertEqual(prepared["effects"], "STATE_ONLY")
+            self.assertEqual(commands.status(loop_id="loop-10")["run"]["state"], "WAITING")
+            recovery = commands.recovery_plan(
+                continuation_id="continuation-10", receipt_observation="UNKNOWN",
+                node_observation="OK")
+            self.assertEqual(recovery["action"], "reconcile_original_receipt")

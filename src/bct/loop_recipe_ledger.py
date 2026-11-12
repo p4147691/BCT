@@ -77,6 +77,32 @@ class LoopRecipeLedger:
             row = db.execute("SELECT * FROM loop_recipe_v2_runs WHERE loop_id=?", (loop_id,)).fetchone()
             return dict(row) if row is not None else None
 
+    def get_continuation(self, continuation_id: str) -> dict[str, Any] | None:
+        with self.store.transaction() as db:
+            row = db.execute(
+                "SELECT * FROM loop_recipe_v2_continuations WHERE continuation_id=?",
+                (continuation_id,),
+            ).fetchone()
+            return self._public(row) if row is not None else None
+
+    def advance_immediate(self, *, loop_id: str, expected_revision: int,
+                          source_block_id: str, next_block_id: str,
+                          complete: bool = False) -> dict[str, Any]:
+        now = time.time()
+        with self.store.transaction() as db:
+            row = db.execute("SELECT * FROM loop_recipe_v2_runs WHERE loop_id=?", (loop_id,)).fetchone()
+            if row is None:
+                raise LoopContractError("LOOP_RUN_NOT_FOUND")
+            if (row["state"] != "ACTIVE" or row["revision"] != expected_revision
+                    or row["current_block_id"] != source_block_id):
+                raise LoopContractError("LOOP_RUN_REVISION_STALE")
+            state = "COMPLETED" if complete else "ACTIVE"
+            db.execute("UPDATE loop_recipe_v2_runs SET current_block_id=?, revision=?, state=?, "
+                       "updated_at=? WHERE loop_id=?", (
+                           next_block_id, expected_revision + 1, state, now, loop_id,
+                       ))
+            return dict(db.execute("SELECT * FROM loop_recipe_v2_runs WHERE loop_id=?", (loop_id,)).fetchone())
+
     def stage(self, *, continuation: Continuation, link: LinkKind) -> dict[str, Any]:
         if link not in {LinkKind.WAIT, LinkKind.HANDOFF, LinkKind.BLOCKED}:
             raise LoopContractError("LOOP_CONTINUATION_LINK_INVALID")

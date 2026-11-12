@@ -26,11 +26,11 @@ def persistent_loop_assembly() -> AssemblyTable:
         ProcessingBlock("complete", ("outcome",), ("completion_record",)),
     )
     links = (
-        AssemblyLink("resume", "ready", "direction"),
-        AssemblyLink("direction", "ready", "topology"),
-        AssemblyLink("topology", "ready", "plan"),
-        AssemblyLink("plan", "ready", "execute"),
-        AssemblyLink("execute", "ready", "assess"),
+        AssemblyLink("resume", "continue", "direction"),
+        AssemblyLink("direction", "continue", "topology"),
+        AssemblyLink("topology", "continue", "plan"),
+        AssemblyLink("plan", "continue", "execute"),
+        AssemblyLink("execute", "continue", "assess"),
         AssemblyLink("assess", "continue", "plan"),
         AssemblyLink("assess", "wait", "resume"),
         AssemblyLink("assess", "handoff", "plan"),
