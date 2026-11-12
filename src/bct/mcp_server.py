@@ -20,11 +20,11 @@ from .status_views import status_view
 from .task_message_commands import task_message_command
 from .delayed_send_commands import send_delayed_message_command
 from .browser_command_adapters import close_tab as close_tab_command, move_tab as move_tab_command, send_message as send_message_command
+from .capability_command_adapters import cancel_delayed_send, run_project_plan, run_task
 from .discovery_views import capability_view, rcc_command_view, rcc_recipe_view
 from .operation_queries import read_github_inbox, read_operation
 from .work_services import create_or_update_work
 from .status_queries import read_status, read_conversation_network
-from .project_plan import prepare_project_plan
 from .recipes.code_blocks import scan_work_code_blocks
 from .node_recovery_commands import NodeRecoveryCommands
 from .execution_plan_commands import ExecutionPlanCommands
@@ -363,16 +363,7 @@ def build_mcp(
         assumptions: list[str] | None = None,
         approval_ref: str | None = None,
     ) -> dict[str, Any]:
-        prepared = prepare_project_plan(
-            work_id=work_id, plan_id=plan_id, project=project, objective=objective,
-            acceptance=acceptance, steps=steps, author=author,
-            expected_revision=expected_revision, discretion=discretion, assumptions=assumptions,
-        )
-        if prepared["status"] != "READY":
-            return prepared
-        return await make_executor("project_context")(
-            work_id, operation_id, prepared["arguments"], approval_ref,
-        )
+        return await run_project_plan(make_executor("project_context"), **locals())
 
     @server.tool(description="Set existing project membership or role tags through the authorized conversation_network_update capability; supports project-upsert, membership-assign and role-patch.", structured_output=True)
     async def bct_set_conversation_network(
@@ -432,11 +423,7 @@ def build_mcp(
         work_id: str, operation_id: str, arguments: dict[str, Any],
         approval_ref: str | None = None,
     ) -> dict[str, Any]:
-        if arguments.get("operation", "dispatch") != "dispatch":
-            return {"status": "INVALID_REQUEST", "reason": "TASK_RUN_OPERATION_MISMATCH"}
-        return await make_executor("orchestrate")(
-            work_id, operation_id, {**arguments, "operation": "dispatch"}, approval_ref
-        )
+        return await run_task(make_executor("orchestrate"), **locals())
 
     @server.tool(
         name="bct_send_delayed_message",
@@ -1074,12 +1061,7 @@ def build_mcp(
     async def bct_delayed_send_cancel(
         work_id: str, task_id: str, generation: int, operation_id: str = "",
     ) -> dict[str, Any]:
-        generated = operation_id or ("delayed-cancel-" + uuid.uuid4().hex[:24])
-        return await make_executor("browser")(
-            work_id, generated,
-            {"command":"delayed-send-cancel","task_id":task_id,
-             "generation":generation},
-        )
+        return await cancel_delayed_send(make_executor("browser"), **locals())
 
     @server.tool(description="Create, recover, or continue a BCT Work. Roots fence filesystem effects; actions describe intended scope but are not a second capability allowlist. A trusted successor automatically takes over only after prior operations are terminal.", structured_output=True)
     async def bct_work_create(

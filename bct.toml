@@ -148,6 +148,7 @@ files = [
   "src/bct/runtime_server.py",
   "src/bct/supervisor.py",
   "src/bct/mcp_server.py",
+  "src/bct/capability_command_adapters.py",
   "src/bct/browser_command_adapters.py",
   "src/bct/delayed_send_commands.py",
   "src/bct/task_message_commands.py",
