@@ -124,10 +124,11 @@ class PersistentLoopCoordinator:
                 or roster.get("unavailable_instances", 0)):
             raise LoopContractError("LOOP_START_SOURCE_UNAVAILABLE")
         keys = {node.get("conversation_uuid") for node in roster.get("items", [])
-                if node.get("generating") is True
+                if node.get("status") == "CONFIRMED" and node.get("source") == "RCC_FRESH"
+                and not node.get("connection", {}).get("disconnected", True)
                 and _UUID.fullmatch(node.get("conversation_uuid") or "")}
-        if len(keys) > 8:
-            raise LoopContractError("LOOP_START_SOURCE_TOO_MANY_ACTIVE_CHATS")
+        if len(keys) > 24:
+            raise LoopContractError("LOOP_START_SOURCE_TOO_MANY_CHATS")
         operations = self.runtime.bct.operations
         service = SendDelayedMessageService(
             store=self.runtime.bct.store, operations=operations,
@@ -156,9 +157,13 @@ class PersistentLoopCoordinator:
                 return target, source, observed["latestUserTurnKey"]
             return None
 
-        matches = [match for match in await asyncio.gather(
-            *(asyncio.to_thread(read, key) for key in sorted(keys))
-        ) if match]
+        matches = []
+        candidates = sorted(keys)
+        for offset in range(0, len(candidates), 8):
+            observations = await asyncio.gather(
+                *(asyncio.to_thread(read, key) for key in candidates[offset:offset + 8])
+            )
+            matches.extend(match for match in observations if match)
         if len(matches) != 1:
             reason = "LOOP_START_SOURCE_AMBIGUOUS" if matches else "LOOP_START_SOURCE_NOT_FOUND"
             raise LoopContractError(reason)
