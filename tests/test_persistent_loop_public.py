@@ -60,14 +60,23 @@ class PersistentLoopPublicTests(unittest.IsolatedAsyncioTestCase):
                 "manager_conversation_key": MANAGER,
                 "supervisor_conversation_key": SUPERVISOR,
                 "network_project_id": "loop-public-network-1",
+                "task_id": "loop-public-task",
+                "overall_plan": "Execute and verify.",
+                "completion_conditions": {"result": "Result independently verified."},
             })
             self.assertEqual(started["status"], "OK")
-            self.assertEqual(started["context"]["supervisor_conversation_key"], SUPERVISOR)
+            self.assertEqual(started["objective"]["supervisor_conversation_key"], SUPERVISOR)
             _, status = await server.call_tool("bct_loop_recipe", {
                 "action": "status", "loop_id": "loop-public-1",
             })
-            self.assertEqual(status["run"]["current_block_id"], "resume")
+            self.assertEqual(status["run"]["current_block_id"], "topology")
             self.assertEqual(status["context"]["network_project_id"], "loop-public-network-1")
+            self.assertEqual(status["objective"]["overall_plan"], "Execute and verify.")
+            _, rejected = await server.call_tool("bct_loop_recipe", {
+                "action": "transition", "loop_id": "loop-public-1",
+                "block_id": "assess", "link": "complete",
+            })
+            self.assertEqual(rejected["reason"], "LOOP_USE_ARM_SAVE_PLAN_AND_DECIDE")
 
     def test_mcp_entry_is_only_a_forwarder(self):
         tree = ast.parse((ROOT / "src/bct/mcp_server.py").read_text(encoding="utf-8"))

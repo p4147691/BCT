@@ -541,6 +541,13 @@ def main() -> int:
         from .loop_self_continuation import LoopSelfContinuation
         from .loop_successor_supervisor import LoopSuccessorSupervisor
         from .mcp_server import MCP_PRINCIPAL_ID
+        from .loop_turns import LoopTurnRunner, LoopTurns
+        public_loop = LoopTurnRunner(
+            SendDelayedMessageService(store=bct.store,
+                                      browser_feature=bct.operations._features["browser"],
+                                      operations=bct.operations),
+            LoopTurns(bct.store, initialize=True), status_snapshot,
+        )
         observer = LoopRecoveryScanner(bct.store)
         outbox = LoopSelfOutbox(bct.store)
         dispatcher = LoopSelfDispatcher(bct.store, bct.operations)
@@ -631,6 +638,7 @@ def main() -> int:
                     review_outcomes = review_handoff.run_once(snapshot=snapshot, limit=4)
                     report_outcomes = result_dispatcher.run_once(snapshot=snapshot, limit=4)
                     previous_snapshot = snapshot
+                public_events = public_loop.run_once(limit=4)
                 state["loop_recipe_recovery"] = {
                     "enabled": True, "mode": "EXACT_SELF_AND_SUCCESSOR_RECOVERY",
                     "runs": int(state["loop_recipe_recovery"].get("runs", 0)) + 1,
@@ -642,6 +650,7 @@ def main() -> int:
                     "last_succession": succession,
                     "last_review_handoffs": review_outcomes,
                     "last_result_reports": report_outcomes,
+                    "public_loop_events": public_events,
                     "last_error": None, "last_run_at": time.time(),
                 }
             except Exception as exc:

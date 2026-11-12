@@ -385,7 +385,8 @@ class OperationCoordinator:
 
     def _begin(self, *, principal: Principal, work_id: str, operation_id: str,
                capability: str, arguments: dict[str, Any], approval_ref: str | None,
-               background_job: dict[str, Any] | None = None):
+               background_job: dict[str, Any] | None = None,
+               expected_assignment_epoch: int | None = None):
         prepare_started = time.perf_counter_ns()
         try:
             feature, work, decision, request, digest, nonce = self._prepare(
@@ -395,6 +396,8 @@ class OperationCoordinator:
         finally:
             trace_stage("authorization_prepare", tool_kind=capability,
                         elapsed_ms=(time.perf_counter_ns() - prepare_started) / 1e6)
+        if expected_assignment_epoch is not None and work.assignment_epoch != expected_assignment_epoch:
+            raise PreconditionError("WORK_ASSIGNMENT_CHANGED")
         claim_started = time.perf_counter_ns()
         try:
             created, current = self.store.begin_operation(
@@ -465,10 +468,12 @@ class OperationCoordinator:
                              work_id=work_id, approval_ref=approval_ref)
 
     def run(self, *, principal: Principal, work_id: str, operation_id: str,
-            capability: str, arguments: dict[str, Any], approval_ref: str | None = None) -> OperationResult:
+            capability: str, arguments: dict[str, Any], approval_ref: str | None = None,
+            expected_assignment_epoch: int | None = None) -> OperationResult:
         feature, request, created, current = self._begin(
             principal=principal, work_id=work_id, operation_id=operation_id,
             capability=capability, arguments=arguments, approval_ref=approval_ref,
+            expected_assignment_epoch=expected_assignment_epoch,
         )
         if not created:
             return current

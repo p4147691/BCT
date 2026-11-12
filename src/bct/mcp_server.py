@@ -708,15 +708,13 @@ def build_mcp(
         name="bct_loop_recipe",
         title="LOOP",
         description=(
-            "LOOP — the official BCT single persistent Loop Recipe. outline is read-only; start creates only a "
-            "durable Loop run. prepare_supervisor reuses exact create/send/bootstrap-Watch/node-info "
-            "receipts when no Supervisor exists; UNKNOWN is never replayed. transition accepts exactly "
-            "continue, wait, handoff, complete, or blocked. "
-            "wait prearms the current exact response without an initial self-send. handoff durably stages, "
-            "prearms the exact target Watch, then sends once. sync reads the original Watch and never "
-            "replays UNKNOWN. recovery_plan chooses check/recheck/reconcile/prepare-replace without "
-            "performing recovery. Retained historical Loop records remain stored but are not a second public "
-            "Loop tool. Every Chain Recipe function remains separate and unchanged."
+            "LOOP — the official BCT single persistent Loop Recipe. Start saves the original "
+            "instruction, Direction, overall plan and completion conditions. Configure topology "
+            "with a Manager-only project and an unassigned Supervisor. Arm reserves the current "
+            "Manager response. Read status on every turn, save_plan before execution, and "
+            "decide before ending the response. The exact RCC Watch drives continuation, "
+            "handoff, return and final completion. prepare_supervisor uses existing creation "
+            "receipts. Historical status and sync remain available for receipt reconciliation."
         ),
         structured_output=True,
     )
@@ -746,6 +744,10 @@ def build_mcp(
         recovery_conversation_key: str = "", recovery_task_id: str = "",
         recovery_reason: str = "", successor_conversation_key: str = "",
         inheritance_task_id: str = "",
+        overall_plan: str = "", completion_conditions: dict[str, str] | None = None,
+        turn: int = 0, plan_id: str = "", expected_revision: int = 0,
+        plan: dict[str, str] | None = None, turn_decision: dict[str, Any] | None = None,
+        progress: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         return await persistent_loop_command(loop_recipe_runtime, **locals())
 
