@@ -908,7 +908,7 @@
     },
     {
       "id": "bct.persistent_loop_recipe",
-      "kind": "recipe",
+      "kind": "full_recipe",
       "maturity": "bounded",
       "implementation": [
         {

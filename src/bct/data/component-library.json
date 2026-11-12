@@ -1,9 +1,9 @@
 {
   "schema": "bct.component-library.bundle.v1",
-  "source_fingerprint": "826f217def699f35ee0b60347de1965007087a2353a41b8de96c2dd32ec5b6a0",
+  "source_fingerprint": "6aa005fb95acb06e4a40d33bf01b564d090505322348cf426f17aa03f519629d",
   "source_hashes": {
     "docs/CHAIN_MESSAGE_RECIPE_V2.md": "a15f70d935efbeccdd82dbbd15be9f42b6516deaebd89471e601b0aa66d1b04d",
-    "docs/component-library.v1.json": "724404aa2e7390acb704886c5efdbde24be1276fa5c8caf1bca5248d84a6baf1",
+    "docs/component-library.v1.json": "82c3ab55f3da8bf2a3e7b89db5037280e384437eb0a8ac87b3ae43d2f1df2f34",
     "modules/browser-bridge/extension/background.js": "b058aeb8fa8f37b8a21ae8b70be21d003e976a97e9e5ca884d7a98f5dced4472",
     "modules/browser-bridge/extension/chat_tools.js": "cc91898a0c30c58f5bee4e6b7fea991282ce5a21f100cfaeb220cc300e4ee85b",
     "modules/browser-bridge/extension/tool_protocol.js": "05e244e856af58705de1c1fc50a9a8d5e63b9ca2e8ba8674cabe8d9ea9a8563a",
@@ -1354,7 +1354,7 @@
       },
       {
         "id": "bct.persistent_loop_recipe",
-        "kind": "recipe",
+        "kind": "full_recipe",
         "maturity": "bounded",
         "implementation": [
           {
