@@ -136,6 +136,28 @@ Watch state; it never sends. The unchanged delayed-Watch wire vocabulary uses
 `NEXT TASK — SELF` and `NEXT TASK — MANAGER`; inside this Loop the second route
 means the other bound endpoint (A to Supervisor or Supervisor to A).
 
+### Preparing a missing Supervisor
+
+Supervisor creation is a Loop-topology adapter, not a processing block. Call
+`prepare_supervisor` with one exact Manager UUID, RCC instance/window, and four
+stable Operation IDs for create, first send, bootstrap Watch, and Node Info.
+It reuses the existing BCT effects unchanged:
+
+```text
+verify exact Manager and RCC attachment
+-> create one new chat
+-> send the first Supervisor role instruction and obtain its UUID
+-> bind the existing bootstrap Watch to the exact create/send receipts
+-> register Supervisor Node Info
+-> start the Loop with that freshly observed UUID
+```
+
+The first Watch cannot precede the first send because a new ChatGPT conversation
+does not yet have a UUID. This is the same bounded bootstrap receipt rule used
+for existing prepared nodes. Any ambiguous attachment or UNKNOWN receipt stops
+the sequence. A retry must reuse all original Operation IDs and must not create
+a replacement chat or message.
+
 ## Extension checklist
 
 Before adding anything, answer these in order:

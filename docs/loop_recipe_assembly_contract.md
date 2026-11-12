@@ -53,6 +53,15 @@ existing Chain records. A new run stores the original instruction, Direction,
 exact Manager and Supervisor UUIDs, and a Loop-specific network ID. The
 topology action creates that new network and assigns only those exact members.
 
+If the Supervisor does not exist, the separate `prepare_supervisor` action
+reuses the existing create-chat, exact first-send, bootstrap Delayed Send Watch,
+and Node Info capabilities. A new conversation has no UUID before its first
+submitted message, so this bounded bootstrap is the only create/send-before-
+Watch exception. The Watch accepts only the exact creation and send receipts
+and a zero-response baseline. Repeating the same operation IDs reconciles those
+receipts and never creates or sends again. `start` remains state-only and is
+called only after the resulting exact Supervisor UUID is freshly observable.
+
 `WAIT` and `HANDOFF` create durable Continuations before any effect. Repeating
 the same continuation is read-only; changing its target, return endpoint, or
 payload is a conflict. `UNKNOWN` enters reconciliation and `sync` checks the

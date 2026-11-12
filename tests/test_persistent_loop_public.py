@@ -43,6 +43,11 @@ class PersistentLoopPublicTests(unittest.IsolatedAsyncioTestCase):
             }, "rcc": {"instances": []}}}
             server = build_mcp(SimpleNamespace(store=store, operations=NoEffects()),
                                status_provider=lambda: snapshot, compact_catalogue=True)
+            public = next(tool for tool in await server.list_tools()
+                          if tool.name == "bct_persistent_loop_recipe")
+            self.assertIn("supervisor_create_operation_id",
+                          public.inputSchema["properties"])
+            self.assertIn("prepare_supervisor", public.description)
             _, outline = await server.call_tool("bct_persistent_loop_recipe", {"action": "outline"})
             self.assertEqual(outline["status"], "OK")
             _, started = await server.call_tool("bct_persistent_loop_recipe", {

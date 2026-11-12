@@ -936,9 +936,10 @@
           "symbol": "bct_persistent_loop_recipe (public adapter)"
         }
       ],
-      "contract": "Separate block-and-link persistent Loop. Store the original instruction, Direction, exact Manager and Supervisor identities, and a new Loop network. Processing blocks end only through CONTINUE, WAIT, HANDOFF, COMPLETE, or BLOCKED. WAIT prearms the current response without an initial self-send. HANDOFF persists first, prearms the exact target Watch, and sends once. Sync reads the same Watch; Node Recovery reuses the existing Check/Recheck/Pause/Replace ledger through a Loop-only adapter.",
+      "contract": "Separate block-and-link persistent Loop. If no Supervisor exists, prepare_supervisor reuses exact create, first-send, bootstrap Watch, and Node Info receipts before start. Store the original instruction, Direction, exact Manager and Supervisor identities, and a new Loop network. Processing blocks end only through CONTINUE, WAIT, HANDOFF, COMPLETE, or BLOCKED. WAIT prearms the current response without an initial self-send. HANDOFF persists first, prearms the exact target Watch, and sends once. Sync reads the same Watch; Node Recovery reuses the existing Check/Recheck/Pause/Replace ledger through a Loop-only adapter.",
       "effects": [
         "durable-loop-run-and-continuation",
+        "missing-supervisor-bootstrap",
         "loop-specific-conversation-network",
         "existing-delayed-watch-prearm",
         "conditional-exact-message",
@@ -949,6 +950,7 @@
         "five-link-public-contract",
         "persist-before-effect",
         "watch-before-send",
+        "bootstrap-create-send-receipt-watch",
         "exact-manager-supervisor-uuid",
         "duplicate-continuation-no-replay",
         "unknown-original-receipt-only"

@@ -402,6 +402,97 @@ class PersistentLoopAssemblyTests(unittest.TestCase):
                 self.assertEqual(calls[2][1]["role_tags"], ["Supervisor"])
         asyncio.run(scenario())
 
+    def test_missing_supervisor_reuses_create_send_bootstrap_watch_and_registration(self):
+        async def scenario():
+            manager_key = "11111111-1111-1111-1111-111111111111"
+            supervisor_key = "22222222-2222-2222-2222-222222222222"
+            instance_id = "instance-16"
+            session_id = "a" * 32
+            snapshot = {"monitor": {
+                "current_nodes": {
+                    "observed_at": 1, "observation": {"state": "FRESH"},
+                    "items": [{
+                        "conversation_uuid": manager_key, "status": "CONFIRMED",
+                        "generating": False, "connection": {"disconnected": False},
+                    }],
+                },
+                "rcc": {"instances": [{
+                    "instance_id": instance_id, "session_id": session_id,
+                    "state": "OPEN", "cached": False,
+                    "tabs": [{"tab_id": 1, "window_id": 7,
+                              "conversation_key": manager_key}],
+                }]},
+            }}
+            calls = []
+            receipts = {}
+
+            async def execute(work_id, operation_id, arguments):
+                calls.append((operation_id, arguments.copy()))
+                if operation_id in receipts:
+                    return receipts[operation_id]
+                command = arguments.get("command")
+                if command == "create-chat-tab":
+                    snapshot["monitor"]["rcc"]["instances"][0]["tabs"].append(
+                        {"tab_id": 9, "window_id": 7, "conversation_key": ""})
+                    result = {"outcome": "APPLIED", "evidence": {
+                        "created_tab_id": 9, "created_window_id": 7,
+                        "created_request_id": operation_id,
+                    }}
+                elif command == "send-message":
+                    snapshot["monitor"]["rcc"]["instances"][0]["tabs"][1][
+                        "conversation_key"] = supervisor_key
+                    snapshot["monitor"]["current_nodes"]["items"].append({
+                        "conversation_uuid": supervisor_key, "status": "CONFIRMED",
+                        "generating": False, "connection": {"disconnected": False},
+                    })
+                    result = {"outcome": "APPLIED", "evidence": {
+                        "conversation_key": supervisor_key,
+                    }}
+                else:
+                    result = {"outcome": "APPLIED", "evidence": {}}
+                receipts[operation_id] = result
+                return result
+
+            with tempfile.TemporaryDirectory() as directory:
+                store = Store(Path(directory) / "state.sqlite")
+                store.create_work(Work(
+                    "work-16", "loop fixture", (),
+                    frozenset({"browser", "conversation_network_update"}), "owner-16",
+                ))
+                runtime = PersistentLoopRuntime(
+                    bct=type("Bct", (), {"store": store})(),
+                    principal=Principal("owner-16", "test", frozenset()),
+                    status_provider=lambda: snapshot,
+                    make_executor=lambda capability: execute,
+                )
+                result = await PersistentLoopCoordinator(runtime).prepare_supervisor(
+                    work_id="work-16", manager_conversation_key=manager_key,
+                    network_project_id="loop-network-16", instance_id=instance_id,
+                    create_operation_id="create-supervisor-16",
+                    send_operation_id="send-supervisor-16",
+                    watch_operation_id="watch-supervisor-16",
+                    register_operation_id="register-supervisor-16",
+                    task_id="supervisor-task-16",
+                    bootstrap_text="Prepare to supervise this Loop.",
+                    display_name="Loop Supervisor 16", scope_name="Loop 16",
+                    window_id=7,
+                )
+                self.assertEqual(result["status"], "READY")
+                self.assertEqual(result["supervisor_conversation_key"], supervisor_key)
+                self.assertEqual(
+                    [item[1].get("command") or item[1].get("operation") for item in calls],
+                    ["create-chat-tab", "send-message", "send-delayed-message", "set-node-info"],
+                )
+                watch = calls[2][1]
+                self.assertEqual(watch["bootstrap_create_operation_id"],
+                                 "create-supervisor-16")
+                self.assertEqual(watch["planned_send_operation_id"],
+                                 "send-supervisor-16")
+                self.assertEqual(watch["manager_conversation_key"], manager_key)
+                self.assertEqual(calls[3][1]["role_tags"], ["Supervisor"])
+
+        asyncio.run(scenario())
+
     def test_loop_recovery_adapter_reuses_check_recheck_and_pause_without_chain_mutation(self):
         async def scenario():
             key = "44444444-4444-4444-4444-444444444444"

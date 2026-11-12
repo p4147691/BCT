@@ -708,7 +708,9 @@ def build_mcp(
         name="bct_persistent_loop_recipe",
         description=(
             "New block-and-link persistent Loop entry. outline is read-only; start creates only a "
-            "durable Loop run; transition accepts exactly continue, wait, handoff, complete, or blocked. "
+            "durable Loop run. prepare_supervisor reuses exact create/send/bootstrap-Watch/node-info "
+            "receipts when no Supervisor exists; UNKNOWN is never replayed. transition accepts exactly "
+            "continue, wait, handoff, complete, or blocked. "
             "wait prearms the current exact response without an initial self-send. handoff durably stages, "
             "prearms the exact target Watch, then sends once. sync reads the original Watch and never "
             "replays UNKNOWN. recovery_plan chooses check/recheck/reconcile/prepare-replace without "
@@ -732,6 +734,12 @@ def build_mcp(
         manager_operation_id: str = "", supervisor_operation_id: str = "",
         network_display_name: str = "", expected_manager_scope_id: str = "",
         expected_supervisor_scope_id: str = "",
+        supervisor_instance_id: str = "", supervisor_create_operation_id: str = "",
+        supervisor_send_operation_id: str = "", supervisor_watch_operation_id: str = "",
+        supervisor_register_operation_id: str = "", supervisor_task_id: str = "",
+        supervisor_bootstrap_text: str = "", supervisor_display_name: str = "",
+        supervisor_scope_name: str = "", supervisor_create_command: str = "create-chat-tab",
+        supervisor_window_id: int = 0,
         recovery_action: str = "", recovery_case_id: str = "",
         recovery_conversation_key: str = "", recovery_task_id: str = "",
         recovery_reason: str = "", successor_conversation_key: str = "",

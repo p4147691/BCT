@@ -445,6 +445,13 @@ Chain/Set Direction의 prepare 응답에 `manual_guidance`로 자동 포함한�
 선택한다. Watch, 정확한 신원, Operation 영수증, 재시작과 UNKNOWN 조정은 Loop 전용
 연결 어댑터가 맡는다.
 
+Supervisor가 아직 없으면 `action="prepare_supervisor"`가 기존 create-chat,
+첫 정확 전송, bootstrap Delayed Send Watch, Node Info 기능을 변경 없이 조합한다.
+새 대화 UUID는 첫 전송 뒤에 생기므로 이 준비만 생성·첫 전송 영수증을 확인한 뒤
+zero-response Watch를 결속한다. 같은 Operation ID 재호출은 원 영수증을 읽을 뿐
+새 대화나 메시지를 만들지 않는다. 준비 결과의 정확한 Supervisor UUID가 현재
+관찰에서 확인된 뒤에만 `start`에 저장하고 새 Loop 대화망을 구성한다.
+
 ```text
 outline
   -> start: 원 입력·Direction·정확한 A/S UUID·새 Loop 대화망 ID를 불변 저장
