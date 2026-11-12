@@ -10,11 +10,14 @@ from bct.core.models import OperationState, Outcome, Principal
 from bct.loop_recipe_contracts import LoopContractError
 from bct.loop_recipe_ledger import LoopRecipeLedger
 from bct.node_recovery import NodeRecoveryLedger, observe_node
-from bct.send_delayed_message import _rcc_submitted_text_sha256
+from bct.send_delayed_message import (
+    _rcc_submitted_text_sha256, loop_observed_send_binding, loop_observed_send_matches,
+)
 from bct.status_views import status_view
 
 
 _ID = re.compile(r"[A-Za-z0-9_.:-]{1,80}")
+_UNCONFIRMED_SEND = "RCC_HOST_OUTCOME_UNVERIFIED:UNKNOWN:RELAY_EXACT_USER_TURN_NOT_CONFIRMED"
 
 
 def _text(value, limit=12000):
@@ -117,14 +120,13 @@ class LoopTurns:
             for item in (turn, prior):
                 if item is None:
                     continue
+                watched = db.execute("""SELECT context_json FROM delayed_send_watches
+                    WHERE task_id=? AND generation=1 AND source_send_receipt=?""",
+                    (item["watch_id"], item["watch_operation_id"])).fetchone()
+                item_context = json.loads(watched["context_json"]) if watched else {}
                 if item["actor"] == "SUPERVISOR":
-                    watched_return = db.execute("""SELECT context_json FROM delayed_send_watches
-                        WHERE task_id=? AND generation=1 AND source_send_receipt=?""",
-                        (item["watch_id"], item["watch_operation_id"])).fetchone()
-                    if watched_return:
-                        evidence = json.loads(watched_return["context_json"]).get(
-                            "loop_supervisor_return_evidence")
-                        supervisor_return_evidence = supervisor_return_evidence or evidence
+                    supervisor_return_evidence = (supervisor_return_evidence
+                        or item_context.get("loop_supervisor_return_evidence"))
                 for operation_id in (item["watch_operation_id"], item["send_operation_id"]):
                     if operation_id:
                         receipt = db.execute("""SELECT operation_id,state,outcome,error
@@ -132,6 +134,8 @@ class LoopTurns:
                             (operation_id, objective["work_id"], objective["owner_principal_id"])).fetchone()
                         if receipt:
                             receipts[operation_id] = dict(receipt)
+                            if operation_id == item["send_operation_id"] and item_context.get("loop_observed_send"):
+                                receipts[operation_id]["reconciliation"] = item_context["loop_observed_send"]
             recovery = None
             if turn:
                 watched = db.execute("""SELECT context_json FROM delayed_send_watches
@@ -334,8 +338,12 @@ class LoopTurns:
                     raise LoopContractError("LOOP_SUPERVISOR_HANDOFF_REQUIRED")
                 sent = db.execute("""SELECT o.created_at FROM loop_recipe_turns t
                     JOIN operations o ON o.operation_id=t.send_operation_id
-                    WHERE t.loop_id=? AND t.turn=? AND o.outcome='APPLIED'""",
-                                  (loop_id, handoff["turn"] + 1)).fetchone()
+                    JOIN delayed_send_watches w ON w.task_id=t.watch_id AND w.generation=1
+                        AND w.source_send_receipt=t.watch_operation_id
+                    WHERE t.loop_id=? AND t.turn=? AND o.state='FINISHED'
+                    AND (o.outcome='APPLIED' OR (o.outcome='UNKNOWN' AND o.error=?
+                        AND json_extract(w.context_json,'$.loop_observed_send.operation_id')=o.operation_id))""",
+                                  (loop_id, handoff["turn"] + 1, _UNCONFIRMED_SEND)).fetchone()
                 if sent is None:
                     raise LoopContractError("LOOP_SUPERVISOR_HANDOFF_RECEIPT_REQUIRED")
                 verified = {capability for capability, created_at in capabilities if created_at >= sent[0]}
@@ -436,6 +444,52 @@ class LoopTurns:
                     current_block_id='resume',revision=revision+1,updated_at=? WHERE loop_id=?""",
                     (time.time(), row["loop_id"]))
 
+    def reconcile_observed_send(self, row, watch, observed):
+        context = watch["context"]
+        operation_id = row["send_operation_id"]
+        resource = f"rcc-instance:{context['instance_id']}:direct-tab:{context['watched_tab_id']}"
+        evidence = {
+            "kind": "LOOP_EXACT_USER_TURN_OBSERVED", "operation_id": operation_id,
+            "watch_operation_id": row["watch_operation_id"], "turn": row["turn"],
+            "conversation_key": row["conversation_key"], "instance_id": context["instance_id"],
+            "session_id": context["watched_session_id"], "tab_id": context["watched_tab_id"],
+            "window_id": context["watched_window_id"], "source_user_turn_key": observed["latestUserTurnKey"],
+            "source_user_sha256": observed["latestUserSha256"], "observed_at_ms": observed["observedAt"],
+        }
+        with self.store.transaction() as db:
+            objective = self._objective(db, row["loop_id"])
+            self._check_owner(db, objective)
+            current = self._current(db, row["loop_id"])
+            if (current["watch_id"] != row["watch_id"] or current["state"] != "PREPARING"
+                    or current["send_operation_id"] != operation_id):
+                return False
+            persisted = db.execute("""SELECT context_json FROM delayed_send_watches
+                WHERE task_id=? AND generation=1 AND source_send_receipt=? AND state='WATCHING'""",
+                (row["watch_id"], row["watch_operation_id"])).fetchone()
+            if not persisted or json.loads(persisted["context_json"]) != context:
+                return False
+            original = db.execute("""SELECT 1 FROM operations WHERE operation_id=? AND work_id=?
+                AND principal_id=? AND assignment_epoch=? AND capability='browser' AND target=?
+                AND state='FINISHED' AND outcome='UNKNOWN' AND error=?""",
+                (operation_id, objective["work_id"], objective["owner_principal_id"],
+                 objective["assignment_epoch"], context["instance_id"], _UNCONFIRMED_SEND)).fetchone()
+            dispatch = db.execute("""SELECT created_at FROM operation_effect_stages
+                WHERE operation_id=? AND stage='DISPATCH_INTENT'""", (operation_id,)).fetchall()
+            claims = db.execute("""SELECT resource_key FROM resource_claims
+                WHERE operation_id=? AND work_id=? AND assignment_epoch=? AND unresolved=1""",
+                (operation_id, objective["work_id"], objective["assignment_epoch"])).fetchall()
+            if (not original or len(dispatch) != 1 or len(claims) != 1
+                    or claims[0]["resource_key"] != resource
+                    or evidence["observed_at_ms"] < dispatch[0]["created_at"] * 1000):
+                return False
+            db.execute("""UPDATE delayed_send_watches SET
+                context_json=json_set(context_json,'$.loop_observed_send',json(?))
+                WHERE task_id=? AND generation=1""", (json.dumps(evidence), row["watch_id"]))
+            db.execute("""UPDATE resource_claims SET unresolved=0
+                WHERE operation_id=? AND resource_key=?""", (operation_id, resource))
+            self.store._event(db, "LOOP_SEND_RECONCILED", operation_id, evidence)
+        return True
+
 class LoopTurnRunner:
     def __init__(self, service, turns, snapshot):
         self.service = service
@@ -524,15 +578,22 @@ class LoopTurnRunner:
             return None
         work = self.turns.store.get_work(objective["work_id"])
         receipt = self._original(work, send_id)
-        if (not receipt or receipt.state != OperationState.FINISHED
-                or receipt.outcome != Outcome.APPLIED
-                or any(receipt.evidence.get(key) != value for key, value in {
+        if not receipt or receipt.state != OperationState.FINISHED:
+            return None
+        direct = (receipt.outcome == Outcome.APPLIED
+                  and all(receipt.evidence.get(key) == value for key, value in {
                     "command": "send-to-tab", "host_request_id": send_id,
                     "instance_id": instance, "conversation_key": conversation,
                     "source_message_sha256": source_sha,
-                }.items())):
+                }.items()))
+        attachment = loop_observed_send_binding(context) if receipt.outcome == Outcome.UNKNOWN else None
+        if not direct and not attachment:
             return None
-        observed = self.service.latest(instance_id=instance, conversation_key=conversation)
+        observed = (self.service.latest(instance_id=instance, conversation_key=conversation,
+                                        expected_attachment=attachment)
+                    if attachment else self.service.latest(instance_id=instance, conversation_key=conversation))
+        if attachment and not loop_observed_send_matches(context, observed):
+            return None
         turn_key = observed.get("completedLatestUserTurnKey")
         user_turn_key = observed.get("latestUserTurnKey")
         if (observed.get("ok") is not True or observed.get("conversationKey") != conversation
@@ -595,9 +656,13 @@ class LoopTurnRunner:
         if sent or (watch and not send_id):
             if not watch:
                 raise LoopContractError("LOOP_WATCH_RECEIPT_MISMATCH")
-            if sent and self._check_receipt(row, sent) != "APPLIED":
-                return "SEND_RECEIPT_PENDING_OR_HELD"
             binding = self._watch_binding(row, objective)
+            if sent and sent.outcome == Outcome.UNKNOWN and sent.error == _UNCONFIRMED_SEND:
+                if not self._reconcile_unknown_send(row, binding):
+                    self.turns.update(row, "PREPARING", 15)
+                    return "SEND_RECEIPT_PENDING_OR_HELD"
+            elif sent and self._check_receipt(row, sent) != "APPLIED":
+                return "SEND_RECEIPT_PENDING_OR_HELD"
             if not self._verify_initial_source(row, objective, binding):
                 return "LOOP_INITIAL_USER_INSTRUCTION_MISMATCH"
             self.turns.update(row, "WATCHING", 0)
@@ -658,6 +723,33 @@ class LoopTurnRunner:
                 return "SEND_RECEIPT_PENDING_OR_HELD"
         self.turns.update(row, "WATCHING", 0)
         return "WATCHING"
+
+    def _reconcile_unknown_send(self, row, watch):
+        if watch["state"] != "WATCHING":
+            return False
+        ctx = watch["context"]
+        if loop_observed_send_binding(ctx):
+            return True
+        attachment = (ctx.get("watched_session_id"), ctx.get("watched_tab_id"),
+                      ctx.get("watched_window_id"))
+        source = ctx.get("source_send_sha256") or ""
+        if (not all(attachment) or ctx.get("source_proof_kind") != "BCT_PLANNED_SOURCE_SEND"
+                or not re.fullmatch(r"[a-f0-9]{64}", source)
+                or source != ctx.get("source_user_sha256") or source == ctx.get("baseline_user_sha")):
+            return False
+        observed = self.service.latest(instance_id=ctx["instance_id"],
+                                       conversation_key=row["conversation_key"],
+                                       expected_attachment=attachment)
+        user_key = observed.get("latestUserTurnKey")
+        if (observed.get("ok") is not True or observed.get("conversationKey") != row["conversation_key"]
+                or (observed.get("tabId"), observed.get("windowId")) != attachment[1:]
+                or observed.get("latestUserSha256") != source
+                or type(observed.get("latestUserTextOccurrenceCount")) is not int
+                or observed["latestUserTextOccurrenceCount"] != 1
+                or not isinstance(user_key, str) or not user_key.strip()
+                or type(observed.get("observedAt")) is not int):
+            return False
+        return self.turns.reconcile_observed_send(row, watch, observed)
 
     def _verify_initial_source(self, row, objective, watch):
         if row["turn"] != 1:

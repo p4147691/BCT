@@ -476,6 +476,8 @@ class DurableWatchLedger:
             context["source_user_sha256"] = _rcc_submitted_text_sha256(planned_send_text)
             context["source_send_operation_id"] = planned_send_operation_id
             context["source_send_sha256"] = context["source_user_sha256"]
+            if execution_path == "LOOP":
+                context["baseline_user_sha"] = str(baseline.get("latestUserSha256") or "")
         else:
             # Manually submitted task: anchor the currently observed user turn.
             if (not context["source_user_turn_key"]
@@ -1555,6 +1557,26 @@ def normalize_rcc_latest_assistant(
     }
 
 
+def loop_observed_send_binding(context):
+    if context.get("execution_path") == "LOOP" and context.get("loop_observed_send"):
+        return (context["watched_session_id"], context["watched_tab_id"],
+                context["watched_window_id"])
+    return None
+
+
+def loop_observed_send_matches(context, observed):
+    binding = loop_observed_send_binding(context)
+    proof = context.get("loop_observed_send")
+    return bool(
+        binding and proof["operation_id"] == context["source_send_operation_id"]
+        and proof["source_user_sha256"] == context["source_send_sha256"]
+        and observed.get("latestUserSha256") == proof["source_user_sha256"]
+        and observed.get("latestUserTurnKey") == proof["source_user_turn_key"]
+        and observed.get("latestUserTextOccurrenceCount") == 1
+        and observed.get("tabId") == binding[1] and observed.get("windowId") == binding[2]
+    )
+
+
 class RccLatestAssistantReader:
     """Call the existing RCC observation command for one exact worker tab."""
     def __init__(self, client, *, instance_id: str, session_id: str,
@@ -1622,9 +1644,11 @@ class SendDelayedMessageService:
         target = matches[0]
         return (session_id, int(target["tabId"]), int(target["windowId"]))
 
-    def latest(self, *, instance_id: str, conversation_key: str):
+    def latest(self, *, instance_id: str, conversation_key: str, expected_attachment=None):
         import secrets
         session, tab, window = self._locate(instance_id, conversation_key)
+        if expected_attachment is not None and (session, tab, window) != expected_attachment:
+            return {}
         return self.browser_feature.client.request(
             instance_id=instance_id,
             request_id="delayed-read-" + secrets.token_hex(12),
@@ -1887,7 +1911,10 @@ class SendDelayedMessageService:
                 self.ledger.record_watch_diagnostic(row, reason)
             return {}
         instance, worker=ctx["instance_id"],row["conversation_key"]
-        observed=self.latest(instance_id=instance,conversation_key=worker)
+        binding = loop_observed_send_binding(ctx)
+        observed = (self.latest(instance_id=instance, conversation_key=worker,
+                                expected_attachment=binding)
+                    if binding else self.latest(instance_id=instance, conversation_key=worker))
         if observed.get("ok") is not True:
             return reject("RCC_READ_UNAVAILABLE")
         current_count=observed.get("responseTurnCount")
@@ -2007,7 +2034,11 @@ class SendDelayedMessageService:
                         and reconciled_evidence.get("conversation_key")
                             == row["conversation_key"]
                     )
-            if not (direct_receipt_valid or reconciled_receipt_valid):
+            loop_receipt_valid = (
+                receipt.outcome == Outcome.UNKNOWN
+                and loop_observed_send_matches(ctx, observed)
+            )
+            if not (direct_receipt_valid or reconciled_receipt_valid or loop_receipt_valid):
                 return reject("SEND_RECEIPT_INVALID")
         response_changed = (
             str(observed.get("responseSha256") or "") != ctx.get("baseline_sha")
