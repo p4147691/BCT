@@ -127,6 +127,9 @@ class PersistentLoopAssemblyTests(unittest.TestCase):
             outcome = gateway.connect(continuation=continuation, link=LinkKind.HANDOFF)
             self.assertEqual(calls, [("watch", "continuation-7"), ("deliver", "continuation-7")])
             self.assertTrue(outcome.delivered)
+            duplicate = gateway.connect(continuation=continuation, link=LinkKind.HANDOFF)
+            self.assertEqual(duplicate.state, "EXISTING_READY")
+            self.assertEqual(calls, [("watch", "continuation-7"), ("deliver", "continuation-7")])
             self.assertEqual(ledger.claim_resume("continuation-7")["state"], "CLAIMED")
 
     def test_blocked_link_has_no_watch_or_transport_effect(self):

@@ -82,6 +82,17 @@ class LoopRecipeLedger:
             raise LoopContractError("LOOP_CONTINUATION_LINK_INVALID")
         now = time.time()
         with self.store.transaction() as db:
+            existing = db.execute("SELECT * FROM loop_recipe_v2_continuations WHERE continuation_id=?",
+                                  (continuation.continuation_id,)).fetchone()
+            if existing is not None:
+                if (existing["loop_id"], existing["operation_id"], existing["watch_id"],
+                        existing["receipt_ref"], existing["source_block_id"],
+                        existing["next_block_id"], existing["link_kind"]) != (
+                            continuation.loop_id, continuation.operation_id, continuation.watch_id,
+                            continuation.receipt_ref, continuation.source_block_id,
+                            continuation.next_block_id, link.value):
+                    raise LoopContractError("LOOP_CONTINUATION_ID_CONFLICT")
+                return {**self._public(existing), "created": False}
             run = db.execute("SELECT * FROM loop_recipe_v2_runs WHERE loop_id=?", (continuation.loop_id,)).fetchone()
             if run is None:
                 raise LoopContractError("LOOP_RUN_NOT_FOUND")
@@ -89,15 +100,6 @@ class LoopRecipeLedger:
                 raise LoopContractError("LOOP_RUN_REVISION_STALE")
             if run["current_block_id"] != continuation.source_block_id:
                 raise LoopContractError("LOOP_RUN_SOURCE_BLOCK_STALE")
-            existing = db.execute("SELECT * FROM loop_recipe_v2_continuations WHERE continuation_id=?",
-                                  (continuation.continuation_id,)).fetchone()
-            if existing is not None:
-                if (existing["loop_id"], existing["operation_id"], existing["watch_id"],
-                        existing["receipt_ref"]) != (
-                            continuation.loop_id, continuation.operation_id, continuation.watch_id,
-                            continuation.receipt_ref):
-                    raise LoopContractError("LOOP_CONTINUATION_ID_CONFLICT")
-                return self._public(existing)
             db.execute("""INSERT INTO loop_recipe_v2_continuations
                 (continuation_id, loop_id, source_block_id, next_block_id, link_kind, revision,
                  operation_id, watch_id, receipt_ref, required_capabilities_json,
@@ -113,8 +115,10 @@ class LoopRecipeLedger:
                 SET revision=?, current_block_id=?, state='WAITING', updated_at=?
                 WHERE loop_id=?""", (continuation.revision + 1, continuation.next_block_id, now,
                                        continuation.loop_id))
-            return self._public(db.execute("SELECT * FROM loop_recipe_v2_continuations WHERE continuation_id=?",
-                                           (continuation.continuation_id,)).fetchone())
+            return {**self._public(db.execute(
+                "SELECT * FROM loop_recipe_v2_continuations WHERE continuation_id=?",
+                (continuation.continuation_id,),
+            ).fetchone()), "created": True}
 
     def observe_original_receipt(self, *, continuation_id: str, observation: str) -> dict[str, Any]:
         if observation not in {"DELIVERED", "NOT_APPLIED", "UNKNOWN"}:

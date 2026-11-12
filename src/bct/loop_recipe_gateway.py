@@ -61,7 +61,16 @@ class LoopContinuationGateway:
         self.ledger, self.watch, self.transport = ledger, watch, transport
 
     def connect(self, *, continuation: Continuation, link: LinkKind) -> GatewayResult:
-        self.ledger.stage(continuation=continuation, link=link)
+        staged = self.ledger.stage(continuation=continuation, link=link)
+        if staged["created"] is not True:
+            # A crash may have happened after any effect boundary.  Recovery
+            # must inspect the original Watch/Operation receipts; connect is
+            # never a retry mechanism.
+            return GatewayResult(
+                "EXISTING_" + str(staged["state"]), continuation.continuation_id,
+                staged.get("observation") == "DELIVERED",
+                str(staged.get("observation") or ""),
+            )
         if link == LinkKind.BLOCKED:
             return GatewayResult("BLOCKED", continuation.continuation_id, False)
         armed = self.watch.prearm(continuation)
