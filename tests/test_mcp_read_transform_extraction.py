@@ -335,12 +335,14 @@ class QueryContractTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(value, {"status": "INVALID_REQUEST", "reason": "RUN_PLAN_ID_INVALID"})
         self.assertEqual(len(calls), 3)
 
-    async def test_loop_new_start_stays_blocked_before_any_store_provider_or_effect(self):
-        provider = Mock(side_effect=AssertionError("No observation for disabled start"))
+    async def test_official_loop_metadata_replaces_disabled_legacy_entry(self):
+        provider = Mock(side_effect=AssertionError("Catalogue lookup must not observe runtime"))
         server = build_mcp(SimpleNamespace(operations=NoEffects()), status_provider=provider)
-        _, result = await server.call_tool("bct_loop_recipe", {"action": "start"})
-        self.assertEqual(result, {"status": "INVALID_REQUEST", "reason": "LOOP_NEW_START_DISABLED_CHAIN_RESTORED",
-                                  "effects": "NONE", "existing_records": "PRESERVED"})
+        tools = await server.list_tools()
+        loop = next(tool for tool in tools if tool.name == "bct_loop_recipe")
+        self.assertEqual(loop.title, "LOOP")
+        self.assertIn("loop_id", loop.inputSchema["properties"])
+        self.assertNotIn("owner", loop.inputSchema["properties"])
         provider.assert_not_called()
 
 

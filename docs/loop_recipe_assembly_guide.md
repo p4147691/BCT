@@ -127,7 +127,8 @@ Existing BCT capabilities may be called unchanged by that adapter only when
 their side effects and record ownership match the Loop operation.  Chain
 Recipe, its state transitions, and its public commands remain unchanged.
 
-The production adapter is exposed through `bct_persistent_loop_recipe`. It
+The production adapter is exposed through the official **LOOP** tool,
+`bct_loop_recipe`. It
 uses the existing BCT conversation-network, delayed-Watch, exact-message, and
 Node Recovery capabilities without editing them. `WAIT` prearms the current
 response and performs no initial self-send. `HANDOFF` persists first, prearms

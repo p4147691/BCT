@@ -43,14 +43,17 @@ class PersistentLoopPublicTests(unittest.IsolatedAsyncioTestCase):
             }, "rcc": {"instances": []}}}
             server = build_mcp(SimpleNamespace(store=store, operations=NoEffects()),
                                status_provider=lambda: snapshot, compact_catalogue=True)
-            public = next(tool for tool in await server.list_tools()
-                          if tool.name == "bct_persistent_loop_recipe")
+            tools = await server.list_tools()
+            public = next(tool for tool in tools if tool.name == "bct_loop_recipe")
+            self.assertNotIn("bct_persistent_loop_recipe", {tool.name for tool in tools})
+            self.assertEqual(public.title, "LOOP")
             self.assertIn("supervisor_create_operation_id",
                           public.inputSchema["properties"])
             self.assertIn("prepare_supervisor", public.description)
-            _, outline = await server.call_tool("bct_persistent_loop_recipe", {"action": "outline"})
+            self.assertIn("official BCT single persistent Loop Recipe", public.description)
+            _, outline = await server.call_tool("bct_loop_recipe", {"action": "outline"})
             self.assertEqual(outline["status"], "OK")
-            _, started = await server.call_tool("bct_persistent_loop_recipe", {
+            _, started = await server.call_tool("bct_loop_recipe", {
                 "action": "start", "work_id": "loop-public-work", "loop_id": "loop-public-1",
                 "instruction_text": "Finish this goal.",
                 "direction_text": "Continue until completion evidence is verified.",
@@ -60,7 +63,7 @@ class PersistentLoopPublicTests(unittest.IsolatedAsyncioTestCase):
             })
             self.assertEqual(started["status"], "OK")
             self.assertEqual(started["context"]["supervisor_conversation_key"], SUPERVISOR)
-            _, status = await server.call_tool("bct_persistent_loop_recipe", {
+            _, status = await server.call_tool("bct_loop_recipe", {
                 "action": "status", "loop_id": "loop-public-1",
             })
             self.assertEqual(status["run"]["current_block_id"], "resume")
@@ -70,7 +73,7 @@ class PersistentLoopPublicTests(unittest.IsolatedAsyncioTestCase):
         tree = ast.parse((ROOT / "src/bct/mcp_server.py").read_text(encoding="utf-8"))
         entry = next(node for node in ast.walk(tree)
                      if isinstance(node, ast.AsyncFunctionDef)
-                     and node.name == "bct_persistent_loop_recipe")
+                     and node.name == "bct_loop_recipe")
         self.assertEqual(len(entry.body), 1)
         call = entry.body[0].value.value
         self.assertEqual(ast.unparse(call.func), "persistent_loop_command")

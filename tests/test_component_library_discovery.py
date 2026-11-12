@@ -159,6 +159,16 @@ class LibraryMCPTests(unittest.IsolatedAsyncioTestCase):
         desktop = await self.call(self.server(), query="데스크탑")
         self.assertIn("bct_desktop_capture", [t["name"] for t in desktop["matching_tools"]])
 
+    async def test_official_loop_name_finds_one_public_tool_and_component(self):
+        result = await self.call(self.server(), query="LOOP", limit=20)
+        self.assertEqual(["bct_loop_recipe"],
+                         [tool["name"] for tool in result["matching_tools"]
+                          if "loop_recipe" in tool["name"]])
+        self.assertIn("bct.loop_recipe", [part["id"] for part in result["components"]])
+        exact = await self.call(self.server(), tool_name="bct_loop_recipe")
+        self.assertEqual(exact["tool"]["title"], "LOOP")
+        self.assertEqual(["bct.loop_recipe"], exact["related_components"])
+
     async def test_capability_routes_respect_full_compact_and_hybrid(self):
         for mode in ("full", "compact", "hybrid"):
             result = await self.call(self.server(mode), query="read")

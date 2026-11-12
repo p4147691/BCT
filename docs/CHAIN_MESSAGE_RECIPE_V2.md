@@ -437,10 +437,12 @@ Chain/Set Direction의 prepare 응답에 `manual_guidance`로 자동 포함한�
 업데이트된 것은 아니다. source fingerprint·manual hash, `bct_status`의 release SHA,
 테스트·CI·설치·E2E 영수증은 각각 구분한다.
 
-## 블록 조립형 영속 Loop
+## LOOP — BCT 단일 영속 Loop Recipe
 
-새 표준 Loop의 공개 입구는 `bct_persistent_loop_recipe`다. 아래의 보존된
-`bct_loop_recipe`와 별개이며 Chain Recipe의 함수·명령·상태 전이는 변경하지 않는다.
+공식명은 **LOOP**, 공개 MCP 입구는 `bct_loop_recipe`다. 새 블록·연결점 구현이
+기존 공개 Loop 입구를 덮어썼으며 이전 기술명은 더 이상 도구 모음에 노출하지 않는다.
+과거 Loop 기록은 저장소와 백그라운드 복구를 위해 보존하지만 별도의
+공개 Loop 도구로 제공하지 않는다. Chain Recipe의 함수·명령·상태 전이는 변경하지 않는다.
 사용자는 처리 블록과 `CONTINUE`, `WAIT`, `HANDOFF`, `COMPLETE`, `BLOCKED` 다섯 연결점만
 선택한다. Watch, 정확한 신원, Operation 영수증, 재시작과 UNKNOWN 조정은 Loop 전용
 연결 어댑터가 맡는다.
@@ -477,16 +479,15 @@ outline
 `recovery_plan`과 원 Operation/Watch 조회로만 조정하며 같은 continuation ID의 중복 호출은
 Watch나 메시지를 다시 만들지 않는다.
 
-## 단일 Manager Loop의 독립 Supervisor 인계 (보존된 기존 명령)
+## 기존 단일 Manager Loop 기록 (공개 명령 아님)
 
-현재 Chain 공통 코드 복원에 따라 새 `bct_loop_recipe(start)`는 기록 생성 전에
-`LOOP_NEW_START_DISABLED_CHAIN_RESTORED`로 거절한다. 아래 Loop 내용은 기존 기록의
-구조 설명이며 신규 실행 가능 안내가 아니다. 기존 기록·UNKNOWN·영수증은 보존한다.
-복원된 Chain 계획 함수는 새 Loop/Loop 검수 계획 저장을 허용하지 않는다.
+아래 내용은 교체 전 공개 Loop가 남긴 기존 기록의 구조 설명이다. 해당 과거 action 계약은
+더 이상 MCP 도구로 노출하지 않는다. 기존 기록·UNKNOWN·영수증과 백그라운드 복구는
+보존하며 새 LOOP가 이를 새 실행으로 재전송하거나 덮어쓰지 않는다.
 
 Loop 실행 노드는 자기 대화망의 Manager 하나이며 Worker나 손자 노드를 만들지 않는다.
-별도 전역 Supervisor의 정확 UUID를 `bct_loop_recipe(start)`의 `supervisor`와
-`review_instruction`으로 결속하거나, 기존 Loop에는 `configure_review`로 결속한다.
+과거 구현은 별도 전역 Supervisor의 정확 UUID와 검수 지시를 결속하거나 기존 기록에
+검수 결속을 추가했다.
 새 단일 노드 작업은 명시적인 `direction_text`와 Direction/Task ID를 start에 전달하면
 같은 Direction 원장에 Loop 방향을 저장한다. 일반 Chain의 3노드 전송 검증을 완화하거나
 가짜 Worker를 만들지 않는다. 기존 Direction은 덮어쓰지 않는다.
@@ -529,8 +530,8 @@ SHA, 원 반환 Operation과 검수 결과를 `result_report.result`에 저장�
 
 `requester_ref`는 원 요청의 명시적인 상관 참조이며 RCC UUID나 외부 채널 주소가 아니다.
 `start` 또는 `configure_requester`에 이 참조만 주면 `REQUESTER_PULL` 모드이다.
-수락 뒤 `READY_FOR_REQUESTER` 결과를 `bct_loop_recipe(status)`에서 읽고 원 요청자 dot이
-사용자 보고를 맡는다. 경로를 모른다고 Manager·Supervisor·임의 UUID로 보내지 않는다.
+수락 뒤 `READY_FOR_REQUESTER` 결과는 기존 원장에 보존되고 원 요청자 dot이 사용자 보고를
+맡았다. 경로를 모른다고 Manager·Supervisor·임의 UUID로 보내지 않는다.
 미결속 기존 작업도 수락 결과를 이 상태로 보존하며, 미전송 결과에 원 요청자를 한 번 결속할 수 있다.
 
 `requester_conversation_key`까지 명시한 경우에만 기존 RCC 대화에 선택적으로 보고한다.

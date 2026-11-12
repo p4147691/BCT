@@ -325,7 +325,7 @@ class LoopSuccessorLedger:
                     "Continue only the next uncompleted step under this Epoch. Never replay "
                     "APPLIED or UNKNOWN operations. You are the single Loop Manager/worker. "
                     "Do not return to yourself or create child nodes. Reconcile the original receipts "
-                    "with bct_loop_recipe; if still uncertain, preserve the hold and report the blocker "
+                    "from the retained Loop recovery record; if still uncertain, preserve the hold and report the blocker "
                     "to the original requester through its configured reporting path."
                 )
                 op = "loop-self-" + hashlib.sha256(f"{work_id}:{new_epoch}:{loop['next_step']}".encode()).hexdigest()[:24]

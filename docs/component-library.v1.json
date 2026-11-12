@@ -907,7 +907,7 @@
       ]
     },
     {
-      "id": "bct.persistent_loop_recipe",
+      "id": "bct.loop_recipe",
       "kind": "full_recipe",
       "maturity": "bounded",
       "implementation": [
@@ -933,10 +933,10 @@
         },
         {
           "path": "src/bct/mcp_server.py",
-          "symbol": "bct_persistent_loop_recipe (public adapter)"
+          "symbol": "bct_loop_recipe (official LOOP public adapter)"
         }
       ],
-      "contract": "Separate block-and-link persistent Loop. If no Supervisor exists, prepare_supervisor reuses exact create, first-send, bootstrap Watch, and Node Info receipts before start. Store the original instruction, Direction, exact Manager and Supervisor identities, and a new Loop network. Processing blocks end only through CONTINUE, WAIT, HANDOFF, COMPLETE, or BLOCKED. WAIT prearms the current response without an initial self-send. HANDOFF persists first, prearms the exact target Watch, and sends once. Sync reads the same Watch; Node Recovery reuses the existing Check/Recheck/Pause/Replace ledger through a Loop-only adapter.",
+      "contract": "LOOP is the official BCT single persistent Loop Recipe exposed as bct_loop_recipe. If no Supervisor exists, prepare_supervisor reuses exact create, first-send, bootstrap Watch, and Node Info receipts before start. Store the original instruction, Direction, exact Manager and Supervisor identities, and a new Loop network. Processing blocks end only through CONTINUE, WAIT, HANDOFF, COMPLETE, or BLOCKED. WAIT prearms the current response without an initial self-send. HANDOFF persists first, prearms the exact target Watch, and sends once. Sync reads the same Watch; Node Recovery reuses the existing Check/Recheck/Pause/Replace ledger through a Loop-only adapter.",
       "effects": [
         "durable-loop-run-and-continuation",
         "missing-supervisor-bootstrap",
@@ -956,7 +956,7 @@
         "unknown-original-receipt-only"
       ],
       "used_by": [
-        "bct_persistent_loop_recipe"
+        "bct_loop_recipe"
       ]
     },
     {
@@ -998,7 +998,7 @@
         "no-implicit-merge-or-deploy"
       ],
       "used_by": [
-        "bct_loop_recipe",
+        "retained-loop-record-recovery",
         "loop_recipe_recovery_loop"
       ]
     },
@@ -1032,7 +1032,7 @@
         "no-new-node-when-disallowed"
       ],
       "used_by": [
-        "bct_loop_recipe",
+        "retained-loop-record-recovery",
         "LoopReviewLedger.observe_return",
         "loop_recipe_recovery_loop"
       ]

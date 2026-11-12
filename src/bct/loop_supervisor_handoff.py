@@ -158,7 +158,7 @@ class LoopReviewLedger:
                 "are independently verified, include exactly `LOOP ACCEPTANCE: PASS` and "
                 f"`LOOP CANDIDATE SHA: {candidate_sha}` in the MANAGER payload. Otherwise use "
                 "`LOOP ACCEPTANCE: HOLD`. Code review or CI alone is not full acceptance. "
-                "For HOLD, tell the Manager to read bct_loop_recipe(status), acknowledge the exact "
+                "For HOLD, tell the Manager to read the retained Loop recovery record, acknowledge the exact "
                 "returned response SHA with resume_review, fix within the original scope, and "
                 "request review again with the new exact candidate SHA.\n\n"
                 f"Review scope:\n{row['instruction']}\n\nEvidence:\n{evidence_text}"

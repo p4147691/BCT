@@ -125,7 +125,7 @@ class LoopResultLedger:
             "prove the original user was notified.\n\n" + result["summary"])
         if len(message) > 12000:
             # Preserve the full pull result even when an RCC message is too large.
-            message = message[:1000] + "\nRead the full accepted result with bct_loop_recipe(action='status', work_id='" + work_id + "')."
+            message = message[:1000] + "\nThe full historical result remains in the retained Loop recovery record for work_id='" + work_id + "'."
         operation_id = "loop-result-" + hashlib.sha256((work_id+":"+review["operation_id"]).encode()).hexdigest()[:24]
         db.execute("""UPDATE loop_result_reports SET state=?,result_json=?,message_text=?,
             message_sha256=?,operation_id=?,updated_at=? WHERE work_id=?""",

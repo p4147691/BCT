@@ -1,8 +1,8 @@
 # Persistent Loop assembly contract
 
-This contract is implemented by the separate `bct_persistent_loop_recipe`
-public command. It does not change Chain Recipe or the retained
-`bct_loop_recipe` command.
+This contract is implemented by the official `bct_loop_recipe` public command,
+shown as **LOOP** in MCP clients. It replaces the former public Loop entry while
+retaining historical Loop records in storage. Chain Recipe remains unchanged.
 
 For extension decisions and examples, see
 [`loop_recipe_assembly_guide.md`](loop_recipe_assembly_guide.md).
