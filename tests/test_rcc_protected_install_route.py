@@ -271,6 +271,17 @@ class ProtectedRccRouteTests(unittest.TestCase):
             ri.COMPOSER_REBIND_MANIFEST_SHA256,
         )
 
+    def test_composer_rebind_keeps_the_original_pin_and_accepts_exact_visible_editor_pin(self):
+        for action in ("inspect", "install", "verify-installed", "rollback"):
+            operation = f"rcc-{action}-composer-rebind"
+            original = DeployFeature._rcc_route_config(operation, ri.COMPOSER_REBIND_MANIFEST_SHA256)
+            visible = DeployFeature._rcc_route_config(operation, ri.VISIBLE_EDITOR_MANIFEST_SHA256)
+            self.assertEqual(original["manifest_file"], ri.COMPOSER_REBIND_MANIFEST)
+            self.assertEqual(visible["manifest_file"].parent, ri.VISIBLE_EDITOR_ROOT)
+            self.assertEqual(visible["journal_root"], ri.VISIBLE_EDITOR_JOURNAL)
+            self.assertEqual((visible["installed_version"], visible["candidate_version"]), ("1.0.70", "1.0.70"))
+            self.assertEqual(DeployFeature._rcc_route_config(operation, "0" * 64), original)
+
     def test_protected_inspect_accepts_composer_rebind_69_to_70(self):
         for folder in (self.live, self.reference):
             (folder / "f56.txt").write_text("56:1.0.69", encoding="utf-8")

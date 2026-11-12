@@ -210,17 +210,33 @@ assert.equal(
   'blank ProseMirror paragraphs reconstruct one source blank line',
 );
 
-const artifactEditor = {id: 'artifact-editor'};
-const promptEditor = {id: 'prompt-editor'};
+function editor(id, {visible = true, inert = false, disabled = false} = {}) {
+  return {
+    id, disabled, isConnected: true,
+    closest: () => inert ? {} : null,
+    getClientRects: () => visible ? [{}] : [],
+    contains: node => node?.id === id,
+  };
+}
+const artifactEditor = editor('artifact-editor');
+const promptEditor = editor('prompt-editor');
+const hiddenEditor = editor('hidden-editor', {visible: false});
+const inertEditor = editor('inert-editor', {inert: true});
+const otherVisibleEditor = editor('second-prompt-editor');
+const promptSelector = 'div[contenteditable="true"][data-virtualkeyboard="true"]';
 const selectorMatches = new Map([
-  ['#prompt-textarea', null],
-  ['div[contenteditable="true"][data-virtualkeyboard="true"]', promptEditor],
-  ['textarea[name="prompt-textarea"]', null],
-  ['form div[contenteditable="true"][role="textbox"]', promptEditor],
-  ['div[contenteditable="true"][role="textbox"]', artifactEditor],
+  ['#prompt-textarea', [hiddenEditor]],
+  [promptSelector, [hiddenEditor, inertEditor, promptEditor]],
+  ['form div[contenteditable="true"][role="textbox"]', [promptEditor]],
+  ['div[contenteditable="true"][role="textbox"]', [artifactEditor]],
 ]);
+const document = {
+  activeElement: null,
+  querySelectorAll: selector => selectorMatches.get(selector) || [],
+};
 const targetContext = vm.createContext({
-  document: {querySelector: selector => selectorMatches.get(selector) || null},
+  document,
+  window: {getComputedStyle: () => ({visibility: 'visible'})},
 });
 vm.runInContext(
   slice(domSource, 'function editorCandidates()', 'function conversationObserveRoot()')
@@ -232,6 +248,14 @@ assert.equal(
   promptEditor,
   'the prompt-specific virtual-keyboard editor wins over an earlier artifact textbox',
 );
+selectorMatches.set(promptSelector, [hiddenEditor, promptEditor, otherVisibleEditor]);
+assert.equal(targetContext.getEditorForTest(), null, 'two visible candidates without focus are ambiguous');
+document.activeElement = otherVisibleEditor;
+assert.equal(targetContext.getEditorForTest(), otherVisibleEditor, 'focus disambiguates visible candidates');
+document.activeElement = hiddenEditor;
+selectorMatches.set(promptSelector, [hiddenEditor, inertEditor]);
+selectorMatches.delete('form div[contenteditable="true"][role="textbox"]');
+assert.equal(targetContext.getEditorForTest(), null, 'hidden or inert matches and artifact textboxes stay rejected');
 assert.equal(
   Array.from(targetContext.editorCandidatesForTest()).includes(
     'div[contenteditable="true"][role="textbox"]'

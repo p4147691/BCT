@@ -24,26 +24,26 @@ function editorCandidates() {
 }
 
 
-function getEditor() {
-
-
-  for (const selector of editorCandidates()) {
-
-
-    const node = document.querySelector(selector);
-
-
-    if (node) return node;
-
-
-  }
-
-
-  return null;
-
-
+function isUsableEditor(editor) {
+  if (!editor.isConnected || editor.disabled || editor.readOnly
+      || editor.closest('[hidden], [inert], [aria-hidden="true"]')
+      || editor.getClientRects().length === 0) return false;
+  const style = window.getComputedStyle(editor);
+  if (style.visibility !== 'visible') return false;
+  return typeof editor.checkVisibility !== 'function'
+    || editor.checkVisibility({opacityProperty: true, visibilityProperty: true});
 }
 
+function getEditor() {
+  for (const selector of editorCandidates()) {
+    const editors = Array.from(document.querySelectorAll(selector)).filter(isUsableEditor);
+    if (!editors.length) continue;
+    const focused = editors.filter(editor => editor.contains(document.activeElement));
+    if (focused.length === 1) return focused[0];
+    return editors.length === 1 ? editors[0] : null;
+  }
+  return null;
+}
 
 function conversationObserveRoot() {
 
