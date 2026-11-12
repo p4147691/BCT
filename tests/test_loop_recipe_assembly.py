@@ -21,9 +21,15 @@ from bct.loop_recipe_gateway import (
 )
 from bct.loop_recipe_recovery import RecoveryAction, RecoveryEvidence, plan_recovery
 from bct.persistent_loop_commands import PersistentLoopCommands
-from bct.persistent_loop_runtime import PersistentLoopCoordinator, PersistentLoopRuntime
+from bct.persistent_loop_runtime import (
+    LOOP_SUPERVISOR_ROLE, PersistentLoopCoordinator, PersistentLoopRuntime,
+)
 from bct.persistent_loop_recovery import PersistentLoopRecovery
 from bct.core.models import Principal, Work
+from bct.conversation_network import (
+    assign_conversation_membership, configure_conversation_scope,
+    role_tags_sha256, upsert_project,
+)
 from bct.node_recovery import observe_node
 
 
@@ -399,7 +405,7 @@ class PersistentLoopAssemblyTests(unittest.TestCase):
                 self.assertEqual([item[1]["operation"] for item in calls],
                                  ["project-upsert", "membership-assign", "membership-assign"])
                 self.assertEqual(calls[1][1]["role_tags"], ["Manager"])
-                self.assertEqual(calls[2][1]["role_tags"], ["Supervisor"])
+                self.assertEqual(calls[2][1]["role_tags"], [LOOP_SUPERVISOR_ROLE])
         asyncio.run(scenario())
 
     def test_missing_supervisor_reuses_create_send_bootstrap_watch_and_registration(self):
@@ -489,9 +495,37 @@ class PersistentLoopAssemblyTests(unittest.TestCase):
                 self.assertEqual(watch["planned_send_operation_id"],
                                  "send-supervisor-16")
                 self.assertEqual(watch["manager_conversation_key"], manager_key)
-                self.assertEqual(calls[3][1]["role_tags"], ["Supervisor"])
+                self.assertEqual(calls[3][1]["scope_name"], "")
+                self.assertEqual(calls[3][1]["role_tags"], [LOOP_SUPERVISOR_ROLE])
+                self.assertEqual(result["planned_scope_name"], "Loop 16")
 
         asyncio.run(scenario())
+
+    def test_loop_supervisor_role_is_scoped_without_changing_global_supervisor_rule(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "state.sqlite")
+            configure_conversation_scope(
+                store,
+                conversation_key="11111111-1111-1111-1111-111111111111",
+                display_name="Existing Chain Supervisor", scope_name="",
+                role_tags=["Supervisor"], expected_scope_id="",
+                expected_role_tags_sha256=role_tags_sha256([]),
+            )
+            loop_key = "22222222-2222-2222-2222-222222222222"
+            registered = configure_conversation_scope(
+                store, conversation_key=loop_key, display_name="Loop Supervisor",
+                scope_name="", role_tags=[LOOP_SUPERVISOR_ROLE],
+                expected_scope_id="",
+                expected_role_tags_sha256=role_tags_sha256([]),
+            )
+            self.assertEqual(registered["scope_id"], "")
+            upsert_project(store, project_id="loop-network-16", display_name="Loop 16")
+            assigned = assign_conversation_membership(
+                store, project_id="loop-network-16", conversation_key=loop_key,
+                role_tags=[LOOP_SUPERVISOR_ROLE], expected_scope_id="",
+            )
+            self.assertEqual(assigned["project_id"], "loop-network-16")
+            self.assertEqual(assigned["role_tags"], [LOOP_SUPERVISOR_ROLE])
 
     def test_loop_recovery_adapter_reuses_check_recheck_and_pause_without_chain_mutation(self):
         async def scenario():

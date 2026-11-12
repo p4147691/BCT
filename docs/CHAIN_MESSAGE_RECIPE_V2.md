@@ -450,7 +450,9 @@ Supervisor가 아직 없으면 `action="prepare_supervisor"`가 기존 create-ch
 새 대화 UUID는 첫 전송 뒤에 생기므로 이 준비만 생성·첫 전송 영수증을 확인한 뒤
 zero-response Watch를 결속한다. 같은 Operation ID 재호출은 원 영수증을 읽을 뿐
 새 대화나 메시지를 만들지 않는다. 준비 결과의 정확한 Supervisor UUID가 현재
-관찰에서 확인된 뒤에만 `start`에 저장하고 새 Loop 대화망을 구성한다.
+관찰에서 확인된 뒤에만 `start`에 저장하고 새 Loop 대화망을 구성한다. 준비 시
+노드는 미소속 `Loop Supervisor`로 등록되고 topology에서만 새 Loop 대화망으로
+이동한다. 기존 Chain의 미소속 전역 `Supervisor` 태그와 규칙은 변경하지 않는다.
 
 ```text
 outline

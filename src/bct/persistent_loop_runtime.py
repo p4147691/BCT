@@ -29,6 +29,13 @@ LOOP_OUTPUT_CONTRACT = (
     "other bound endpoint (A to Supervisor, or Supervisor to A)."
 )
 
+# The existing conversation-network contract reserves the exact ``Supervisor``
+# tag for one unassigned global Chain supervisor.  A persistent Loop owns a
+# separate, scoped endpoint, so its advisory Node Info tag must also be
+# separate.  This keeps the existing Chain role rules unchanged while allowing
+# each Loop network to contain its own supervisor endpoint.
+LOOP_SUPERVISOR_ROLE = "Loop Supervisor"
+
 _UUID = re.compile(r"[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}")
 
 
@@ -220,8 +227,11 @@ class PersistentLoopCoordinator:
         try:
             registered = await network(work_id, register_operation_id, {
                 "operation": "set-node-info", "conversation_key": supervisor_key,
-                "display_name": display_name.strip(), "scope_name": scope_name.strip(),
-                "role_tags": ["Supervisor"], "expected_scope_id": "",
+                # Registration deliberately stays unassigned.  The later
+                # topology action creates the exact requested Loop project and
+                # moves both endpoints into it using explicit CAS values.
+                "display_name": display_name.strip(), "scope_name": "",
+                "role_tags": [LOOP_SUPERVISOR_ROLE], "expected_scope_id": "",
                 "expected_role_tags_sha256": role_tags_sha256([]),
                 "assigned_task": task_id,
             })
@@ -233,7 +243,8 @@ class PersistentLoopCoordinator:
             "status": "READY" if registered.get("outcome") == "APPLIED"
                       else "SUPERVISOR_REGISTRATION_" + str(registered.get("outcome") or "UNKNOWN"),
             "supervisor_conversation_key": supervisor_key,
-            "network_project_id": network_project_id, "attachment": attachment,
+            "network_project_id": network_project_id,
+            "planned_scope_name": scope_name.strip(), "attachment": attachment,
             "manager_proof": manager, "creation": created, "send": sent,
             "watch": watched, "registration": registered,
             "contract_appended": contract_appended,
@@ -277,7 +288,8 @@ class PersistentLoopCoordinator:
         supervisor = await execute(work_id, supervisor_operation_id, {
             "operation": "membership-assign", "project": context["network_project_id"],
             "conversation_key": context["supervisor_conversation_key"],
-            "role_tags": ["Supervisor"], "expected_scope_id": expected_supervisor_scope_id,
+            "role_tags": [LOOP_SUPERVISOR_ROLE],
+            "expected_scope_id": expected_supervisor_scope_id,
         })
         return {
             "status": "READY" if supervisor.get("outcome") == "APPLIED"

@@ -62,7 +62,9 @@ Supervisor가 없으면 처리 블록을 바꾸지 않습니다. Loop의 연결 
 영수증에 결속된 bootstrap Watch와 Node Info를 기록합니다. 새 대화 UUID는 첫
 전송 전에는 존재하지 않으므로 이 준비 단계만 `생성 → 첫 전송 → 영수증 검증
 Watch` 순서를 사용합니다. UNKNOWN이면 같은 Operation 영수증만 확인하며 새
-대화나 메시지를 다시 만들지 않습니다.
+대화나 메시지를 다시 만들지 않습니다. 이때 새 노드는 먼저 미소속
+`Loop Supervisor`로 기록되고, 명시적인 topology 단계에서만 새 Loop 대화망으로
+이동합니다. 기존 Chain의 전역 `Supervisor` 역할 규칙은 바꾸지 않습니다.
 
 ## 새 기능을 넣고 싶을 때
 

@@ -148,15 +148,17 @@ verify exact Manager and RCC attachment
 -> create one new chat
 -> send the first Supervisor role instruction and obtain its UUID
 -> bind the existing bootstrap Watch to the exact create/send receipts
--> register Supervisor Node Info
+-> register unassigned `Loop Supervisor` Node Info
 -> start the Loop with that freshly observed UUID
+-> topology creates the new Loop network and moves A and that endpoint into it
 ```
 
 The first Watch cannot precede the first send because a new ChatGPT conversation
 does not yet have a UUID. This is the same bounded bootstrap receipt rule used
 for existing prepared nodes. Any ambiguous attachment or UNKNOWN receipt stops
 the sequence. A retry must reuse all original Operation IDs and must not create
-a replacement chat or message.
+a replacement chat or message. `Loop Supervisor` is a Loop-scoped advisory role;
+the existing exact `Supervisor` tag and its global Chain rule are unchanged.
 
 ## Extension checklist
 
