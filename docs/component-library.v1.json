@@ -940,7 +940,7 @@
           "symbol": "bct_loop_recipe (official LOOP public adapter)"
         }
       ],
-      "contract": "LOOP saves the original instruction, Direction, overall plan and completion conditions with an exact Manager and an unassigned Supervisor. The Manager alone belongs to the Loop project. The first response is armed without an initial send. Each turn saves its detailed plan revision and decision. The existing RCC observer proves the exact completed response before the Loop runner commits another prearmed turn or the completion receipt. The Supervisor plans and reports independently. Completion requires the current Supervisor return and evidence for every overall condition.",
+      "contract": "LOOP saves the original instruction, Direction, overall plan and completion conditions with an exact Manager and an unassigned Supervisor. The Manager alone belongs to the Loop project. The first response is armed without an initial send and bound to the exact original user message. Each turn saves its detailed plan revision and decision. The existing RCC observer proves the exact completed response before the Loop runner commits another prearmed turn or the completion receipt. The Supervisor plans and reports independently. Completion requires the current Supervisor return and evidence for every overall condition.",
       "effects": [
         "durable-loop-run-and-continuation",
         "missing-supervisor-bootstrap",

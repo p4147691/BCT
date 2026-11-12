@@ -43,7 +43,7 @@ class FakeRccOperations:
             baseline = {"responseTurnCount": 0}
             if not arguments.get("planned_send_operation_id"):
                 baseline.update(generating=True, latestUserTurnKey="user-first",
-                                latestUserSha256=_rcc_submitted_text_sha256("initial"))
+                                latestUserSha256=_rcc_submitted_text_sha256("original"))
             self.service.ledger.prearm_task(
                 task_id=arguments["task_id"], work_id=work_id, principal_id=principal.principal_id,
                 assignment_epoch=work.assignment_epoch, instance_id=arguments["instance_id"],
@@ -125,7 +125,7 @@ class LoopTurnTests(unittest.TestCase):
     def reply(self, number, conversation):
         text = f"assistant response {number}"
         user_key = "user-first" if number == 1 else f"user-{number}"
-        user_sha = _rcc_submitted_text_sha256(self.ops.sends.get(conversation, "initial"))
+        user_sha = _rcc_submitted_text_sha256(self.ops.sends.get(conversation, "original"))
         self.responses[conversation] = {
             "ok": True, "conversationKey": conversation, "responseTurnCount": 1,
             "generating": False, "terminal": True, "inputReady": True,
@@ -178,6 +178,16 @@ class LoopTurnTests(unittest.TestCase):
         self.assertEqual(objective["run_state"], "COMPLETED")
         self.assertEqual(objective["completion"]["receipt"]["response_turn_key"], "assistant-6")
         self.assertEqual(self.runner.run_once(), [])
+
+    def test_direct_manager_watch_requires_original_user_instruction(self):
+        row = self.turns.due()[0]
+        with self.store.transaction() as db:
+            db.execute("UPDATE loop_recipe_v2_contexts SET instruction_text='different input'")
+            db.execute("UPDATE loop_recipe_turns SET state='PREPARING' WHERE watch_id=?", (row["watch_id"],))
+        result = self.runner.run_once()
+        self.assertEqual(result[0]["state"], "LOOP_INITIAL_USER_INSTRUCTION_MISMATCH")
+        self.assertEqual(self.turns.status("loop")["objective"]["run_state"], "BLOCKED")
+        self.assertEqual(len(self.ops.calls), 1)
 
     def test_restart_before_send_reuses_prearmed_watch(self):
         self.decision(1, OWNER, "continue")

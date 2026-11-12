@@ -10,6 +10,7 @@ from bct.core.models import Outcome, Principal
 from bct.loop_recipe_contracts import LoopContractError
 from bct.loop_recipe_ledger import LoopRecipeLedger
 from bct.node_recovery import NodeRecoveryLedger
+from bct.send_delayed_message import _rcc_submitted_text_sha256
 
 
 _ID = re.compile(r"[A-Za-z0-9_.:-]{1,80}")
@@ -110,11 +111,22 @@ class LoopTurns:
                         WHERE loop_id=? AND turn=? AND plan_id=? AND plan_revision=?""",
                         (loop_id, plan["turn"], plan["plan_id"], plan["revision"])).fetchone()
                         if plan else None)
+            receipts = {}
+            for item in (turn, prior):
+                if item is None:
+                    continue
+                for operation_id in (item["watch_operation_id"], item["send_operation_id"]):
+                    if operation_id:
+                        receipt = db.execute("""SELECT operation_id,state,outcome,error
+                            FROM operations WHERE operation_id=? AND work_id=? AND principal_id=?""",
+                            (operation_id, objective["work_id"], objective["owner_principal_id"])).fetchone()
+                        if receipt:
+                            receipts[operation_id] = dict(receipt)
         objective["completion_conditions"] = json.loads(objective.pop("conditions_json"))
         objective["completion"] = json.loads(objective.pop("completion_json") or "null")
         result = {"status": "OK", "objective": objective, "turn": self._turn_view(turn),
                   "previous_turn": self._turn_view(prior), "plan": dict(plan) if plan else None,
-                  "progress": dict(progress) if progress else None}
+                  "progress": dict(progress) if progress else None, "receipts": receipts}
         if plan:
             result["plan"]["plan"] = json.loads(result["plan"].pop("plan_json"))
         return result
@@ -142,6 +154,18 @@ class LoopTurns:
             source_turn, time.time() + delay,
         ))
 
+    @staticmethod
+    def _check_topology(db, objective):
+        manager = objective["manager_conversation_key"]
+        supervisor = objective["supervisor_conversation_key"]
+        project = objective["network_project_id"]
+        memberships = db.execute("""SELECT project_id,conversation_key
+            FROM conversation_network_memberships WHERE activity='ACTIVE'
+                AND (project_id=? OR conversation_key IN (?,?))""",
+                                 (project, manager, supervisor)).fetchall()
+        if [tuple(row) for row in memberships] != [(project, manager)]:
+            raise LoopContractError("LOOP_MANAGER_ONLY_NETWORK_REQUIRED")
+
     def arm(self, loop_id, conversation_key):
         with self.store.transaction() as db:
             objective = self._objective(db, loop_id)
@@ -149,13 +173,7 @@ class LoopTurns:
             if objective["manager_conversation_key"] != conversation_key:
                 raise LoopContractError("LOOP_MANAGER_IDENTITY_MISMATCH")
             if self._current(db, loop_id) is None:
-                memberships = db.execute("""SELECT project_id, conversation_key
-                     FROM conversation_network_memberships WHERE activity='ACTIVE'
-                       AND (project_id=? OR conversation_key IN (?,?))""",
-                     (objective["network_project_id"], conversation_key,
-                      objective["supervisor_conversation_key"])).fetchall()
-                if [tuple(row) for row in memberships] != [(objective["network_project_id"], conversation_key)]:
-                    raise LoopContractError("LOOP_MANAGER_ONLY_NETWORK_REQUIRED")
+                self._check_topology(db, objective)
                 if db.execute("SELECT 1 FROM loop_recipe_turns WHERE conversation_key=? AND due_at IS NOT NULL",
                               (conversation_key,)).fetchone():
                     raise LoopContractError("LOOP_CONVERSATION_ALREADY_WATCHED")
@@ -171,6 +189,7 @@ class LoopTurns:
             if (not current or current["turn"] != turn or current["state"] != "BLOCKED"
                     or conversation_key != objective["manager_conversation_key"]):
                 raise LoopContractError("LOOP_BLOCKED_MANAGER_RESUME_REQUIRED")
+            self._check_topology(db, objective)
             if db.execute("SELECT 1 FROM loop_recipe_turns WHERE conversation_key=? AND due_at IS NOT NULL",
                           (conversation_key,)).fetchone():
                 raise LoopContractError("LOOP_CONVERSATION_ALREADY_WATCHED")
@@ -452,9 +471,13 @@ class LoopTurnRunner:
                 raise LoopContractError("LOOP_WATCH_RECEIPT_MISMATCH")
             if sent and self._check_receipt(row, sent) != "APPLIED":
                 return "SEND_RECEIPT_PENDING_OR_HELD"
-            self._watch_binding(row, objective)
+            binding = self._watch_binding(row, objective)
+            if not self._verify_initial_source(row, objective, binding):
+                return "LOOP_INITIAL_USER_INSTRUCTION_MISMATCH"
             self.turns.update(row, "WATCHING", 0)
             return "WATCHING"
+        with self.turns.store._readonly() as db:
+            self.turns._check_topology(db, objective)
         NodeRecoveryLedger(self.turns.store).assert_send_allowed(
             work_id=work.work_id, conversation_key=conversation,
         )
@@ -493,8 +516,9 @@ class LoopTurnRunner:
         stored_watch = self._watch_binding(row, objective)
         if stored_watch["state"] != "WATCHING":
             raise LoopContractError("LOOP_WATCH_RECEIPT_MISMATCH")
+        if not self._verify_initial_source(row, objective, stored_watch):
+            return "LOOP_INITIAL_USER_INSTRUCTION_MISMATCH"
         if message:
-            from bct.send_delayed_message import _rcc_submitted_text_sha256
             context = stored_watch["context"]
             if context.get("source_send_sha256") != _rcc_submitted_text_sha256(message):
                 raise LoopContractError("LOOP_WATCH_PAYLOAD_MISMATCH")
@@ -508,6 +532,24 @@ class LoopTurnRunner:
                 return "SEND_RECEIPT_PENDING_OR_HELD"
         self.turns.update(row, "WATCHING", 0)
         return "WATCHING"
+
+    def _verify_initial_source(self, row, objective, watch):
+        if row["turn"] != 1:
+            if row["source_turn"] != 1 or row["send_operation_id"]:
+                return True
+            with self.turns.store._readonly() as db:
+                previous = db.execute("""SELECT response_turn_key FROM loop_recipe_turns
+                                       WHERE loop_id=? AND turn=1""", (row["loop_id"],)).fetchone()
+            if previous and previous["response_turn_key"]:
+                return True
+        context = watch["context"]
+        if (context.get("source_proof_kind") == "RCC_PREARM_USER_TURN"
+                and context.get("source_user_turn_key")
+                and context.get("source_user_sha256")
+                    == _rcc_submitted_text_sha256(objective["instruction_text"])):
+            return True
+        self.turns.update(row, "BLOCKED")
+        return False
 
     def _check_receipt(self, row, receipt):
         if receipt.outcome == Outcome.APPLIED:

@@ -626,7 +626,7 @@ async def persistent_loop_command(
                 "sequence": [
                     "Save original instruction, Direction, overall plan and conditions.",
                     "Place only the Manager in the new project. Keep the Supervisor unassigned.",
-                    "Arm the current Manager response and wait for WATCHING before working.",
+                    "Arm the Manager response to the exact original user message. Wait for WATCHING before working.",
                     "Read status, save the detail plan, execute, verify and save the decision.",
                     "The exact response releases the next prearmed turn or completion receipt.",
                 ],

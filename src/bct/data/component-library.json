@@ -1,9 +1,9 @@
 {
   "schema": "bct.component-library.bundle.v1",
-  "source_fingerprint": "8b9e7c2ebdce1215e7f210d1989b2159b8ad4d0187e37b7e39010708619ddd6a",
+  "source_fingerprint": "d08381d09ddc9e3bd781333ccd4600790164934f878467ec12f93ae9fa739153",
   "source_hashes": {
     "docs/CHAIN_MESSAGE_RECIPE_V2.md": "1484b088885a3fcb540217fab6f787ea248305477c8a40e1e22633d9a91f24eb",
-    "docs/component-library.v1.json": "e013761ced32a3b617f7440043cfca18280d0091efdf57c7ae1323975c773039",
+    "docs/component-library.v1.json": "756b0add48cfccf59d11d0d799b5ac24052d0ed4ed96c13c7cef82b7083174b6",
     "modules/browser-bridge/extension/background.js": "b058aeb8fa8f37b8a21ae8b70be21d003e976a97e9e5ca884d7a98f5dced4472",
     "modules/browser-bridge/extension/chat_tools.js": "cc91898a0c30c58f5bee4e6b7fea991282ce5a21f100cfaeb220cc300e4ee85b",
     "modules/browser-bridge/extension/tool_protocol.js": "05e244e856af58705de1c1fc50a9a8d5e63b9ca2e8ba8674cabe8d9ea9a8563a",
@@ -46,11 +46,11 @@
     "src/bct/loop_store.py": "232e7b8d7362ba20b17d601be62d04f7c9f165c3aa27958ca956b1de7e5128ec",
     "src/bct/loop_successor.py": "0059ed34a1b14508c04306086a5fad95ee600b24391450c98145548556aec5f0",
     "src/bct/loop_supervisor_handoff.py": "10337fe0b64b47a93e12bea9c354c0fdb40887d715c311fea019b700f6dfe220",
-    "src/bct/loop_turns.py": "bb047555fb0eb00d4282b330ef6c99b3fa6df6812143ba0e146ffc9cfedd1e7d",
+    "src/bct/loop_turns.py": "3515a7ac35b754b9223d66cf8439a80d43b8fa945ae147159ebf56f37d805c36",
     "src/bct/mcp_server.py": "3837ff57b2d9e71af79b248ac7c34cd339d54c44928e8448daa293d90e0fa35a",
     "src/bct/node_recovery.py": "1c84150ae1af8cc285432565097ac071a2af6c4b2534f1d19ac7f75d7bec2438",
     "src/bct/persistent_loop_recovery.py": "4508fdeeab8a960c16c4ca131476afc896ad46449298652fa7a24224e173c8bf",
-    "src/bct/persistent_loop_runtime.py": "2a427871454e23dceebbeee7186aea4d4404cd58ee7c9b13db81c897604859c8",
+    "src/bct/persistent_loop_runtime.py": "37e3b0f55d5b42d3789e931c59e118893a8630802a1c0b55b78f84c79bdd4775",
     "src/bct/project_plan.py": "8a2314e2227c590eb2af2a8e61b0281f2659c55c563825fc3436d31486999f95",
     "src/bct/recipes/__init__.py": "ed6578c117db9d5656e09858e4db6d15195802de93f9780090420213568ebd4a",
     "src/bct/recipes/chain.py": "e6a5dbf231053ca23495046f18a719f4ae93bbbb778bf7e5ef53f7db519c643c",
@@ -1387,7 +1387,7 @@
             "symbol": "bct_loop_recipe (official LOOP public adapter)"
           }
         ],
-        "contract": "LOOP saves the original instruction, Direction, overall plan and completion conditions with an exact Manager and an unassigned Supervisor. The Manager alone belongs to the Loop project. The first response is armed without an initial send. Each turn saves its detailed plan revision and decision. The existing RCC observer proves the exact completed response before the Loop runner commits another prearmed turn or the completion receipt. The Supervisor plans and reports independently. Completion requires the current Supervisor return and evidence for every overall condition.",
+        "contract": "LOOP saves the original instruction, Direction, overall plan and completion conditions with an exact Manager and an unassigned Supervisor. The Manager alone belongs to the Loop project. The first response is armed without an initial send and bound to the exact original user message. Each turn saves its detailed plan revision and decision. The existing RCC observer proves the exact completed response before the Loop runner commits another prearmed turn or the completion receipt. The Supervisor plans and reports independently. Completion requires the current Supervisor return and evidence for every overall condition.",
         "effects": [
           "durable-loop-run-and-continuation",
           "missing-supervisor-bootstrap",
