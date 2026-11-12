@@ -1,6 +1,6 @@
 {
   "schema": "bct.component-library.bundle.v1",
-  "source_fingerprint": "0f942bf6f5a10664ed65349954ae92c7b6014e0a4096c99883bb0c6a770e919e",
+  "source_fingerprint": "92ddfebf043064c8e8fa55cf7726ab9cfbf06392c89909f0bc05d1d9ddd00e74",
   "source_hashes": {
     "docs/CHAIN_MESSAGE_RECIPE_V2.md": "1484b088885a3fcb540217fab6f787ea248305477c8a40e1e22633d9a91f24eb",
     "docs/component-library.v1.json": "756b0add48cfccf59d11d0d799b5ac24052d0ed4ed96c13c7cef82b7083174b6",
@@ -47,10 +47,10 @@
     "src/bct/loop_successor.py": "0059ed34a1b14508c04306086a5fad95ee600b24391450c98145548556aec5f0",
     "src/bct/loop_supervisor_handoff.py": "10337fe0b64b47a93e12bea9c354c0fdb40887d715c311fea019b700f6dfe220",
     "src/bct/loop_turns.py": "92d9b9a539e3f0c53449bedd28a95958a4fbf911fe5a5ad13f5f057429d7f2ef",
-    "src/bct/mcp_server.py": "9c4e08de630ea1bbbfbfc86f78383964134770a994e68d91334c27a7c57d1f78",
+    "src/bct/mcp_server.py": "4e431a4dd5c8994248708da917a1571bc02436feb7561be666b18091fc90789a",
     "src/bct/node_recovery.py": "1c84150ae1af8cc285432565097ac071a2af6c4b2534f1d19ac7f75d7bec2438",
     "src/bct/persistent_loop_recovery.py": "4508fdeeab8a960c16c4ca131476afc896ad46449298652fa7a24224e173c8bf",
-    "src/bct/persistent_loop_runtime.py": "ec45093d4c6317f707e8236b6f3f2027ab8a5ce5c642aca01280e6b2c794be05",
+    "src/bct/persistent_loop_runtime.py": "0d410463ca6ec12112a9bb5eed098616e2075dd546786f57ac37b306a0815f4c",
     "src/bct/project_plan.py": "8a2314e2227c590eb2af2a8e61b0281f2659c55c563825fc3436d31486999f95",
     "src/bct/recipes/__init__.py": "ed6578c117db9d5656e09858e4db6d15195802de93f9780090420213568ebd4a",
     "src/bct/recipes/chain.py": "e6a5dbf231053ca23495046f18a719f4ae93bbbb778bf7e5ef53f7db519c643c",

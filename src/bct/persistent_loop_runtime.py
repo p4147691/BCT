@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import hmac
 import json
 import re
 from dataclasses import dataclass
@@ -134,10 +135,10 @@ class PersistentLoopCoordinator:
             store=self.runtime.bct.store, operations=operations,
             browser_feature=operations._features["browser"],
         )
-        texts = {_rcc_submitted_text_sha256(instruction): instruction}
-        if not instruction.startswith("BCT Control "):
-            rendered = "BCT Control " + instruction
-            texts[_rcc_submitted_text_sha256(rendered)] = rendered
+        body = re.sub(r"^@?BCT Control\s+", "", instruction, count=1)
+        texts = {_rcc_submitted_text_sha256(value): value
+                 for value in (instruction, body, "BCT Control " + body)}
+        outcomes = set()
 
         def read(key):
             try:
@@ -151,9 +152,14 @@ class PersistentLoopCoordinator:
             if observed.get("ok") is not True or observed.get("conversationKey") != key:
                 raise LoopContractError("LOOP_START_SOURCE_UNAVAILABLE")
             source = texts.get(observed.get("latestUserSha256"))
-            if (source and observed.get("latestUserTurnKey")
-                    and observed.get("latestUserTextOccurrenceCount") == 1
-                    and not observed.get("completedLatestUserTurnKey")):
+            if source:
+                if observed.get("completedLatestUserTurnKey"):
+                    outcomes.add("LOOP_START_SOURCE_ALREADY_COMPLETED")
+                    return None
+                if (not observed.get("latestUserTurnKey")
+                        or observed.get("latestUserTextOccurrenceCount") != 1):
+                    outcomes.add("LOOP_START_SOURCE_NOT_UNIQUE")
+                    return None
                 return target, source, observed["latestUserTurnKey"]
             return None
 
@@ -163,18 +169,44 @@ class PersistentLoopCoordinator:
 
         matches = await asyncio.to_thread(read_candidates)
         if len(matches) != 1:
+            if not matches and len(outcomes) == 1:
+                raise LoopContractError(outcomes.pop())
             reason = "LOOP_START_SOURCE_AMBIGUOUS" if matches else "LOOP_START_SOURCE_NOT_FOUND"
             raise LoopContractError(reason)
         return matches[0]
 
-    async def start_from_chat(self, *, work_id, instruction, direction, overall_plan, conditions):
+    async def prepare_start(self, *, work_id, instruction):
+        work = self.commands._owned_work(work_id)
+        if not instruction.strip() or len(instruction.strip()) > 12000:
+            raise LoopContractError("LOOP_PREPARE_INSTRUCTION_REQUIRED")
+        manager, source, turn_key = await self.resolve_start_manager(instruction.strip())
+        source_sha = _rcc_submitted_text_sha256(source)
+        payload = [1, work.work_id, work.owner_principal_id, work.assignment_epoch,
+                   manager, turn_key, source_sha]
+        digest = hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()[:32]
+        return {"status": "PREPARED", "effects": "NONE_READ_ONLY", "work_id": work_id,
+                "entry_context_id": "loop-entry-" + digest, "manager": manager,
+                "instruction_text": source, "source_user_turn_key": turn_key,
+                "source_user_sha256": source_sha}
+
+    async def start_from_chat(self, *, work_id, instruction, direction, overall_plan, conditions,
+                              entry_context_id=""):
         work = self.commands._owned_work(work_id)
         if not all((instruction.strip(), direction.strip(), overall_plan.strip(), conditions)):
             raise LoopContractError("LOOP_START_PLAN_REQUIRED")
         if max(len(instruction.strip()), len(direction.strip())) > 12000:
             raise LoopContractError("LOOP_CONTEXT_TOO_LONG")
         LoopTurns.validate_plan(overall_plan, conditions)
-        manager, source, turn_key = await self.resolve_start_manager(instruction.strip())
+        if entry_context_id:
+            if not re.fullmatch(r"loop-entry-[a-f0-9]{32}", entry_context_id):
+                raise LoopContractError("LOOP_PREPARED_SOURCE_CHANGED")
+            prepared = await self.prepare_start(work_id=work_id, instruction=instruction)
+            if not hmac.compare_digest(entry_context_id, prepared["entry_context_id"]):
+                raise LoopContractError("LOOP_PREPARED_SOURCE_CHANGED")
+            manager, source, turn_key = (prepared["manager"], prepared["instruction_text"],
+                                         prepared["source_user_turn_key"])
+        else:
+            manager, source, turn_key = await self.resolve_start_manager(instruction.strip())
         if len(source) > 12000:
             raise LoopContractError("LOOP_CONTEXT_TOO_LONG")
         manager_key = manager["conversation_key"]
@@ -719,7 +751,7 @@ async def persistent_loop_command(
     artifact_refs: list[str] | None = None,
     receipt_observation: str = "", node_observation: str = "",
     unchanged_rechecks: int = 0,
-    instruction_text: str = "", direction_text: str = "",
+    instruction_text: str = "", direction_text: str = "", entry_context_id: str = "",
     manager_conversation_key: str = "", supervisor_conversation_key: str = "",
     network_project_id: str = "", project_operation_id: str = "",
     manager_operation_id: str = "", supervisor_operation_id: str = "",
@@ -750,13 +782,13 @@ async def persistent_loop_command(
             return {
                 "status": "OK", "effects": "NONE_READ_ONLY",
                 "actions": [
-                    "discover_supervisor", "prepare_supervisor", "start", "topology",
+                    "prepare", "discover_supervisor", "prepare_supervisor", "start", "topology",
                     "arm", "status", "save_plan", "record_progress", "decide", "resume",
                 ],
                 "manager_decisions": ["continue", "wait", "handoff", "blocked", "complete"],
                 "supervisor_decisions": ["continue", "wait", "return", "blocked"],
                 "sequence": [
-                    "In a general chat, call start with work_id, the exact current user message, Direction, plan and conditions. Omit identity and topology IDs to verify the current RCC turn, prepare topology and arm automatically.",
+                    "In a general chat, call prepare with work_id and the verbatim current user message. Pass its entry_context_id and instruction_text to start with Direction, plan and conditions, omitting identity and topology IDs.",
                     "Save original instruction, Direction, overall plan and conditions.",
                     "Place only the Manager in the new project. Keep the Supervisor unassigned.",
                     "Arm the Manager response to the exact original user message. Wait for WATCHING before working.",
@@ -764,6 +796,8 @@ async def persistent_loop_command(
                     "The exact response releases the next prearmed turn or completion receipt.",
                 ],
             }
+        if action == "prepare":
+            return await coordinator.prepare_start(work_id=work_id, instruction=instruction_text)
         if action == "discover_supervisor":
             return await asyncio.to_thread(coordinator.discover_supervisor, manager_conversation_key)
         if action == "prepare_supervisor":
@@ -779,11 +813,15 @@ async def persistent_loop_command(
                 create_command=supervisor_create_command, window_id=supervisor_window_id,
             )
         if action == "start":
+            if entry_context_id and any((manager_conversation_key, supervisor_conversation_key,
+                                   network_project_id, loop_id, task_id)):
+                raise LoopContractError("LOOP_PREPARED_IDENTITY_OVERRIDE")
             if work_id and not any((manager_conversation_key, supervisor_conversation_key,
                                     network_project_id, loop_id, task_id)):
                 return await coordinator.start_from_chat(
                     work_id=work_id, instruction=instruction_text, direction=direction_text,
                     overall_plan=overall_plan, conditions=completion_conditions,
+                    entry_context_id=entry_context_id,
                 )
             if not loop_id or not work_id:
                 raise LoopContractError("LOOP_RUN_IDENTITY_REQUIRED")
