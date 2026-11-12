@@ -20,7 +20,7 @@ class RccReleaseCandidateTests(unittest.TestCase):
         spec.loader.exec_module(cls.verifier)
 
     def test_committed_release_candidate_is_coherent(self):
-        receipt = self.verifier.verify(self.release / "rcc_v2_rc.json")
+        receipt = self.verifier.verify(self.release / "rcc_loop_focus_20261111.json")
         self.assertTrue(receipt["ok"])
         self.assertFalse(receipt["rollbackBaselineVerified"])
         self.assertFalse(receipt["stagedCandidateVerified"])
