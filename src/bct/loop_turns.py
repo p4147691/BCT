@@ -9,8 +9,9 @@ import time
 from bct.core.models import Outcome, Principal
 from bct.loop_recipe_contracts import LoopContractError
 from bct.loop_recipe_ledger import LoopRecipeLedger
-from bct.node_recovery import NodeRecoveryLedger
+from bct.node_recovery import NodeRecoveryLedger, observe_node
 from bct.send_delayed_message import _rcc_submitted_text_sha256
+from bct.status_views import status_view
 
 
 _ID = re.compile(r"[A-Za-z0-9_.:-]{1,80}")
@@ -122,14 +123,45 @@ class LoopTurns:
                             (operation_id, objective["work_id"], objective["owner_principal_id"])).fetchone()
                         if receipt:
                             receipts[operation_id] = dict(receipt)
+            recovery = None
+            if turn:
+                watched = db.execute("""SELECT context_json FROM delayed_send_watches
+                    WHERE task_id=? AND generation=1""", (turn["watch_id"],)).fetchone()
+                context = json.loads(watched["context_json"] or "{}") if watched else {}
+                if context.get("recovery_needed"):
+                    recovery = {"case_id": self.recovery_case_id(loop_id, turn["turn"]),
+                                "signal": context["recovery_needed"],
+                                "watch_operation_id": turn["watch_operation_id"],
+                                "send_operation_id": turn["send_operation_id"],
+                                "next_action": "RECHECK"}
+                    latest = db.execute("""SELECT kind,result,evidence_json,created_at
+                        FROM node_recovery_checks WHERE case_id=?
+                        ORDER BY sequence DESC LIMIT 1""", (recovery["case_id"],)).fetchone()
+                    if latest:
+                        recovery["latest_check"] = {
+                            "kind": latest["kind"], "result": latest["result"],
+                            "created_at": latest["created_at"],
+                            "evidence": json.loads(latest["evidence_json"]),
+                        }
+                        if latest["kind"] == "RECHECK":
+                            recovery["next_action"] = (
+                                "MANAGER_REVIEW" if latest["result"] == "CHECK"
+                                else "WAIT_FOR_EXACT_RESPONSE"
+                            )
         objective["completion_conditions"] = json.loads(objective.pop("conditions_json"))
         objective["completion"] = json.loads(objective.pop("completion_json") or "null")
         result = {"status": "OK", "objective": objective, "turn": self._turn_view(turn),
                   "previous_turn": self._turn_view(prior), "plan": dict(plan) if plan else None,
-                  "progress": dict(progress) if progress else None, "receipts": receipts}
+                  "progress": dict(progress) if progress else None, "receipts": receipts,
+                  "node_recovery": recovery}
         if plan:
             result["plan"]["plan"] = json.loads(result["plan"].pop("plan_json"))
         return result
+
+    @staticmethod
+    def recovery_case_id(loop_id, turn):
+        suffix = hashlib.sha256(f"{loop_id}:{turn}".encode()).hexdigest()[:24]
+        return f"loop-node-{suffix}"
 
     @staticmethod
     def _turn_view(row):
@@ -387,6 +419,7 @@ class LoopTurnRunner:
         self.service = service
         self.turns = turns
         self.snapshot = snapshot
+        self.node_recovery = NodeRecoveryLedger(turns.store)
 
     def _original(self, work, operation_id):
         try:
@@ -433,6 +466,13 @@ class LoopTurnRunner:
         if watch["state"] != "WATCHING":
             self.turns.update(row, "UNKNOWN" if watch["state"] == "UNKNOWN" else "BLOCKED")
             return watch["state"]
+        # Reuse the delayed Watch's exact RCC stop observation, then persist
+        # CHECK/RECHECK on the existing node-recovery ledger. Neither step sends
+        # a message, reloads a tab, or replaces the Manager.
+        recovery = self.service._recover_if_stopped(watch)
+        if recovery.get("status") in {"RECOVERY_NEEDED", "RECOVERY_ALREADY_REPORTED"} \
+                or watch["context"].get("recovery_needed"):
+            self._check_recovery(row, objective)
         observed = self.service._response_for(watch)
         if observed and observed["response_complete"] and observed["input_ready"]:
             self.turns.observe(row, turn_key=observed["response_turn_key"],
@@ -440,6 +480,25 @@ class LoopTurnRunner:
             return "OBSERVED"
         self.turns.update(row, "WATCHING", 4)
         return "WATCHING"
+
+    def _check_recovery(self, row, objective):
+        work = self.turns.store.get_work(objective["work_id"])
+        case_id = self.turns.recovery_case_id(row["loop_id"], row["turn"])
+        previous = self.node_recovery.get(work=work, case_id=case_id)
+        latest = previous.get("latest_check") if previous else None
+        # One automatic CHECK and one RECHECK are enough to identify a stable
+        # failure. Further recovery remains an explicit Manager/operator choice.
+        if latest and (latest["kind"] == "RECHECK"
+                       or time.time() - latest["created_at"] < 4):
+            return
+        snapshot = self.snapshot()
+        view = status_view(snapshot if "monitor" in snapshot else {"monitor": snapshot}, "node")
+        evidence = observe_node(view, row["conversation_key"])
+        self.node_recovery.check(
+            work=work, case_id=case_id, task_id=objective["task_id"],
+            conversation_key=row["conversation_key"], evidence=evidence,
+            kind="RECHECK" if latest else "CHECK",
+        )
 
     def _watch_binding(self, row, objective):
         watch = self.service.ledger.get(row["watch_id"], 1)

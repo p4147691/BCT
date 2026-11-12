@@ -990,6 +990,15 @@ class DeployFeature:
     def _rcc_route_config(operation: str, manifest_sha256: str = "") -> dict[str, Any]:
         """Choose one immutable release without weakening prior install receipts."""
         from bct import rcc_protected_install as rcc
+        hidden_stop_manifest = "4e6973c0efc10f215d04f1676285edd88103462188589e9b07ee10e9a3956c23"
+        if operation.endswith("-composer-rebind") and manifest_sha256 == hidden_stop_manifest:
+            from pathlib import Path
+            stage = Path(r"D:\BCT\data\RCC_HIDDEN_STOP_20261112")
+            return {"pinned_manifest_sha256": hidden_stop_manifest, "live": rcc.EXACT_INSTALLED,
+                    "candidate": stage / "candidate", "backup_source": stage / "rollback",
+                    "manifest_file": stage / "release_manifest_immutable.json",
+                    "journal_root": Path(r"D:\BCT\runtime\backups\rcc-guarded-install-hidden-stop"),
+                    "candidate_version": "1.0.70", "installed_version": "1.0.70"}
         if operation.endswith("-composer-rebind") and manifest_sha256 == rcc.VISIBLE_EDITOR_MANIFEST_SHA256:
             return {"pinned_manifest_sha256": manifest_sha256, "live": rcc.EXACT_INSTALLED,
                     "candidate": rcc.VISIBLE_EDITOR_ROOT / "candidate_1_0_70_visible_editor",

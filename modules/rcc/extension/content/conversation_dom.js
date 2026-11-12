@@ -635,13 +635,17 @@ function isGenerating() {
   ];
 
 
-  // Background tabs can report zero client rects. Generation identity must not
-
-
-  // depend on visibility; use DOM presence/status instead.
-
-
-  const stopPresent = stopSelectors.some((selector) => !!document.querySelector(selector));
+  // Background tabs can report zero client rects. Ignore controls explicitly
+  // hidden by CSS, including controls inside a display:none subtree.
+  const stopPresent = Array.from(document.querySelectorAll(stopSelectors.join(',')))
+    .some((button) => {
+      const visibility = getComputedStyle(button).visibility;
+      if (visibility === 'hidden' || visibility === 'collapse') return false;
+      for (let element = button; element; element = element.parentElement) {
+        if (getComputedStyle(element).display === 'none') return false;
+      }
+      return true;
+    });
 
 
   const node = lastAssistantNode();

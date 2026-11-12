@@ -14,6 +14,8 @@ function slice(start, end) {
 }
 
 let stopPresent = false;
+let stopVisibility = 'visible';
+let stopAncestorDisplay = 'block';
 let streamPresent = false;
 let completionState = '';
 let completionAction = false;
@@ -26,8 +28,13 @@ const assistant = {
 const latestTurn = {
   contains(value) { return sameLatestTurn && value === assistant; },
 };
+const stopAncestor = {};
+const stop = {parentElement: stopAncestor, getClientRects: () => []};
 const context = vm.createContext({
-  document: {querySelector() { return stopPresent ? {} : null; }},
+  document: {querySelectorAll() { return stopPresent ? [stop] : []; }},
+  getComputedStyle: (element) => element === stop
+    ? {display: 'block', visibility: stopVisibility}
+    : {display: stopAncestorDisplay, visibility: 'visible'},
   getConversationTurns: () => [latestTurn],
   lastAssistantNode: () => assistant,
   turnCompletionState: () => completionState,
@@ -78,4 +85,21 @@ completionAction = false;
 assert.equal(context.isGeneratingForTest(), false,
   'absence of stop and streaming markers remains idle');
 
-console.log('terminal idle proof v1: PASS (7/7)');
+stopPresent = true;
+assert.equal(context.isGeneratingForTest(), true,
+  'zero client rects alone do not retire a stop button');
+
+stopAncestorDisplay = 'none';
+assert.equal(context.isGeneratingForTest(), false,
+  'a stop button in a hidden subtree does not indicate generation');
+
+stopAncestorDisplay = 'block';
+stopVisibility = 'hidden';
+assert.equal(context.isGeneratingForTest(), false,
+  'a CSS-hidden stop button does not indicate generation');
+
+streamPresent = true;
+assert.equal(context.isGeneratingForTest(), true,
+  'a hidden stop button does not override an active streaming marker');
+
+console.log('terminal idle proof v1: PASS (11/11)');
