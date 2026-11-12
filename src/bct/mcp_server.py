@@ -17,7 +17,7 @@ from .code_block_commands import organize_code_blocks_command
 from .core.models import Principal
 from .mcp_catalogue_config import CatalogueSettings
 from .status_views import status_view
-from .task_message import prepare_task_message_instruction
+from .task_message_commands import task_message_command
 from .discovery_views import capability_view, rcc_command_view, rcc_recipe_view
 from .operation_queries import read_github_inbox, read_operation
 from .work_services import create_or_update_work
@@ -37,7 +37,6 @@ from .recipes.recovery import _assert_node_send_allowed
 from .recipes.chain import chain_recipe
 from .recipes.network import set_conversation_network
 from .recipes.state import check_conversation_network_recipe
-from .recipes.delivery import send_chain_delivery
 
 MCP_PRINCIPAL_ID = "bct-mcp-local"
 
@@ -414,41 +413,7 @@ def build_mcp(
         manager_return_rule: str = "Return on completion, blockage, risk, or need for judgment.",
         max_rounds: int = 0, generation: int = 1,
     ) -> dict[str, Any]:
-        if action in {"status", "cancel"}:
-            result = await send_chain_delivery(recipe_runtime,
-                work_id=work_id, task_id=task_id, operation_id=operation_id,
-                action=action, generation=generation,
-            )
-            return {
-                **result, "recipe": "Task Message",
-                "max_rounds": result.get("max_generations", max_rounds),
-            }
-        if action not in {"start", "preflight"}:
-            return {"status":"INVALID_REQUEST","reason":"TASK_MESSAGE_ACTION_INVALID"}
-        try:
-            prepared = prepare_task_message_instruction(
-                instruction, acceptance=acceptance, bb_rule=bb_rule,
-                manager_return_rule=manager_return_rule, max_rounds=max_rounds,
-            )
-        except ValueError as exc:
-            return {"status":"INVALID_REQUEST","reason":str(exc)}
-        result = await send_chain_delivery(recipe_runtime,
-            work_id=work_id, task_id=task_id, operation_id=operation_id,
-            action=action, instance_id=instance_id, session_id=session_id,
-            target_tab_id=target_tab_id, target_window_id=target_window_id,
-            target_conversation_key=target_conversation_key,
-            origin_conversation_key=origin_conversation_key,
-            origin_instance_id=origin_instance_id,
-            instruction=str(prepared["instruction"]), generation=generation,
-            continuation_output_contract="explicit-next-task-v1",
-            max_generations=max_rounds,
-        )
-        return {
-            **result,
-            "recipe": "Task Message",
-            "max_rounds": max_rounds,
-            "task_instruction_sha256": prepared["instruction_sha256"],
-        }
+        return await task_message_command(recipe_runtime, **locals())
 
     @server.tool(
         name="bct_task_run",
