@@ -71,21 +71,36 @@ class PersistentLoopPublicTests(unittest.IsolatedAsyncioTestCase):
                            PersistentLoopCoordinator, "configure_topology", autospec=True
                        ) as topology:
                 _, rejected = await server.call_tool("bct_loop_recipe", arguments)
-                self.assertEqual(rejected["reason"], "LOOP_START_SOURCE_NOT_FOUND")
+                self.assertEqual(rejected["reason"], "LOOP_START_SOURCE_NOT_UNIQUE")
                 topology.assert_not_awaited()
             with patch("bct.send_delayed_message.SendDelayedMessageService.latest",
                        return_value=observed), patch.object(
                            PersistentLoopCoordinator, "configure_topology", autospec=True,
                            side_effect=configure,
                        ) as topology:
-                _, started = await server.call_tool("bct_loop_recipe", arguments)
+                _, prepared = await server.call_tool("bct_loop_recipe", {
+                    "action": "prepare", "work_id": arguments["work_id"],
+                    "instruction_text": "@BCT Control\n" + arguments["instruction_text"],
+                })
+                self.assertEqual(prepared.get("status"), "PREPARED", prepared)
+                self.assertEqual(prepared["effects"], "NONE_READ_ONLY")
+                self.assertEqual(prepared["manager"]["conversation_key"], MANAGER)
+                topology.assert_not_awaited()
+                start = {**arguments, "entry_context_id": prepared["entry_context_id"],
+                         "instruction_text": prepared["instruction_text"]}
+                with patch("bct.send_delayed_message.SendDelayedMessageService.latest",
+                           return_value={**observed, "latestUserTurnKey": "another-turn"}):
+                    _, stale = await server.call_tool("bct_loop_recipe", start)
+                self.assertEqual(stale["reason"], "LOOP_PREPARED_SOURCE_CHANGED")
+                topology.assert_not_awaited()
+                _, started = await server.call_tool("bct_loop_recipe", start)
                 self.assertEqual(started.get("status"), "OK", started)
                 self.assertEqual(started["objective"]["manager_conversation_key"], MANAGER)
                 self.assertEqual(started["objective"]["supervisor_conversation_key"], SUPERVISOR)
                 self.assertEqual(started["objective"]["instruction_text"], source)
                 self.assertEqual(started["turn"]["state"], "PREPARING")
                 self.assertIsNone(started["turn"]["send_operation_id"])
-                _, retry = await server.call_tool("bct_loop_recipe", arguments)
+                _, retry = await server.call_tool("bct_loop_recipe", start)
                 self.assertEqual(retry["turn"]["watch_operation_id"],
                                  started["turn"]["watch_operation_id"])
                 topology.assert_awaited_once()

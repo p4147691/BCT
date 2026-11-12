@@ -710,8 +710,11 @@ def build_mcp(
         description=(
             "LOOP — the official BCT single persistent Loop Recipe. Start saves the original "
             "instruction, Direction, overall plan and completion conditions. In an ordinary RCC "
-            "chat, call start during the response with the existing work_id, exact latest user "
-            "message as instruction_text, direction_text, overall_plan and completion_conditions. "
+            "chat, first call prepare with the existing work_id and verbatim latest user "
+            "message as instruction_text. Copy the message body exactly, without quoting, "
+            "summarizing, or adding the app name. Then call start in the same response with "
+            "work_id, returned entry_context_id and instruction_text, direction_text, "
+            "overall_plan and completion_conditions. "
             "Omit loop_id, task_id, manager_conversation_key, supervisor_conversation_key and "
             "network_project_id to resolve the current turn, prepare topology and arm. Read the "
             "returned loop_id and wait for status WATCHING before working. Explicit start callers can configure topology "
@@ -734,6 +737,7 @@ def build_mcp(
         artifact_refs: list[str] | None = None, receipt_observation: str = "",
         node_observation: str = "", unchanged_rechecks: int = 0,
         instruction_text: str = "", direction_text: str = "",
+        entry_context_id: str = "",
         manager_conversation_key: str = "", supervisor_conversation_key: str = "",
         network_project_id: str = "", project_operation_id: str = "",
         manager_operation_id: str = "", supervisor_operation_id: str = "",
