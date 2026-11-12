@@ -13,8 +13,7 @@ from starlette.responses import JSONResponse
 
 from .background_operations import BACKGROUND_CAPABILITIES, launch_background_operation
 from .chat_input_queue import queue_message_command
-from .code_block_scan import resolve_scan_root
-from .code_block_organize import plan_block_replacement, prepare_block_apply
+from .code_block_commands import organize_code_blocks_command
 from .core.models import Principal
 from .mcp_catalogue_config import CatalogueSettings
 from .status_views import status_view
@@ -347,54 +346,14 @@ def build_mcp(
         expected_after_sha256: str = "",
         plan_sha256: str = "",
     ) -> dict[str, Any]:
-        if not hasattr(bct, "store"):
-            raise RuntimeError("CODE_BLOCK_ORGANIZE_STORE_REQUIRED")
-        work = await asyncio.to_thread(bct.store.get_work, work_id)
-        if work.owner_principal_id != principal.principal_id:
-            raise PermissionError("CODE_BLOCK_ORGANIZE_WORK_ACCESS_DENIED")
-        scan_root = resolve_scan_root(work, root)
-        selected = str(action or "").strip().casefold()
-        if selected == "plan":
-            return await asyncio.to_thread(
-                plan_block_replacement,
-                scan_root,
-                path=path,
-                block_id=block_id,
-                replacement=replacement,
-                expected_file_sha256=expected_file_sha256,
-                expected_block_sha256=expected_block_sha256,
-            )
-        if selected != "apply":
-            raise ValueError("CODE_BLOCK_ORGANIZE_ACTION_INVALID")
-        if not operation_id.strip():
-            raise ValueError("CODE_BLOCK_ORGANIZE_OPERATION_ID_REQUIRED")
-        prepared = await asyncio.to_thread(
-            prepare_block_apply,
-            scan_root,
-            path=path,
-            block_id=block_id,
-            replacement=replacement,
-            expected_file_sha256=expected_file_sha256,
+        return await organize_code_blocks_command(
+            getattr(bct, "store", None), principal_id=principal.principal_id,
+            write_execute=make_executor("write"), work_id=work_id, action=action,
+            path=path, block_id=block_id, replacement=replacement, root=root,
+            operation_id=operation_id, expected_file_sha256=expected_file_sha256,
             expected_block_sha256=expected_block_sha256,
-            expected_after_sha256=expected_after_sha256,
-            plan_sha256=plan_sha256,
+            expected_after_sha256=expected_after_sha256, plan_sha256=plan_sha256,
         )
-        result = await make_executor("write")(
-            work_id,
-            operation_id,
-            {key: prepared[key] for key in (
-                "path", "content", "expected_sha256", "expected_absent",
-            )},
-            None,
-        )
-        result["block_replacement"] = {
-            "schema": prepared["plan"].get("schema"),
-            "path": prepared["plan"].get("path"),
-            "block_id": prepared["plan"].get("block_id"),
-            "plan_sha256": plan_sha256,
-            "after_file_sha256": expected_after_sha256,
-        }
-        return result
 
     @server.tool(description="Compatibility name for saving an AI-authored project plan as a versioned, Work-authorized project-context ledger. This is not a target's Chain Execute Plan and does not plan or execute work. Prefer bct_set_project_plan.", structured_output=True)
     async def bct_run_plan(
