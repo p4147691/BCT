@@ -11,7 +11,7 @@ from bct.core.store import Store
 from bct.loop_store import LoopStore, LoopStateError
 from bct.loop_result import LoopResultLedger, LoopResultDispatcher
 from bct.loop_supervisor_handoff import LoopReviewLedger
-from bct.send_delayed_message import _rcc_submitted_text_sha256
+from bct.send_delayed_message import SendDelayedMessageService, _rcc_submitted_text_sha256
 from test_loop_self_dispatch import OWNER, snapshot
 
 REQUESTER = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
@@ -187,7 +187,9 @@ class LoopResultTests(unittest.TestCase):
         namespace = dict(__package__="bct",__name__="bct.runtime_server",
             bct=SimpleNamespace(store=self.store,operations=operations), recovery_stop=stop,
             state=state,time=time,runtime_root=Path(self.tmp.name),status_view=status_view,
-            build_monitor_state=lambda **_: snapshot(owner=REQUESTER))
+            build_monitor_state=lambda **_: snapshot(owner=REQUESTER),
+            SendDelayedMessageService=SendDelayedMessageService,
+            status_snapshot=lambda: snapshot(owner=REQUESTER))
         exec(compile(ast.Module(body=[body],type_ignores=[]),str(source),"exec"),namespace)
         namespace["loop_recipe_recovery_loop"]()
         self.assertIsNone(state["loop_recipe_recovery"].get("last_error"), state)
