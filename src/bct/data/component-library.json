@@ -1,6 +1,6 @@
 {
   "schema": "bct.component-library.bundle.v1",
-  "source_fingerprint": "400eef023caf265c06f4f3b521b92bdfee24ce7b22a499f38b18af586919d35b",
+  "source_fingerprint": "d5e3dfbc36c044f2d1c0126db4963eb49c65cf80f95d2a32c7a315c23862e86f",
   "source_hashes": {
     "docs/CHAIN_MESSAGE_RECIPE_V2.md": "35ab24bb8ab3747b8fe5eea57e8769092cdb4257731812f3c3f3a596825b1d9e",
     "docs/component-library.v1.json": "0065e67d7cef77d18ab246c1279614dac5a42027faadb4ddd4882ff7ca707311",
@@ -24,7 +24,7 @@
     "src/bct/chain_execution_plan.py": "da98ae2aa5efa9593b9a748856e33fe9140d92c5bc45671105b402517988c61f",
     "src/bct/chain_manager_recovery.py": "191f9c5bcc63b3d2508640f44a3cf4d2eac24cba3c6294e50afeea81614d6787",
     "src/bct/chain_message_preflight.py": "daa47a7eb84b3e3e3fdef08bb3823f8c189a9789570c0a3664d1c9eb053ba206",
-    "src/bct/chat_input_queue.py": "0873721a88bdca3a84f16e5be9426a63360e98253ce02ceb6ec0dcf1fe9b3a87",
+    "src/bct/chat_input_queue.py": "c8a1587fe7039e0d7d011ad9190b924fa574545fe845aa7267cdb70069bdb08d",
     "src/bct/code_block_organize.py": "aa9471232321334c1c2ce7f52f0fa4725a4016e13ba19bac942dd71f62622cfd",
     "src/bct/code_block_scan.py": "179a2a63497310b53900e49e44da9f71cbc9d2d1c2b9321279c9ebebb2c5646f",
     "src/bct/codex_surface.py": "7ec0ac55ec19c4ba5fb67fcfa22cfecc29e899ee57521832ac403ba58f10887b",
@@ -43,7 +43,7 @@
     "src/bct/loop_store.py": "232e7b8d7362ba20b17d601be62d04f7c9f165c3aa27958ca956b1de7e5128ec",
     "src/bct/loop_successor.py": "1779d48bb2109bf57f046e327e98c84d7aaba9baa6c5dbda543200572a09d40b",
     "src/bct/loop_supervisor_handoff.py": "07729120ee9d3f9169037b6d23240d0c5bef5b04ea34c2c851d2528e190596ea",
-    "src/bct/mcp_server.py": "47545e6b0304c8506fd907643fdd3013dd2ecf95c4047816f9b511c8b9eb0957",
+    "src/bct/mcp_server.py": "8523e80b463a0af531efecf4ca6d02897631f6e239b21ea8d554c9ebb4d05d6e",
     "src/bct/node_recovery.py": "1c84150ae1af8cc285432565097ac071a2af6c4b2534f1d19ac7f75d7bec2438",
     "src/bct/project_plan.py": "8a2314e2227c590eb2af2a8e61b0281f2659c55c563825fc3436d31486999f95",
     "src/bct/recipes/__init__.py": "ed6578c117db9d5656e09858e4db6d15195802de93f9780090420213568ebd4a",
