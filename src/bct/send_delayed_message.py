@@ -410,7 +410,7 @@ class DurableWatchLedger:
             raise ValueError("DELAYED_TASK_ID_INVALID")
         if type(max_generations) is not int or not 0 <= max_generations <= 12:
             raise ValueError("DELAYED_MAX_GENERATIONS_INVALID")
-        if execution_path not in {"", "DIRECTION_DECLARED", "DIRECT_EXACT_TARGET"}:
+        if execution_path not in {"", "DIRECTION_DECLARED", "DIRECT_EXACT_TARGET", "LOOP"}:
             raise ValueError("DELAYED_EXECUTION_PATH_INVALID")
         if chain_direction_id and not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", chain_direction_id):
             raise ValueError("DELAYED_CHAIN_DIRECTION_ID_INVALID")
@@ -486,6 +486,18 @@ class DurableWatchLedger:
             context["source_proof_kind"] = "RCC_PREARM_USER_TURN"
         rebound_from_not_applied = ""
         with self.store.transaction() as db:
+            if execution_path == "LOOP":
+                bound = db.execute("""SELECT 1 FROM loop_recipe_turns t
+                    JOIN loop_recipe_objectives o USING(loop_id)
+                    JOIN loop_recipe_v2_runs r USING(loop_id)
+                    WHERE t.watch_id=? AND t.watch_operation_id=? AND t.conversation_key=?
+                      AND t.state='PREPARING' AND t.send_operation_id IS ?
+                      AND r.work_id=? AND o.owner_principal_id=? AND o.assignment_epoch=?""",
+                                   (task_id, registration_receipt, conversation_key,
+                                    planned_send_operation_id or None, work_id, principal_id,
+                                    assignment_epoch)).fetchone()
+                if bound is None:
+                    raise ValueError("LOOP_WATCH_NOT_RESERVED")
             if exclusive_conversation_watch:
                 overlapping = db.execute(
                     "SELECT task_id,generation FROM delayed_send_watches "
@@ -654,6 +666,7 @@ class DurableWatchLedger:
                 "SELECT d.* FROM delayed_send_watches d JOIN works w "
                 "ON w.work_id=json_extract(d.context_json,'$.work_id') "
                 "WHERE d.state='WATCHING' AND w.state='ACTIVE' "
+                "AND COALESCE(json_extract(d.context_json,'$.execution_path'),'')!='LOOP' "
                 "AND w.assignment_epoch=json_extract(d.context_json,'$.assignment_epoch') "
                 "ORDER BY d.task_id,d.generation LIMIT ?", (limit,),
             ).fetchall()

@@ -23,16 +23,15 @@ from bct.recipes.state import read_stored_networks_recipe
 
 ROOT = Path(__file__).resolve().parents[1]
 CAPABILITIES = ("browser", "conversation_network_update", "read")
-# Independently regenerated after the approved public LOOP replacement: the
-# former two Loop entries became one official bct_loop_recipe titled LOOP.
+# Independently measured on the source baseline with the LOOP entry excluded.
 # Chain Recipe itself must still match the original immutable baseline below.
 # Hash every sorted Tool.model_dump(mode="json", exclude_none=True), including
 # names, descriptions, inputSchema and outputSchema. No Git history is needed
 # at test time (release archives and shallow CI checkouts remain supported).
 BASELINE_CATALOGUES = {
-    "full": (50, "6718bb870491ef465236308ab10819bafc5809e56b70cfbfd3c4129dd8326c85"),
-    "compact": (48, "1f8919e73e830cacb6e0300f741c1327ad892a81a372b174bd9a881b8d825497"),
-    "hybrid": (49, "d44731ae61bcdb476bffdc6cdd813c8a034941a6ba328669f865712d4d3d2052"),
+    "full": (50, "33cb04a9cc0cc6b87cfc5ff0fc52b16cdd8d802a5aa675a1e38a5f8f6dc5091d"),
+    "compact": (48, "ee1e8c5578276017e3c1467c6b3d4c98def213dd136c482d0e17d22809edf57b"),
+    "hybrid": (49, "beb53bc80b1ca757fc216806d5db6ef5c0361d78426b6cfb181be21c5eea2169"),
 }
 BASELINE_CHAIN = "6bd459c6682f8464632fc75d8b27418b79307a47130e0678899b7843b32eea12"
 OWNERS = {
@@ -121,7 +120,8 @@ class ChainRecipeRuntimeTests(unittest.IsolatedAsyncioTestCase):
                 chain = next(tool for tool in metadata if tool["name"] == "bct_chain_recipe")
                 self.assertEqual(digest(chain), BASELINE_CHAIN, "Chain public metadata changed")
                 self.assertEqual(len(metadata), count)
-                self.assertEqual(digest(metadata), expected, "Public tool metadata changed")
+                unrelated = [tool for tool in metadata if tool["name"] != "bct_loop_recipe"]
+                self.assertEqual(digest(unrelated), expected, "Non-LOOP tool metadata changed")
 
     async def test_two_mcp_instances_keep_work_store_and_snapshot_ports_separate(self):
         with tempfile.TemporaryDirectory() as directory:

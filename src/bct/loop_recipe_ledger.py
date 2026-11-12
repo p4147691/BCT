@@ -61,6 +61,68 @@ class LoopRecipeLedger:
                     created_at REAL NOT NULL,
                     FOREIGN KEY(loop_id) REFERENCES loop_recipe_v2_runs(loop_id)
                 );
+
+                CREATE TABLE IF NOT EXISTS loop_recipe_objectives (
+                    loop_id TEXT PRIMARY KEY REFERENCES loop_recipe_v2_runs(loop_id),
+                    task_id TEXT NOT NULL UNIQUE,
+                    owner_principal_id TEXT NOT NULL,
+                    assignment_epoch INTEGER NOT NULL,
+                    overall_plan TEXT NOT NULL,
+                    conditions_json TEXT NOT NULL,
+                    completion_json TEXT
+                );
+                CREATE TABLE IF NOT EXISTS loop_recipe_turns (
+                    loop_id TEXT NOT NULL REFERENCES loop_recipe_objectives(loop_id),
+                    turn INTEGER NOT NULL,
+                    actor TEXT NOT NULL,
+                    conversation_key TEXT NOT NULL,
+                    watch_id TEXT NOT NULL UNIQUE,
+                    watch_operation_id TEXT NOT NULL UNIQUE,
+                    send_operation_id TEXT UNIQUE,
+                    instruction TEXT NOT NULL,
+                    source_turn INTEGER,
+                    state TEXT NOT NULL,
+                    due_at REAL,
+                    decision_json TEXT,
+                    response_turn_key TEXT,
+                    response_sha256 TEXT,
+                    PRIMARY KEY(loop_id, turn)
+                );
+                CREATE INDEX IF NOT EXISTS loop_recipe_turns_due
+                    ON loop_recipe_turns(due_at, watch_id) WHERE due_at IS NOT NULL;
+                CREATE UNIQUE INDEX IF NOT EXISTS loop_recipe_turns_active_target
+                    ON loop_recipe_turns(conversation_key) WHERE due_at IS NOT NULL;
+                CREATE TABLE IF NOT EXISTS loop_recipe_supervisor_preparations (
+                    work_id TEXT NOT NULL,
+                    network_project_id TEXT NOT NULL,
+                    manager_conversation_key TEXT NOT NULL,
+                    request_sha256 TEXT NOT NULL,
+                    PRIMARY KEY(work_id, network_project_id)
+                );
+                CREATE TABLE IF NOT EXISTS loop_recipe_detail_plans (
+                    loop_id TEXT NOT NULL REFERENCES loop_recipe_objectives(loop_id),
+                    plan_id TEXT NOT NULL,
+                    revision INTEGER NOT NULL,
+                    turn INTEGER NOT NULL,
+                    actor TEXT NOT NULL,
+                    plan_json TEXT NOT NULL,
+                    PRIMARY KEY(loop_id, plan_id, revision)
+                );
+                CREATE INDEX IF NOT EXISTS loop_recipe_detail_plans_turn
+                    ON loop_recipe_detail_plans(loop_id, actor, turn, revision);
+                CREATE TABLE IF NOT EXISTS loop_recipe_progress (
+                    loop_id TEXT NOT NULL,
+                    turn INTEGER NOT NULL,
+                    plan_id TEXT NOT NULL,
+                    plan_revision INTEGER NOT NULL,
+                    completed INTEGER NOT NULL,
+                    total INTEGER NOT NULL,
+                    evidence TEXT NOT NULL,
+                    PRIMARY KEY(loop_id, turn, plan_id, plan_revision),
+                    FOREIGN KEY(loop_id, turn) REFERENCES loop_recipe_turns(loop_id, turn),
+                    FOREIGN KEY(loop_id, plan_id, plan_revision)
+                        REFERENCES loop_recipe_detail_plans(loop_id, plan_id, revision)
+                );
             """)
 
     @staticmethod
@@ -84,13 +146,14 @@ class LoopRecipeLedger:
             return dict(db.execute("SELECT * FROM loop_recipe_v2_runs WHERE loop_id=?", (loop_id,)).fetchone())
 
     def get_run(self, loop_id: str) -> dict[str, Any] | None:
-        with self.store.transaction() as db:
+        with self.store._readonly() as db:
             row = db.execute("SELECT * FROM loop_recipe_v2_runs WHERE loop_id=?", (loop_id,)).fetchone()
             return dict(row) if row is not None else None
 
-    def bind_context(self, *, loop_id: str, instruction_text: str, direction_text: str,
-                     manager_conversation_key: str, supervisor_conversation_key: str,
-                     network_project_id: str) -> dict[str, Any]:
+    @staticmethod
+    def context_values(instruction_text: str, direction_text: str,
+                       manager_conversation_key: str, supervisor_conversation_key: str,
+                       network_project_id: str) -> tuple[str, ...]:
         values = (
             instruction_text.strip(), direction_text.strip(),
             manager_conversation_key.strip().lower(),
@@ -106,6 +169,15 @@ class LoopRecipeLedger:
             raise LoopContractError("LOOP_TOPOLOGY_IDENTITY_INVALID")
         if not re.fullmatch(r"[A-Za-z0-9_.:-]{1,96}", values[4]):
             raise LoopContractError("LOOP_NETWORK_PROJECT_ID_INVALID")
+        return values
+
+    def bind_context(self, *, loop_id: str, instruction_text: str, direction_text: str,
+                     manager_conversation_key: str, supervisor_conversation_key: str,
+                     network_project_id: str) -> dict[str, Any]:
+        values = self.context_values(
+            instruction_text, direction_text, manager_conversation_key,
+            supervisor_conversation_key, network_project_id,
+        )
         now = time.time()
         with self.store.transaction() as db:
             run = db.execute("SELECT 1 FROM loop_recipe_v2_runs WHERE loop_id=?", (loop_id,)).fetchone()
@@ -131,14 +203,14 @@ class LoopRecipeLedger:
             ).fetchone())
 
     def get_context(self, loop_id: str) -> dict[str, Any] | None:
-        with self.store.transaction() as db:
+        with self.store._readonly() as db:
             row = db.execute(
                 "SELECT * FROM loop_recipe_v2_contexts WHERE loop_id=?", (loop_id,),
             ).fetchone()
             return dict(row) if row is not None else None
 
     def get_continuation(self, continuation_id: str) -> dict[str, Any] | None:
-        with self.store.transaction() as db:
+        with self.store._readonly() as db:
             row = db.execute(
                 "SELECT * FROM loop_recipe_v2_continuations WHERE continuation_id=?",
                 (continuation_id,),

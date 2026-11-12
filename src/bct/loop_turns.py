@@ -1,0 +1,519 @@
+"""Durable Manager turns for the public LOOP, driven by the existing Watch service."""
+from __future__ import annotations
+
+import hashlib
+import json
+import re
+import time
+
+from bct.core.models import Outcome, Principal
+from bct.loop_recipe_contracts import LoopContractError
+from bct.loop_recipe_ledger import LoopRecipeLedger
+from bct.node_recovery import NodeRecoveryLedger
+
+
+_ID = re.compile(r"[A-Za-z0-9_.:-]{1,80}")
+
+
+def _text(value, limit=12000):
+    if not isinstance(value, str) or not value.strip() or len(value) > limit:
+        raise LoopContractError("LOOP_TEXT_REQUIRED_OR_TOO_LONG")
+    return value.strip()
+
+
+class LoopTurns:
+    def __init__(self, store, *, initialize=False):
+        self.store = store
+        if initialize:
+            LoopRecipeLedger(store)
+
+    def start(self, *, work, loop_id, task_id, context, overall_plan, conditions):
+        if not _ID.fullmatch(loop_id) or not _ID.fullmatch(task_id):
+            raise LoopContractError("LOOP_RUN_IDENTITY_REQUIRED")
+        overall_plan = _text(overall_plan)
+        if (not conditions or len(conditions) > 64
+                or any(not _ID.fullmatch(key) for key in conditions)):
+            raise LoopContractError("LOOP_COMPLETION_CONDITIONS_REQUIRED")
+        conditions_json = json.dumps({key: _text(value, 2000)
+                                      for key, value in conditions.items()}, sort_keys=True)
+        now = time.time()
+        with self.store.transaction() as db:
+            self._check_owner(db, {"work_id": work.work_id,
+                                   "owner_principal_id": work.owner_principal_id,
+                                   "assignment_epoch": work.assignment_epoch})
+            run = db.execute("SELECT * FROM loop_recipe_v2_runs WHERE loop_id=?", (loop_id,)).fetchone()
+            if run:
+                saved = self._objective(db, loop_id)
+                actual = (saved["task_id"], saved["overall_plan"], saved["conditions_json"],
+                          saved["assignment_epoch"], saved["owner_principal_id"])
+                if (run["work_id"] != work.work_id or tuple(saved[key] for key in (
+                        "instruction_text", "direction_text", "manager_conversation_key",
+                        "supervisor_conversation_key", "network_project_id",
+                )) != context or actual != (
+                        task_id, overall_plan, conditions_json, work.assignment_epoch,
+                        work.owner_principal_id)):
+                    raise LoopContractError("LOOP_RUN_ID_CONFLICT")
+            else:
+                if db.execute("""SELECT 1 FROM loop_recipe_objectives o
+                        JOIN loop_recipe_v2_contexts c USING(loop_id)
+                        JOIN loop_recipe_v2_runs r USING(loop_id)
+                        WHERE (c.manager_conversation_key=? AND r.state<>'COMPLETED')
+                           OR c.network_project_id=? OR o.task_id=?""",
+                              (context[2], context[4], task_id)).fetchone():
+                    raise LoopContractError("LOOP_MANAGER_PROJECT_OR_TASK_ALREADY_BOUND")
+                db.execute("INSERT INTO loop_recipe_v2_runs VALUES(?,?,?,0,'ACTIVE',?,?)",
+                           (loop_id, work.work_id, "topology", now, now))
+                db.execute("INSERT INTO loop_recipe_v2_contexts VALUES(?,?,?,?,?,?,?)",
+                           (loop_id, *context, now))
+                db.execute("""INSERT INTO loop_recipe_objectives
+                        (loop_id,task_id,owner_principal_id,assignment_epoch,overall_plan,conditions_json)
+                        VALUES(?,?,?,?,?,?)""", (loop_id, task_id, work.owner_principal_id,
+                                                work.assignment_epoch, overall_plan, conditions_json))
+        return self.status(loop_id)
+
+    @staticmethod
+    def _objective(db, loop_id):
+        row = db.execute("""SELECT o.*, c.instruction_text, c.direction_text,
+                c.manager_conversation_key, c.supervisor_conversation_key, c.network_project_id,
+                r.work_id, r.state AS run_state, r.current_block_id
+                FROM loop_recipe_objectives o JOIN loop_recipe_v2_contexts c USING(loop_id)
+                JOIN loop_recipe_v2_runs r USING(loop_id) WHERE o.loop_id=?""", (loop_id,)).fetchone()
+        if row is None:
+            raise LoopContractError("LOOP_PERSISTENT_OBJECTIVE_REQUIRED")
+        return dict(row)
+
+    @staticmethod
+    def _current(db, loop_id):
+        return db.execute("SELECT * FROM loop_recipe_turns WHERE loop_id=? ORDER BY turn DESC LIMIT 1",
+                          (loop_id,)).fetchone()
+
+    @staticmethod
+    def _check_owner(db, objective):
+        work = db.execute("SELECT owner_principal_id,assignment_epoch,state FROM works WHERE work_id=?",
+                          (objective["work_id"],)).fetchone()
+        if work is None or tuple(work) != (objective["owner_principal_id"],
+                                            objective["assignment_epoch"], "ACTIVE"):
+            raise LoopContractError("LOOP_WORK_OWNER_OR_EPOCH_CHANGED")
+
+    def status(self, loop_id):
+        with self.store._readonly() as db:
+            objective = self._objective(db, loop_id)
+            turn = self._current(db, loop_id)
+            prior = (db.execute("SELECT * FROM loop_recipe_turns WHERE loop_id=? AND turn=?",
+                                (loop_id, turn["source_turn"])).fetchone()
+                     if turn and turn["source_turn"] is not None else None)
+            plan = (db.execute("""SELECT * FROM loop_recipe_detail_plans
+                                WHERE loop_id=? AND actor=? AND turn<=?
+                                ORDER BY turn DESC, revision DESC LIMIT 1""",
+                               (loop_id, turn["actor"], turn["turn"])).fetchone() if turn else None)
+            progress = (db.execute("""SELECT * FROM loop_recipe_progress
+                        WHERE loop_id=? AND turn=? AND plan_id=? AND plan_revision=?""",
+                        (loop_id, plan["turn"], plan["plan_id"], plan["revision"])).fetchone()
+                        if plan else None)
+        objective["completion_conditions"] = json.loads(objective.pop("conditions_json"))
+        objective["completion"] = json.loads(objective.pop("completion_json") or "null")
+        result = {"status": "OK", "objective": objective, "turn": self._turn_view(turn),
+                  "previous_turn": self._turn_view(prior), "plan": dict(plan) if plan else None,
+                  "progress": dict(progress) if progress else None}
+        if plan:
+            result["plan"]["plan"] = json.loads(result["plan"].pop("plan_json"))
+        return result
+
+    @staticmethod
+    def _turn_view(row):
+        if row is None:
+            return None
+        value = dict(row)
+        value["decision"] = json.loads(value.pop("decision_json") or "null")
+        return value
+
+    @staticmethod
+    def _insert_turn(db, objective, *, turn, actor, instruction="", source_turn=None, delay=0, deliver=False):
+        key = objective["manager_conversation_key" if actor == "MANAGER"
+                        else "supervisor_conversation_key"]
+        suffix = hashlib.sha256(f"{objective['loop_id']}:{turn}".encode()).hexdigest()[:32]
+        watch_id = f"loop-watch-{suffix}"
+        db.execute("""INSERT INTO loop_recipe_turns
+            (loop_id,turn,actor,conversation_key,watch_id,watch_operation_id,send_operation_id,
+             instruction,source_turn,state,due_at)
+             VALUES(?,?,?,?,?,?,?,?,?,'PREPARING',?)""", (
+            objective["loop_id"], turn, actor, key, watch_id, f"{watch_id}-op",
+            f"loop-send-{suffix}" if deliver else None, instruction,
+            source_turn, time.time() + delay,
+        ))
+
+    def arm(self, loop_id, conversation_key):
+        with self.store.transaction() as db:
+            objective = self._objective(db, loop_id)
+            self._check_owner(db, objective)
+            if objective["manager_conversation_key"] != conversation_key:
+                raise LoopContractError("LOOP_MANAGER_IDENTITY_MISMATCH")
+            if self._current(db, loop_id) is None:
+                memberships = db.execute("""SELECT project_id, conversation_key
+                     FROM conversation_network_memberships WHERE activity='ACTIVE'
+                       AND (project_id=? OR conversation_key IN (?,?))""",
+                     (objective["network_project_id"], conversation_key,
+                      objective["supervisor_conversation_key"])).fetchall()
+                if [tuple(row) for row in memberships] != [(objective["network_project_id"], conversation_key)]:
+                    raise LoopContractError("LOOP_MANAGER_ONLY_NETWORK_REQUIRED")
+                if db.execute("SELECT 1 FROM loop_recipe_turns WHERE conversation_key=? AND due_at IS NOT NULL",
+                              (conversation_key,)).fetchone():
+                    raise LoopContractError("LOOP_CONVERSATION_ALREADY_WATCHED")
+                self._insert_turn(db, objective, turn=1, actor="MANAGER")
+        return self.status(loop_id)
+
+    def resume(self, loop_id, turn, conversation_key, instruction):
+        instruction = _text(instruction, 2000)
+        with self.store.transaction() as db:
+            objective = self._objective(db, loop_id)
+            self._check_owner(db, objective)
+            current = self._current(db, loop_id)
+            if (not current or current["turn"] != turn or current["state"] != "BLOCKED"
+                    or conversation_key != objective["manager_conversation_key"]):
+                raise LoopContractError("LOOP_BLOCKED_MANAGER_RESUME_REQUIRED")
+            if db.execute("SELECT 1 FROM loop_recipe_turns WHERE conversation_key=? AND due_at IS NOT NULL",
+                          (conversation_key,)).fetchone():
+                raise LoopContractError("LOOP_CONVERSATION_ALREADY_WATCHED")
+            self._insert_turn(db, objective, turn=turn + 1, actor="MANAGER",
+                              source_turn=turn, instruction=instruction)
+        return self.status(loop_id)
+
+    def _working_turn(self, db, loop_id, turn, conversation_key):
+        objective = self._objective(db, loop_id)
+        self._check_owner(db, objective)
+        current = self._current(db, loop_id)
+        if (current is None or current["turn"] != turn or current["conversation_key"] != conversation_key
+                or current["state"] != "WATCHING" or current["decision_json"]):
+            raise LoopContractError("LOOP_TURN_NOT_CURRENT_OR_READY")
+        return objective, current
+
+    def save_plan(self, loop_id, turn, conversation_key, *, plan_id, expected_revision, plan):
+        if not _ID.fullmatch(plan_id) or not isinstance(plan, dict):
+            raise LoopContractError("LOOP_DETAIL_PLAN_REQUIRED")
+        plan = {key: _text(plan.get(key)) for key in ("remaining", "steps", "verification", "reason")}
+        with self.store.transaction() as db:
+            _, current = self._working_turn(db, loop_id, turn, conversation_key)
+            previous = db.execute("""SELECT actor,revision FROM loop_recipe_detail_plans
+                WHERE loop_id=? AND plan_id=? ORDER BY revision DESC LIMIT 1""",
+                (loop_id, plan_id)).fetchone()
+            if ((previous["revision"] if previous else 0) != expected_revision
+                    or previous and previous["actor"] != current["actor"]):
+                raise LoopContractError("LOOP_PLAN_REVISION_STALE")
+            db.execute("INSERT INTO loop_recipe_detail_plans VALUES(?,?,?,?,?,?)",
+                       (loop_id, plan_id, expected_revision + 1, turn, current["actor"], json.dumps(plan)))
+        return self.status(loop_id)
+
+    def record_progress(self, loop_id, turn, conversation_key, *, plan_id, revision, progress):
+        completed, total = progress.get("completed"), progress.get("total")
+        if type(completed) is not int or type(total) is not int or not 0 <= completed <= total or total < 1:
+            raise LoopContractError("LOOP_PROGRESS_INVALID")
+        evidence = _text(progress.get("evidence"), 4000)
+        with self.store.transaction() as db:
+            self._working_turn(db, loop_id, turn, conversation_key)
+            plan = db.execute("""SELECT plan_id,revision FROM loop_recipe_detail_plans
+                    WHERE loop_id=? AND turn=? ORDER BY rowid DESC LIMIT 1""",
+                              (loop_id, turn)).fetchone()
+            if not plan or tuple(plan) != (plan_id, revision):
+                raise LoopContractError("LOOP_PLAN_REVISION_STALE")
+            db.execute("""INSERT INTO loop_recipe_progress VALUES(?,?,?,?,?,?,?)
+                       ON CONFLICT(loop_id,turn,plan_id,plan_revision)
+                       DO UPDATE SET completed=excluded.completed,total=excluded.total,evidence=excluded.evidence""",
+                       (loop_id, turn, plan_id, revision, completed, total, evidence))
+        return self.status(loop_id)
+
+    def decide(self, loop_id, turn, conversation_key, *, decision):
+        route = decision.get("route")
+        if route not in {"continue", "wait", "handoff", "return", "blocked", "complete"}:
+            raise LoopContractError("LOOP_DECISION_INVALID")
+        summary = _text(decision.get("result"), 4000)
+        next_instruction = _text(decision.get("next_instruction"), 2000) if route != "complete" else ""
+        condition_evidence = decision.get("condition_evidence") or {}
+        operation_refs = decision.get("operation_refs") or []
+        required_capabilities = decision.get("required_capabilities") or []
+        if (not isinstance(required_capabilities, list) or len(required_capabilities) > 16
+                or any(not isinstance(capability, str) or not _ID.fullmatch(capability)
+                       for capability in required_capabilities)
+                or required_capabilities and route != "handoff"):
+            raise LoopContractError("LOOP_SUPERVISOR_REQUIREMENTS_INVALID")
+        delay = decision.get("delay_seconds", 0)
+        if type(delay) is not int or not 0 <= delay <= 3600 or (route == "wait" and delay < 2):
+            raise LoopContractError("LOOP_WAIT_DELAY_INVALID")
+        if not isinstance(condition_evidence, dict) or not isinstance(operation_refs, list):
+            raise LoopContractError("LOOP_EVIDENCE_INVALID")
+        if len(operation_refs) > 32 or len(condition_evidence) > 64:
+            raise LoopContractError("LOOP_EVIDENCE_LIMIT")
+        condition_evidence = {k: _text(v, 2000) for k, v in condition_evidence.items()}
+        for ref in operation_refs:
+            _text(ref, 80)
+        with self.store.transaction() as db:
+            objective, current = self._working_turn(db, loop_id, turn, conversation_key)
+            manager = current["actor"] == "MANAGER"
+            if (route in {"handoff", "complete"} and not manager) or (route == "return" and manager):
+                raise LoopContractError("LOOP_DECISION_ACTOR_MISMATCH")
+            plan = db.execute("""SELECT plan_id,revision FROM loop_recipe_detail_plans
+                    WHERE loop_id=? AND turn=? AND actor=?
+                    ORDER BY rowid DESC LIMIT 1""", (loop_id, turn, current["actor"])).fetchone()
+            if plan is None and route not in {"blocked", "wait"}:
+                raise LoopContractError("LOOP_DETAIL_PLAN_REQUIRED")
+            capabilities = set()
+            for ref in operation_refs:
+                operation = db.execute("""SELECT capability,created_at FROM operations
+                        WHERE operation_id=? AND work_id=? AND principal_id=? AND assignment_epoch=?
+                          AND state='FINISHED' AND outcome='APPLIED'""",
+                                       (ref, objective["work_id"], objective["owner_principal_id"],
+                                        objective["assignment_epoch"])).fetchone()
+                if not operation:
+                    raise LoopContractError("LOOP_APPLIED_OPERATION_REQUIRED")
+                capabilities.add((operation["capability"], operation["created_at"]))
+            if route == "return":
+                handoff = db.execute("""SELECT turn,decision_json FROM loop_recipe_turns
+                    WHERE loop_id=? AND turn<? AND actor='MANAGER'
+                    ORDER BY turn DESC LIMIT 1""", (loop_id, turn)).fetchone()
+                expected = json.loads(handoff["decision_json"]) if handoff else {}
+                if expected.get("route") != "handoff":
+                    raise LoopContractError("LOOP_SUPERVISOR_HANDOFF_REQUIRED")
+                sent = db.execute("""SELECT o.created_at FROM loop_recipe_turns t
+                    JOIN operations o ON o.operation_id=t.send_operation_id
+                    WHERE t.loop_id=? AND t.turn=? AND o.outcome='APPLIED'""",
+                                  (loop_id, handoff["turn"] + 1)).fetchone()
+                if sent is None:
+                    raise LoopContractError("LOOP_SUPERVISOR_HANDOFF_RECEIPT_REQUIRED")
+                verified = {capability for capability, created_at in capabilities if created_at >= sent[0]}
+                if not set(expected.get("required_capabilities", ())).issubset(verified):
+                    raise LoopContractError("LOOP_SUPERVISOR_OPERATION_EVIDENCE_INCOMPLETE")
+            if route == "complete":
+                source = db.execute("SELECT * FROM loop_recipe_turns WHERE loop_id=? AND turn=?",
+                                    (loop_id, current["source_turn"])).fetchone()
+                if (source is None or source["actor"] != "SUPERVISOR"
+                        or not source["response_turn_key"] or not source["response_sha256"]
+                        or json.loads(source["decision_json"])["route"] != "return"):
+                    raise LoopContractError("LOOP_SUPERVISOR_RETURN_REQUIRED")
+                if condition_evidence.keys() != json.loads(objective["conditions_json"]).keys():
+                    raise LoopContractError("LOOP_COMPLETION_EVIDENCE_INCOMPLETE")
+            value = {"route": route, "result": summary, "next_instruction": next_instruction,
+                     "condition_evidence": condition_evidence, "operation_refs": operation_refs,
+                     "plan": dict(plan) if plan else None, "delay_seconds": delay,
+                     "required_capabilities": required_capabilities}
+            db.execute("UPDATE loop_recipe_turns SET decision_json=? WHERE loop_id=? AND turn=?",
+                       (json.dumps(value), loop_id, turn))
+        return self.status(loop_id)
+
+    def due(self, limit=4):
+        with self.store._readonly() as db:
+            return [dict(row) for row in db.execute("""SELECT * FROM loop_recipe_turns
+                WHERE due_at<=? ORDER BY due_at,watch_id LIMIT ?""", (time.time(), limit))]
+
+    def update(self, row, state, delay=None):
+        now = time.time()
+        with self.store.transaction() as db:
+            changed = db.execute("""UPDATE loop_recipe_turns SET state=?,due_at=?
+                          WHERE watch_id=? AND state=? AND due_at=?""",
+                       (state, now + delay if delay is not None else None,
+                        row["watch_id"], row["state"], row["due_at"])).rowcount
+            if changed and state == "BLOCKED":
+                db.execute("""UPDATE delayed_send_watches SET state='LOOP_BLOCKED'
+                    WHERE task_id=? AND generation=1 AND state='WATCHING' AND source_send_receipt=?""",
+                           (row["watch_id"], row["watch_operation_id"]))
+            if changed and state != row["state"]:
+                run_state = {"WATCHING": "ACTIVE", "UNKNOWN": "RECONCILING"}.get(state, state)
+                block = "plan" if state == "WATCHING" else "resume"
+                db.execute("""UPDATE loop_recipe_v2_runs SET state=?,current_block_id=?,
+                    revision=revision+1,updated_at=? WHERE loop_id=?""",
+                    (run_state, block, now, row["loop_id"]))
+
+    def observe(self, row, *, turn_key, digest):
+        with self.store.transaction() as db:
+            objective = self._objective(db, row["loop_id"])
+            self._check_owner(db, objective)
+            current = self._current(db, row["loop_id"])
+            if current["watch_id"] != row["watch_id"] or current["state"] != "WATCHING":
+                return
+            decision = json.loads(current["decision_json"] or "null")
+            route = decision["route"] if decision else "blocked"
+            state = "BLOCKED" if route == "blocked" else "OBSERVED"
+            db.execute("""UPDATE loop_recipe_turns SET state=?,due_at=NULL,response_turn_key=?,
+                           response_sha256=? WHERE watch_id=?""", (state, turn_key, digest, row["watch_id"]))
+            db.execute("""UPDATE delayed_send_watches SET state='LOOP_OBSERVED'
+                          WHERE task_id=? AND generation=1 AND state='WATCHING'
+                            AND source_send_receipt=?""", (row["watch_id"], row["watch_operation_id"]))
+            if route == "complete":
+                decision["receipt"] = {"watch_id": row["watch_id"], "response_turn_key": turn_key,
+                                       "response_sha256": digest, "turn": row["turn"]}
+                db.execute("UPDATE loop_recipe_objectives SET completion_json=? WHERE loop_id=?",
+                           (json.dumps(decision), row["loop_id"]))
+                db.execute("""UPDATE loop_recipe_v2_runs SET state='COMPLETED',
+                          current_block_id='complete',revision=revision+1,updated_at=? WHERE loop_id=?""",
+                           (time.time(), row["loop_id"]))
+            elif route == "blocked":
+                db.execute("""UPDATE loop_recipe_v2_runs SET state='BLOCKED',
+                    current_block_id='resume',revision=revision+1,updated_at=? WHERE loop_id=?""",
+                    (time.time(), row["loop_id"]))
+            else:
+                actor = {"handoff": "SUPERVISOR", "return": "MANAGER"}.get(route, row["actor"])
+                busy = db.execute("SELECT 1 FROM loop_recipe_turns WHERE conversation_key=? AND due_at IS NOT NULL",
+                                  (objective["manager_conversation_key" if actor == "MANAGER"
+                                             else "supervisor_conversation_key"],)).fetchone()
+                if busy:
+                    # Keep the source receipt and retry the atomic transition on the existing cadence.
+                    raise LoopContractError("LOOP_TARGET_BUSY")
+                self._insert_turn(db, objective, turn=row["turn"] + 1, actor=actor,
+                                  instruction=decision["next_instruction"], source_turn=row["turn"],
+                                  delay=decision["delay_seconds"], deliver=True)
+                db.execute("""UPDATE loop_recipe_v2_runs SET state='WAITING',
+                    current_block_id='resume',revision=revision+1,updated_at=? WHERE loop_id=?""",
+                    (time.time(), row["loop_id"]))
+
+class LoopTurnRunner:
+    def __init__(self, service, turns, snapshot):
+        self.service = service
+        self.turns = turns
+        self.snapshot = snapshot
+
+    def _original(self, work, operation_id):
+        try:
+            return self.turns.store.get_operation_for(
+                operation_id=operation_id, work_id=work.work_id,
+                principal_id=work.owner_principal_id,
+            )
+        except KeyError:
+            return None
+
+    def _execute(self, work, operation_id, arguments, *, epoch):
+        principal = Principal(work.owner_principal_id, "loop-turn", frozenset({"browser"}))
+        return self.service.operations.run(principal=principal, work_id=work.work_id,
+                                           operation_id=operation_id, capability="browser",
+                                           arguments=arguments, expected_assignment_epoch=epoch)
+
+    def run_once(self, *, limit=4):
+        events = []
+        for row in self.turns.due(limit):
+            try:
+                result = self.run_turn(row)
+            except (KeyError, ValueError) as exc:
+                if str(exc) == "LOOP_WORK_OWNER_OR_EPOCH_CHANGED":
+                    self.turns.update(row, "BLOCKED")
+                else:
+                    self.turns.update(row, row["state"], 15)
+                result = type(exc).__name__
+            except Exception as exc:
+                self.turns.update(row, row["state"], 15)
+                result = type(exc).__name__
+            events.append({"watch_id": row["watch_id"], "state": result})
+        return events
+
+    def run_turn(self, row):
+        with self.turns.store._readonly() as db:
+            objective = self.turns._objective(db, row["loop_id"])
+            self.turns._check_owner(db, objective)
+            current = self.turns._current(db, row["loop_id"])
+            if current is None or current["watch_id"] != row["watch_id"]:
+                return "STALE"
+        if row["state"] == "PREPARING":
+            return self._prepare(row, objective)
+        watch = self._watch_binding(row, objective)
+        if watch["state"] != "WATCHING":
+            self.turns.update(row, "UNKNOWN" if watch["state"] == "UNKNOWN" else "BLOCKED")
+            return watch["state"]
+        observed = self.service._response_for(watch)
+        if observed and observed["response_complete"] and observed["input_ready"]:
+            self.turns.observe(row, turn_key=observed["response_turn_key"],
+                               digest=observed["response_sha256"])
+            return "OBSERVED"
+        self.turns.update(row, "WATCHING", 4)
+        return "WATCHING"
+
+    def _watch_binding(self, row, objective):
+        watch = self.service.ledger.get(row["watch_id"], 1)
+        if not watch or watch["source_send_receipt"] != row["watch_operation_id"]:
+            raise LoopContractError("LOOP_WATCH_RECEIPT_MISMATCH")
+        watch["context"] = json.loads(watch.pop("context_json"))
+        context = watch["context"]
+        if (watch["conversation_key"] != row["conversation_key"]
+                or context["work_id"] != objective["work_id"]
+                or context["assignment_epoch"] != objective["assignment_epoch"]
+                or context["principal_id"] != objective["owner_principal_id"]
+                or context.get("execution_path") != "LOOP"
+                or context.get("source_send_operation_id") != (row["send_operation_id"] or None)):
+            raise LoopContractError("LOOP_WATCH_BINDING_MISMATCH")
+        return watch
+
+    def _prepare(self, row, objective):
+        from bct.loop_self_dispatch import LoopSelfDispatcher
+
+        work = self.turns.store.get_work(objective["work_id"])
+        conversation = row["conversation_key"]
+        watch = self._original(work, row["watch_operation_id"])
+        if watch and self._check_receipt(row, watch) != "APPLIED":
+            return "WATCH_RECEIPT_PENDING_OR_HELD"
+        send_id = row["send_operation_id"]
+        sent = self._original(work, send_id) if send_id else None
+        if sent or (watch and not send_id):
+            if not watch:
+                raise LoopContractError("LOOP_WATCH_RECEIPT_MISMATCH")
+            if sent and self._check_receipt(row, sent) != "APPLIED":
+                return "SEND_RECEIPT_PENDING_OR_HELD"
+            self._watch_binding(row, objective)
+            self.turns.update(row, "WATCHING", 0)
+            return "WATCHING"
+        NodeRecoveryLedger(self.turns.store).assert_send_allowed(
+            work_id=work.work_id, conversation_key=conversation,
+        )
+        # The route comes from fresh RCC state, independently of advisory Node Info.
+        target = LoopSelfDispatcher.exact_route(self.snapshot(), conversation,
+                                                require_idle=bool(send_id))
+        message = ""
+        if row["send_operation_id"]:
+            message = (
+                f"LOOP {row['loop_id']} | Work {work.work_id} | Task {objective['task_id']} "
+                f"| Turn {row['turn']} | Role {row['actor']}\n"
+                f"Read bct_loop_recipe(action='status', loop_id='{row['loop_id']}') first. "
+                "Compare this turn's instruction, the original request, overall plan and "
+                "completion conditions with the previous turn's result and receipts. "
+                "Save or revise a detail plan, execute and verify it, then record your "
+                "decision using action='decide' before ending your response. "
+                "For save_plan and decide, supply the current turn and your conversation key "
+                "from status. If the turn is still PREPARING, reread status once it is WATCHING.\n\n"
+                + row["instruction"]
+            )
+        arguments = {
+            "command": "send-delayed-message", "task_id": row["watch_id"],
+            "instance_id": target["instance_id"], "conversation_key": conversation,
+            "manager_conversation_key": conversation, "manager_instance_id": target["instance_id"],
+            "execution_path": "LOOP", "exclusive_conversation_watch": True,
+            "watched_session_id": target["session_id"], "watched_tab_id": target["tab_id"],
+            "watched_window_id": target["window_id"],
+        }
+        if message:
+            arguments.update(planned_send_operation_id=row["send_operation_id"], planned_send_text=message)
+        if watch is None:
+            watch = self._execute(work, row["watch_operation_id"], arguments,
+                                  epoch=objective["assignment_epoch"])
+            if self._check_receipt(row, watch) != "APPLIED":
+                return "WATCH_RECEIPT_PENDING_OR_HELD"
+        stored_watch = self._watch_binding(row, objective)
+        if stored_watch["state"] != "WATCHING":
+            raise LoopContractError("LOOP_WATCH_RECEIPT_MISMATCH")
+        if message:
+            from bct.send_delayed_message import _rcc_submitted_text_sha256
+            context = stored_watch["context"]
+            if context.get("source_send_sha256") != _rcc_submitted_text_sha256(message):
+                raise LoopContractError("LOOP_WATCH_PAYLOAD_MISMATCH")
+            if any(context.get("watched_" + field) != target[field]
+                   for field in ("session_id", "tab_id", "window_id")):
+                raise LoopContractError("LOOP_WATCH_ATTACHMENT_CHANGED")
+            sent = self._execute(work, send_id, {
+                "command": "send-message", **target, "text": message,
+            }, epoch=objective["assignment_epoch"])
+            if self._check_receipt(row, sent) != "APPLIED":
+                return "SEND_RECEIPT_PENDING_OR_HELD"
+        self.turns.update(row, "WATCHING", 0)
+        return "WATCHING"
+
+    def _check_receipt(self, row, receipt):
+        if receipt.outcome == Outcome.APPLIED:
+            return "APPLIED"
+        if receipt.outcome in {Outcome.FAILED, Outcome.NOT_APPLIED}:
+            self.turns.update(row, "BLOCKED")
+        else:
+            self.turns.update(row, row["state"], 15)
+        return "HELD"

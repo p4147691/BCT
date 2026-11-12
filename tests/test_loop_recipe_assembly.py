@@ -373,7 +373,7 @@ class PersistentLoopAssemblyTests(unittest.TestCase):
                                  "RECONCILING")
         asyncio.run(scenario())
 
-    def test_runtime_creates_new_loop_network_then_assigns_manager_and_supervisor(self):
+    def test_runtime_creates_new_loop_network_with_only_manager(self):
         async def scenario():
             calls = []
             with tempfile.TemporaryDirectory() as directory:
@@ -403,9 +403,8 @@ class PersistentLoopAssemblyTests(unittest.TestCase):
                 )
                 self.assertEqual(result["status"], "READY")
                 self.assertEqual([item[1]["operation"] for item in calls],
-                                 ["project-upsert", "membership-assign", "membership-assign"])
+                                 ["project-upsert", "membership-assign"])
                 self.assertEqual(calls[1][1]["role_tags"], ["Manager"])
-                self.assertEqual(calls[2][1]["role_tags"], [LOOP_SUPERVISOR_ROLE])
         asyncio.run(scenario())
 
     def test_missing_supervisor_reuses_create_send_bootstrap_watch_and_registration(self):

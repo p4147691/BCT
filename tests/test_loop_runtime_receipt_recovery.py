@@ -13,6 +13,7 @@ from bct.loop_store import LoopStore
 from bct.loop_self_outbox import LoopSelfOutbox
 from bct.mcp_server import MCP_PRINCIPAL_ID
 from bct.status_views import status_view
+from bct.send_delayed_message import SendDelayedMessageService
 from test_loop_self_dispatch import OWNER, production_snapshot
 
 
@@ -49,7 +50,9 @@ class LoopRuntimeReceiptRecoveryTests(unittest.TestCase):
                              bct=SimpleNamespace(store=store, operations=operations),
                              recovery_stop=stop, state=state, time=time,
                              runtime_root=Path(root), status_view=status_view,
-                             build_monitor_state=lambda **_: production_snapshot())
+                             build_monitor_state=lambda **_: production_snapshot(),
+                             SendDelayedMessageService=SendDelayedMessageService,
+                             status_snapshot=production_snapshot)
             with patch("bct.loop_self_continuation.LoopSelfContinuation") as continuation:
                 continuation.return_value.observe_once.return_value = {"status": "OBSERVED"}
                 exec(compile(ast.Module(body=[body], type_ignores=[]), str(source), "exec"), namespace)

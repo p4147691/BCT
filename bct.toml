@@ -223,6 +223,7 @@ files = [
   "src/bct/loop_recipe_assembly.py",
   "src/bct/loop_recipe_flow.py",
   "src/bct/loop_recipe_ledger.py",
+  "src/bct/loop_turns.py",
   "src/bct/loop_recipe_gateway.py",
   "src/bct/loop_recipe_recovery.py",
   "src/bct/persistent_loop_commands.py",

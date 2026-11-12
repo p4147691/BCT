@@ -978,7 +978,7 @@ class BrowserFeature:
             raise PreconditionError("DELAYED_BOOTSTRAP_CREATION_INVALID")
         execution_path = str(arguments.get("execution_path") or "")
         direction_id = str(arguments.get("chain_direction_id") or "")
-        if execution_path not in {"", "DIRECTION_DECLARED", "DIRECT_EXACT_TARGET"}:
+        if execution_path not in {"", "DIRECTION_DECLARED", "DIRECT_EXACT_TARGET", "LOOP"}:
             raise PreconditionError("DELAYED_EXECUTION_PATH_INVALID")
         if direction_id and not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", direction_id):
             raise PreconditionError("DELAYED_CHAIN_DIRECTION_ID_INVALID")

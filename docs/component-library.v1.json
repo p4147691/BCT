@@ -924,6 +924,10 @@
           "symbol": "LoopRecipeLedger"
         },
         {
+          "path": "src/bct/loop_turns.py",
+          "symbol": "LoopTurns / LoopTurnRunner"
+        },
+        {
           "path": "src/bct/persistent_loop_runtime.py",
           "symbol": "PersistentLoopCoordinator / persistent_loop_command"
         },
@@ -936,7 +940,7 @@
           "symbol": "bct_loop_recipe (official LOOP public adapter)"
         }
       ],
-      "contract": "LOOP is the official BCT single persistent Loop Recipe exposed as bct_loop_recipe. If no Supervisor exists, prepare_supervisor reuses exact create, first-send, bootstrap Watch, and Node Info receipts before start. Store the original instruction, Direction, exact Manager and Supervisor identities, and a new Loop network. Processing blocks end only through CONTINUE, WAIT, HANDOFF, COMPLETE, or BLOCKED. WAIT prearms the current response without an initial self-send. HANDOFF persists first, prearms the exact target Watch, and sends once. Sync reads the same Watch; Node Recovery reuses the existing Check/Recheck/Pause/Replace ledger through a Loop-only adapter.",
+      "contract": "LOOP saves the original instruction, Direction, overall plan and completion conditions with an exact Manager and an unassigned Supervisor. The Manager alone belongs to the Loop project. The first response is armed without an initial send. Each turn saves its detailed plan revision and decision. The existing RCC observer proves the exact completed response before the Loop runner commits another prearmed turn or the completion receipt. The Supervisor plans and reports independently. Completion requires the current Supervisor return and evidence for every overall condition.",
       "effects": [
         "durable-loop-run-and-continuation",
         "missing-supervisor-bootstrap",

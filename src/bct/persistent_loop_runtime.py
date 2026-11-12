@@ -18,6 +18,7 @@ from bct.core.models import Principal
 from bct.loop_recipe_contracts import LoopContractError
 from bct.loop_recipe_flow import LinkKind
 from bct.persistent_loop_commands import PersistentLoopCommands
+from bct.loop_turns import LoopTurns
 
 
 CapabilityExecutor = Callable[..., Coroutine[Any, Any, dict[str, Any]]]
@@ -135,6 +136,38 @@ class PersistentLoopCoordinator:
                 })
         return matches[0] if len(matches) == 1 else None
 
+    def discover_supervisor(self, manager_conversation_key: str) -> dict[str, Any]:
+        from bct.node_recovery import observe_node
+        from bct.status_views import status_view
+
+        if not self.runtime.status_provider:
+            raise LoopContractError("LOOP_FRESH_STATUS_REQUIRED")
+        view = status_view(self.runtime.status_provider(), "node")
+        roster = view.get("current_nodes", {})
+        manager = observe_node(view, manager_conversation_key)
+        if manager.get("result") != "OK" or roster.get("observation", {}).get("state") != "FRESH":
+            raise LoopContractError("LOOP_MANAGER_IDENTITY_UNVERIFIED")
+        if roster.get("unavailable_instances", 0):
+            raise LoopContractError("LOOP_SUPERVISOR_AVAILABILITY_UNVERIFIED")
+        with self.runtime.bct.store._readonly() as db:
+            assigned = {row[0] for row in db.execute(
+                "SELECT conversation_key FROM conversation_network_memberships WHERE activity='ACTIVE'")}
+        candidates = []
+        for node in roster.get("items", []):
+            key = node.get("conversation_uuid", "")
+            if (key != manager_conversation_key and key not in assigned
+                    and {"Supervisor", LOOP_SUPERVISOR_ROLE}.intersection(node.get("roles") or ())
+                    and observe_node(view, key).get("result") == "OK"
+                    and node.get("generating") is False):
+                candidates.append(key)
+        if len(candidates) == 1:
+            return {"status": "READY", "supervisor_conversation_key": candidates[0],
+                    "effects": "NONE_READ_ONLY"}
+        if candidates:
+            return {"status": "SUPERVISOR_SELECTION_REQUIRED", "candidates": candidates,
+                    "effects": "NONE_READ_ONLY"}
+        return {"status": "SUPERVISOR_NOT_FOUND", "effects": "NONE_READ_ONLY"}
+
     async def prepare_supervisor(
         self, *, work_id: str, manager_conversation_key: str,
         network_project_id: str, instance_id: str, create_operation_id: str,
@@ -178,6 +211,26 @@ class PersistentLoopCoordinator:
             raise LoopContractError("LOOP_SUPERVISOR_CREATE_COMMAND_INVALID")
         if create_command == "create-chat-tab" and window_id <= 0:
             raise LoopContractError("LOOP_SUPERVISOR_WINDOW_REQUIRED")
+        preparation_key = (work_id, network_project_id)
+        request_sha = hashlib.sha256(json.dumps((
+            manager_conversation_key, instance_id, identifiers, bootstrap_text, display_name,
+            scope_name, create_command, window_id,
+        )).encode()).hexdigest()
+        store = self.runtime.bct.store
+        with store._readonly() as db:
+            existing = db.execute("""SELECT request_sha256 FROM loop_recipe_supervisor_preparations
+                                      WHERE work_id=? AND network_project_id=?""", preparation_key).fetchone()
+        if not existing:
+            discovery = await asyncio.to_thread(self.discover_supervisor, manager_conversation_key)
+            if discovery["status"] != "SUPERVISOR_NOT_FOUND":
+                return discovery
+        with store.transaction() as db:
+            db.execute("INSERT OR IGNORE INTO loop_recipe_supervisor_preparations VALUES(?,?,?,?)",
+                       (*preparation_key, manager_conversation_key, request_sha))
+            saved = db.execute("""SELECT request_sha256 FROM loop_recipe_supervisor_preparations
+                                  WHERE work_id=? AND network_project_id=?""", preparation_key).fetchone()
+            if saved[0] != request_sha:
+                raise LoopContractError("LOOP_SUPERVISOR_PREPARATION_CONFLICT")
         browser = self.runtime.make_executor("browser")
         create_args: dict[str, Any] = {
             "command": create_command, "instance_id": instance_id,
@@ -296,18 +349,28 @@ class PersistentLoopCoordinator:
         display_name: str, expected_manager_scope_id: str = "",
         expected_supervisor_scope_id: str = "",
     ) -> dict[str, Any]:
-        """Create the Loop-specific network and assign its exact A/S members."""
+        """Create the Loop network for A and keep the verified Supervisor unassigned."""
         run = self.commands.status(loop_id=loop_id)
         if run.get("status") != "OK" or not run.get("context"):
             raise LoopContractError("LOOP_CONTEXT_REQUIRED")
-        if (not all((project_operation_id, manager_operation_id,
-                     supervisor_operation_id, display_name))
-                or len({project_operation_id, manager_operation_id,
-                        supervisor_operation_id}) != 3):
+        if (not all((project_operation_id, manager_operation_id, display_name))
+                or project_operation_id == manager_operation_id):
             raise LoopContractError("LOOP_TOPOLOGY_OPERATION_IDS_REQUIRED")
         context = run["context"]
         execute = self.runtime.make_executor("conversation_network_update")
         work_id = run["run"]["work_id"]
+        work = self.commands._owned_work(work_id)
+        with self.runtime.bct.store._readonly() as db:
+            supervisor = db.execute("""SELECT 1 FROM conversation_network_memberships
+                WHERE conversation_key=? AND activity='ACTIVE'""",
+                (context["supervisor_conversation_key"],)).fetchone()
+            existing = db.execute("SELECT 1 FROM conversation_network_projects WHERE project_id=?",
+                                  (context["network_project_id"],)).fetchone()
+        if supervisor:
+            raise LoopContractError("LOOP_SUPERVISOR_MUST_BE_UNASSIGNED")
+        if existing and self._receipt(work=work, operation_id=project_operation_id,
+                                      capability="conversation_network_update") is None:
+            raise LoopContractError("LOOP_NETWORK_ALREADY_EXISTS")
         project = await execute(work_id, project_operation_id, {
             "operation": "project-upsert",
             "project_id": context["network_project_id"],
@@ -324,18 +387,8 @@ class PersistentLoopCoordinator:
         if manager.get("outcome") != "APPLIED":
             return {"status": "MANAGER_MEMBERSHIP_UNCONFIRMED", "project": project,
                     "manager": manager, "warning": "NO_UNKNOWN_REPLAY"}
-        supervisor = await execute(work_id, supervisor_operation_id, {
-            "operation": "membership-assign", "project": context["network_project_id"],
-            "conversation_key": context["supervisor_conversation_key"],
-            "role_tags": [LOOP_SUPERVISOR_ROLE],
-            "expected_scope_id": expected_supervisor_scope_id,
-        })
-        return {
-            "status": "READY" if supervisor.get("outcome") == "APPLIED"
-                      else "SUPERVISOR_MEMBERSHIP_UNCONFIRMED",
-            "project": project, "manager": manager, "supervisor": supervisor,
-            "warning": "" if supervisor.get("outcome") == "APPLIED" else "NO_UNKNOWN_REPLAY",
-        }
+        return {"status": "READY", "project": project, "manager": manager,
+                "supervisor_conversation_key": context["supervisor_conversation_key"]}
 
     async def connect(
         self, *, loop_id: str, block_id: str, link: str,
@@ -550,14 +603,36 @@ async def persistent_loop_command(
     recovery_conversation_key: str = "", recovery_task_id: str = "",
     recovery_reason: str = "", successor_conversation_key: str = "",
     inheritance_task_id: str = "",
+    overall_plan: str = "", completion_conditions: dict[str, str] | None = None,
+    turn: int = 0, plan_id: str = "", expected_revision: int = 0,
+    plan: dict[str, str] | None = None, turn_decision: dict[str, Any] | None = None,
+    progress: dict[str, Any] | None = None,
     loop_recipe_runtime: Any = None,
 ) -> dict[str, Any]:
     """Public action dispatcher kept separate from MCP registration."""
     coordinator = PersistentLoopCoordinator(runtime)
     commands = coordinator.commands
+    turns = LoopTurns(runtime.bct.store)
     try:
         if action == "outline":
-            return commands.outline()
+            return {
+                "status": "OK", "effects": "NONE_READ_ONLY",
+                "actions": [
+                    "discover_supervisor", "prepare_supervisor", "start", "topology",
+                    "arm", "status", "save_plan", "record_progress", "decide", "resume",
+                ],
+                "manager_decisions": ["continue", "wait", "handoff", "blocked", "complete"],
+                "supervisor_decisions": ["continue", "wait", "return", "blocked"],
+                "sequence": [
+                    "Save original instruction, Direction, overall plan and conditions.",
+                    "Place only the Manager in the new project. Keep the Supervisor unassigned.",
+                    "Arm the current Manager response and wait for WATCHING before working.",
+                    "Read status, save the detail plan, execute, verify and save the decision.",
+                    "The exact response releases the next prearmed turn or completion receipt.",
+                ],
+            }
+        if action == "discover_supervisor":
+            return await asyncio.to_thread(coordinator.discover_supervisor, manager_conversation_key)
         if action == "prepare_supervisor":
             return await coordinator.prepare_supervisor(
                 work_id=work_id, manager_conversation_key=manager_conversation_key,
@@ -580,14 +655,37 @@ async def persistent_loop_command(
                 coordinator.verify_topology_endpoints,
                 manager_conversation_key, supervisor_conversation_key,
             )
+            work = await asyncio.to_thread(commands._owned_work, work_id)
+            context = commands.ledger.context_values(
+                instruction_text, direction_text, manager_conversation_key,
+                supervisor_conversation_key, network_project_id,
+            )
             started = await asyncio.to_thread(
-                commands.start, loop_id=loop_id, work_id=work_id,
-                instruction_text=instruction_text, direction_text=direction_text,
-                manager_conversation_key=manager_conversation_key,
-                supervisor_conversation_key=supervisor_conversation_key,
-                network_project_id=network_project_id,
+                turns.start, work=work, loop_id=loop_id, task_id=task_id, context=context,
+                overall_plan=overall_plan, conditions=completion_conditions or {},
             )
             return {**started, "topology_proof": topology_proof}
+        if action in {"arm", "save_plan", "record_progress", "decide", "resume"}:
+            saved = await asyncio.to_thread(commands.status, loop_id=loop_id)
+            if saved["status"] != "OK":
+                return saved
+            if action == "arm":
+                return await asyncio.to_thread(turns.arm, loop_id, conversation_key)
+            if action == "resume":
+                return await asyncio.to_thread(turns.resume, loop_id, turn, conversation_key, send_text)
+            if action == "record_progress":
+                return await asyncio.to_thread(
+                    turns.record_progress, loop_id, turn, conversation_key,
+                    plan_id=plan_id, revision=expected_revision, progress=progress or {},
+                )
+            if action == "save_plan":
+                return await asyncio.to_thread(
+                    turns.save_plan, loop_id, turn, conversation_key,
+                    plan_id=plan_id, expected_revision=expected_revision, plan=plan,
+                )
+            return await asyncio.to_thread(
+                turns.decide, loop_id, turn, conversation_key, decision=turn_decision or {},
+            )
         if action == "topology":
             return await coordinator.configure_topology(
                 loop_id=loop_id, project_operation_id=project_operation_id,
@@ -610,7 +708,16 @@ async def persistent_loop_command(
         if action == "status":
             if not loop_id:
                 raise LoopContractError("LOOP_ID_REQUIRED")
-            return await asyncio.to_thread(commands.status, loop_id=loop_id)
+            saved = await asyncio.to_thread(commands.status, loop_id=loop_id)
+            if saved["status"] != "OK":
+                return saved
+            try:
+                workflow = await asyncio.to_thread(turns.status, loop_id)
+            except LoopContractError as exc:
+                if str(exc) != "LOOP_PERSISTENT_OBJECTIVE_REQUIRED":
+                    raise
+                return saved
+            return {**saved, **workflow}
         if action == "sync":
             if not continuation_id:
                 raise LoopContractError("LOOP_CONTINUATION_ID_REQUIRED")
@@ -622,27 +729,8 @@ async def persistent_loop_command(
                 node_observation=node_observation,
                 unchanged_rechecks=unchanged_rechecks,
             )
-        if action != "transition":
-            raise LoopContractError("LOOP_ACTION_INVALID")
-        try:
-            kind = LinkKind(link)
-        except ValueError as exc:
-            raise LoopContractError("LOOP_LINK_INVALID") from exc
-        common = dict(
-            loop_id=loop_id, block_id=block_id, link=link,
-            required_capabilities=tuple(required_capabilities or ()),
-            artifact_refs=tuple(artifact_refs or ()),
-        )
-        if kind in {LinkKind.CONTINUE, LinkKind.COMPLETE}:
-            return await asyncio.to_thread(commands.transition, **common)
-        return await coordinator.connect(
-            **common, continuation_id=continuation_id,
-            watch_operation_id=watch_operation_id, task_id=task_id,
-            instance_id=instance_id, conversation_key=conversation_key,
-            return_conversation_key=return_conversation_key,
-            return_instance_id=return_instance_id,
-            send_operation_id=send_operation_id, send_text=send_text,
-            session_id=session_id, tab_id=tab_id, window_id=window_id,
-        )
+        if action == "transition":
+            raise LoopContractError("LOOP_USE_ARM_SAVE_PLAN_AND_DECIDE")
+        raise LoopContractError("LOOP_ACTION_INVALID")
     except (LoopContractError, KeyError, ValueError) as exc:
         return {"status": "INVALID_REQUEST", "reason": str(exc), "effects": "NONE"}
