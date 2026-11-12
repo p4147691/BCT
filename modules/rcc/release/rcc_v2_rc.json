@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "kind": "RCC_REBUILD_V2_RC",
-  "candidate": "RCC_COMPOSER_REBIND_20261110",
+  "candidate": "RCC_VISIBLE_COMPOSER_20261112",
   "sourceRoot": "modules/rcc/extension",
   "candidateInventory": {
     "fileCount": 58,
@@ -108,8 +108,8 @@
       },
       {
         "path": "content/conversation_dom.js",
-        "size": 26012,
-        "sha256": "1659bd70601b875d3b4ba3ce6bcd0ebf1ed60c1ac7bc250224d786578ad82f4e"
+        "size": 26703,
+        "sha256": "065ee51dda328d17da1f1fd3d75ce3f47030ae95c149a9552369209d61191607"
       },
       {
         "path": "content/conversation_rename.js",
@@ -123,8 +123,8 @@
       },
       {
         "path": "content/simple_relay_executor.js",
-        "size": 42693,
-        "sha256": "bd7bb28cfb844c0a2220218b6a70fc88f778addfc5411b6b99649e5dd15fbae8"
+        "size": 42845,
+        "sha256": "c2b0764a11e96e533d8709245468af992520520b95fdbf6a73baa9e0875492ea"
       },
       {
         "path": "core/conversation.js",
@@ -233,8 +233,8 @@
       },
       {
         "path": "manifest.json",
-        "size": 1526,
-        "sha256": "21c801fbee54d8e8cc4e81c0bb3d1a12f2bebe5c1b1a697a13a00a5862b6c89e"
+        "size": 1527,
+        "sha256": "4cc1363ac73224e4a5a2aad885d4576d1e3d5b594ea2b368b39566d40068551c"
       },
       {
         "path": "network/directory.js",
@@ -297,7 +297,7 @@
         "sha256": "b3ad92bc20564a905bffc37f3e524e2c8e8c5ae71c02517a301cedd5cf1341cd"
       }
     ],
-    "aggregateSha256": "e054f0fae6598c64c2eb0e4ff397740ffa76acba50abe06dd2e78dfb288e1f02"
+    "aggregateSha256": "6db2cd5ff6aaa33d99cd2ea89ed2d18e2902919e6d58a634485c0dd00825fbaa"
   },
   "activeLoaderGraph": {
     "background": [
@@ -623,8 +623,8 @@
       },
       {
         "path": "boot/platform_context.js",
-        "size": 1964,
-        "sha256": "c356ce6e9ee7faac2abdcc1042d9708c9ee1cf99ecc6a365f62bcd1283a7431f"
+        "size": 1965,
+        "sha256": "1b58dfdadc7091eb956dfbc7b1e0ab08b49a99e6b4618f4abca7c9baefd13852"
       },
       {
         "path": "browser/read_adapter.js",
@@ -703,18 +703,18 @@
       },
       {
         "path": "content/content_router.js",
-        "size": 28702,
-        "sha256": "31b4e52fba75260b2a91a4c7cec858c71d730a465a2e199295252c7db6325ce0"
+        "size": 29934,
+        "sha256": "adb4c01bf4d44b48cc0f9d79485f3921fdc0b9f601e95319d90b43417aa61c92"
       },
       {
         "path": "content/conversation_dom.js",
-        "size": 23049,
-        "sha256": "c0ec659fbf07302adec32027e4b5a0452d096357b633ad6c8843640afb83a699"
+        "size": 26012,
+        "sha256": "1659bd70601b875d3b4ba3ce6bcd0ebf1ed60c1ac7bc250224d786578ad82f4e"
       },
       {
         "path": "content/conversation_rename.js",
-        "size": 13745,
-        "sha256": "fa14a0d52eca1d16b51bb772727711b0662c0bb3859bd81e07a90998dac4f4fa"
+        "size": 36952,
+        "sha256": "94199637687e133deb537d5011c260327b5a4cb06eaaffd673c1221f4a1c1027"
       },
       {
         "path": "content/orchestration_relay_executor.js",
@@ -723,8 +723,8 @@
       },
       {
         "path": "content/simple_relay_executor.js",
-        "size": 41826,
-        "sha256": "de73e4b56a5ddafeb8be728e46035b3f04b430392491bfab4bb8a678981a2d47"
+        "size": 42845,
+        "sha256": "c2b0764a11e96e533d8709245468af992520520b95fdbf6a73baa9e0875492ea"
       },
       {
         "path": "core/conversation.js",
@@ -758,8 +758,8 @@
       },
       {
         "path": "domain/conversation_rename_service.js",
-        "size": 5015,
-        "sha256": "729f18567c9e1425c63cc89f7f37b725a56e09e121353c07ec43ca55de13dfdc"
+        "size": 24122,
+        "sha256": "a1462e7a55ce0922a5a56943b5d2c3b99710c5c0e941483550869254a8ecdaa5"
       },
       {
         "path": "domain/delivery_ledger_service.js",
@@ -768,8 +768,8 @@
       },
       {
         "path": "domain/diagnostic_support.js",
-        "size": 12770,
-        "sha256": "e3afe41d8e01b71657d3ee2394b5ccdb4ace77e28d54104346d8feb97cad169f"
+        "size": 14210,
+        "sha256": "e3de3b0e0f1469feae77cc26c826e1722ae78b9995bb8940705f71ea68ab8791"
       },
       {
         "path": "domain/endpoint_service.js",
@@ -793,13 +793,13 @@
       },
       {
         "path": "domain/orchestration_relay_service.js",
-        "size": 13457,
-        "sha256": "96a0659b5e04e65fa959602dc6298f3db0542e46986f14541bddc2097ee68cf1"
+        "size": 13449,
+        "sha256": "e0a64017d5f54631935b21156be8e00e6207809532f0d9163f08b37ae510194c"
       },
       {
         "path": "domain/readonly_diagnostics.js",
-        "size": 36166,
-        "sha256": "88fb151def6941e2f2f704aa2b6a0dc2a6d18dd68f2809e020c4491ecc3c62ba"
+        "size": 36727,
+        "sha256": "8720aebf05b6ba74202335902bcef0477daf8da21858ff4432245308a771eb41"
       },
       {
         "path": "domain/runtime_message_service.js",
@@ -813,8 +813,8 @@
       },
       {
         "path": "domain/simple_relay_service.js",
-        "size": 7827,
-        "sha256": "a83a7377938dd49e3dde61e9c8b8f58bafa0c40d609828545a8be9db8fb8a669"
+        "size": 7869,
+        "sha256": "dbb0019ab1ad75aa5dd63598db69c1942d38e9ba15f20be521948f05cf5ea8d0"
       },
       {
         "path": "domain/state_service.js",
@@ -823,18 +823,18 @@
       },
       {
         "path": "domain/tab_group_service.js",
-        "size": 5057,
-        "sha256": "89d78daffb25208e5206a7882fc43d880f9a560dd6ad8adfc2ccd1759fb9d91c"
+        "size": 5063,
+        "sha256": "726ece0bc09f322f1a6b23e912109fd7a670f3d651f8056e9ce5df6af9ad5385"
       },
       {
         "path": "legacy/command_policy.js",
-        "size": 4635,
-        "sha256": "fc87926f25548c7df3ff78712a2c75fa3d45d74ceb9a3b5cefd253a3e7464887"
+        "size": 8706,
+        "sha256": "1e64df69b1a9a51d155f13e1628c3195b9f3f16e84c8e9ef89c471183a539a37"
       },
       {
         "path": "manifest.json",
-        "size": 1555,
-        "sha256": "30430045f47e5037a98bec47dc7b119eba8344ea62ba2287447d3d90b5a68ee6"
+        "size": 1526,
+        "sha256": "21c801fbee54d8e8cc4e81c0bb3d1a12f2bebe5c1b1a697a13a00a5862b6c89e"
       },
       {
         "path": "network/directory.js",
@@ -897,6 +897,6 @@
         "sha256": "b3ad92bc20564a905bffc37f3e524e2c8e8c5ae71c02517a301cedd5cf1341cd"
       }
     ],
-    "aggregateSha256": "ec256e89fdaf8ebd6bae5f6892ae3f108d660c1b235e9aa74a0fb371dbbe3ada"
+    "aggregateSha256": "2a73b20116f40bcbfa99fdf2dc6b46ccccbd4c16decc5965788a9c240fc5d516"
   }
 }

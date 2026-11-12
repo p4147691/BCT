@@ -838,8 +838,11 @@ class DeployFeature:
                           "rcc-inspect-dot-title-rename",
                           "rcc-install-dot-title-rename",
                           "rcc-rollback-dot-title-rename",
+                          "rcc-inspect-visible-composer",
                           "rcc-inspect-composer-rebind",
+                          "rcc-install-visible-composer",
                           "rcc-install-composer-rebind",
+                          "rcc-rollback-visible-composer",
                           "rcc-rollback-composer-rebind",
                           "rcc-verify-installed", "rcc-verify-installed-pr388",
                           "rcc-verify-installed-rename-actions",
@@ -853,6 +856,7 @@ class DeployFeature:
                           "rcc-verify-installed-command-namespace",
                           "rcc-verify-installed-canonical-wire",
                           "rcc-verify-installed-dot-title-rename",
+                          "rcc-verify-installed-visible-composer",
                           "rcc-verify-installed-composer-rebind"}:
             return self._prepare_rcc(work, operation, arguments)
         if operation not in {"apply", "reconcile", "reconcile-rollback"}:
@@ -950,8 +954,11 @@ class DeployFeature:
             "rcc-inspect-dot-title-rename",
             "rcc-install-dot-title-rename",
             "rcc-rollback-dot-title-rename",
+            "rcc-inspect-visible-composer",
             "rcc-inspect-composer-rebind",
+            "rcc-install-visible-composer",
             "rcc-install-composer-rebind",
+            "rcc-rollback-visible-composer",
             "rcc-rollback-composer-rebind",
             "rcc-verify-installed", "rcc-verify-installed-pr388",
             "rcc-verify-installed-rename-actions",
@@ -965,6 +972,7 @@ class DeployFeature:
             "rcc-verify-installed-command-namespace",
             "rcc-verify-installed-canonical-wire",
             "rcc-verify-installed-dot-title-rename",
+            "rcc-verify-installed-visible-composer",
             "rcc-verify-installed-composer-rebind",
         }:
             return self._execute_rcc(request)
@@ -991,6 +999,9 @@ class DeployFeature:
         """Choose one immutable release without weakening prior install receipts."""
         from bct import rcc_protected_install as rcc
         routes = (
+            ("-visible-composer", rcc.VISIBLE_COMPOSER_MANIFEST_SHA256,
+             rcc.VISIBLE_COMPOSER_STAGE, rcc.VISIBLE_COMPOSER_ROLLBACK,
+             rcc.VISIBLE_COMPOSER_MANIFEST, rcc.VISIBLE_COMPOSER_JOURNAL, "1.0.71", "1.0.70"),
             ("-composer-rebind", rcc.COMPOSER_REBIND_MANIFEST_SHA256,
              rcc.COMPOSER_REBIND_STAGE, rcc.COMPOSER_REBIND_ROLLBACK,
              rcc.COMPOSER_REBIND_MANIFEST, rcc.COMPOSER_REBIND_JOURNAL, "1.0.70", "1.0.69"),
@@ -1076,6 +1087,7 @@ class DeployFeature:
             "rcc-rollback-command-namespace",
             "rcc-rollback-canonical-wire",
             "rcc-rollback-dot-title-rename",
+            "rcc-rollback-visible-composer",
             "rcc-rollback-composer-rebind",
         }
         is_post_install_verify = operation.startswith("rcc-verify-installed")
@@ -1125,7 +1137,7 @@ class DeployFeature:
             values["manifest_sha256"],
         )
         route = DeployFeature._rcc_route_config(values["operation"])
-        if values["operation"].endswith(("-pr388", "-rename-actions", "-source-proof", "-source-proof-v2", "-semantic-turn", "-submit-activation-fence", "-rendered-prompt-provenance", "-rendered-markdown-identity", "-rename-resilience", "-command-namespace", "-canonical-wire", "-dot-title-rename", "-composer-rebind")):
+        if values["operation"].endswith(("-pr388", "-rename-actions", "-source-proof", "-source-proof-v2", "-semantic-turn", "-submit-activation-fence", "-rendered-prompt-provenance", "-rendered-markdown-identity", "-rename-resilience", "-command-namespace", "-canonical-wire", "-dot-title-rename", "-composer-rebind", "-visible-composer")):
             from hashlib import sha256
             release_path = route["manifest_file"]
             if (not release_path.is_file() or sha256(release_path.read_bytes()).hexdigest()
@@ -1161,7 +1173,7 @@ class DeployFeature:
                  "original_install_operation_id": original_id},
                 output=result,
             )
-        if values["operation"] in {"rcc-rollback", "rcc-rollback-pr388", "rcc-rollback-rename-actions", "rcc-rollback-source-proof", "rcc-rollback-source-proof-v2", "rcc-rollback-semantic-turn", "rcc-rollback-submit-activation-fence", "rcc-rollback-rendered-prompt-provenance", "rcc-rollback-rendered-markdown-identity", "rcc-rollback-rename-resilience", "rcc-rollback-command-namespace", "rcc-rollback-canonical-wire", "rcc-rollback-dot-title-rename", "rcc-rollback-composer-rebind"}:
+        if values["operation"] in {"rcc-rollback", "rcc-rollback-pr388", "rcc-rollback-rename-actions", "rcc-rollback-source-proof", "rcc-rollback-source-proof-v2", "rcc-rollback-semantic-turn", "rcc-rollback-submit-activation-fence", "rcc-rollback-rendered-prompt-provenance", "rcc-rollback-rendered-markdown-identity", "rcc-rollback-rename-resilience", "rcc-rollback-command-namespace", "rcc-rollback-canonical-wire", "rcc-rollback-dot-title-rename", "rcc-rollback-composer-rebind", "rcc-rollback-visible-composer"}:
             original_id = values["install_operation_id"]
             receipt = route["journal_root"] / (original_id + ".json")
             if not receipt.is_file():
@@ -1187,7 +1199,7 @@ class DeployFeature:
         if (plan["installed_aggregate"], plan["candidate_aggregate"],
                 plan["manifest_sha256"]) != expected:
             raise PreconditionError("RCC_INSTALL_EXPECTATIONS_CHANGED")
-        if values["operation"] in {"rcc-inspect", "rcc-inspect-pr388", "rcc-inspect-rename-actions", "rcc-inspect-source-proof", "rcc-inspect-source-proof-v2", "rcc-inspect-semantic-turn", "rcc-inspect-submit-activation-fence", "rcc-inspect-rendered-prompt-provenance", "rcc-inspect-rendered-markdown-identity", "rcc-inspect-rename-resilience", "rcc-inspect-command-namespace", "rcc-inspect-canonical-wire", "rcc-inspect-dot-title-rename", "rcc-inspect-composer-rebind"}:
+        if values["operation"] in {"rcc-inspect", "rcc-inspect-pr388", "rcc-inspect-rename-actions", "rcc-inspect-source-proof", "rcc-inspect-source-proof-v2", "rcc-inspect-semantic-turn", "rcc-inspect-submit-activation-fence", "rcc-inspect-rendered-prompt-provenance", "rcc-inspect-rendered-markdown-identity", "rcc-inspect-rename-resilience", "rcc-inspect-command-namespace", "rcc-inspect-canonical-wire", "rcc-inspect-dot-title-rename", "rcc-inspect-composer-rebind", "rcc-inspect-visible-composer"}:
             return FeatureResult(
                 Outcome.APPLIED, {"read_only": True, "reload": "NOT_PERFORMED",
                                  "live_accepted": False},

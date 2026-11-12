@@ -74,20 +74,24 @@ function focusEditorAtEnd(editor) {
     && editor.contains(selection.getRangeAt(0).endContainer);
 }
 
-async function ensureCurrentEditorFocusAtEnd(expectedText = null, retries = 2) {
-  // ChatGPT can replace the ProseMirror root between setting the draft and
-  // activating submit. Reacquire the current editor on every bounded retry;
-  // retrying focus on the disconnected object can never succeed.
+async function ensureCurrentEditorFocusAtEnd(expectedText = null, retries = 5) {
+  // React may defer the existing-chat ProseMirror focus/caret commit across
+  // multiple tasks. Do not click or type to recover focus: reacquire the
+  // current editor and keep the exact draft+caret fence on each bounded poll.
   const expected = expectedText === null
     ? null : RelayCore.normalizeMessageText(expectedText);
-  const attempts = Math.max(1, Math.min(3, Number(retries) + 1));
+  const attempts = Math.max(1, Math.min(6, Number(retries) + 1));
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     const current = getEditor();
-    if (current
-        && (expected === null || editorDraftText(current) === expected)
-        && focusEditorAtEnd(current)) return current;
+    try {
+      if (current && current.isConnected !== false
+          && (expected === null || editorDraftText(current) === expected)
+          && focusEditorAtEnd(current)) return current;
+    } catch (_) {
+      // A transient detached selection is not a permit to submit.
+    }
     if (attempt + 1 < attempts) {
-      await new Promise(resolve => setTimeout(resolve, 0));
+      await new Promise(resolve => setTimeout(resolve, 40));
     }
   }
   return null;
