@@ -26,13 +26,13 @@ from .work_services import create_or_update_work
 from .status_queries import read_status, read_conversation_network
 from .project_plan import prepare_project_plan
 from .recipes.code_blocks import scan_work_code_blocks
+from .node_recovery_commands import NodeRecoveryCommands
 
 
 from .trace_timing import TRACE_ID as _MCP_TRACE_ID, trace_stage as _trace_stage
 
-from .recipes.runtime import ChainRecipeRuntime, work_dict as _work_dict
+from .recipes.runtime import ChainRecipeRuntime
 from .recipes.recovery import _assert_node_send_allowed
-from .recipes.recovery import _current_node_evidence
 from .recipes.chain import chain_recipe
 from .recipes.network import set_conversation_network
 from .recipes.state import check_conversation_network_recipe
@@ -676,14 +676,11 @@ def build_mcp(
         return {"status": "OK", "execution": context}
 
 
-    async def _recovery_work(work_id: str):
-        try:
-            work = await asyncio.to_thread(bct.store.get_work, work_id)
-        except KeyError as exc:
-            raise ValueError("WORK_NOT_FOUND") from exc
-        if work.owner_principal_id != principal.principal_id:
-            raise ValueError("WORK_NOT_FOUND")
-        return work
+    def _node_recovery_commands() -> NodeRecoveryCommands:
+        return NodeRecoveryCommands(
+            store=bct.store, principal_id=principal.principal_id, runtime=recipe_runtime,
+            browser_execute=make_executor("browser"),
+        )
 
     @server.tool(
         name="bct_check_node",
@@ -698,19 +695,9 @@ def build_mcp(
     async def bct_check_node(
         work_id: str, conversation_key: str, task_id: str = "", case_id: str = "",
     ) -> dict[str, Any]:
-        from bct.node_recovery import NodeRecoveryLedger
-        work = await _recovery_work(work_id)
-        case_id = case_id or ("node-recovery-" + uuid.uuid4().hex[:24])
-        try:
-            result = await asyncio.to_thread(
-                NodeRecoveryLedger(bct.store).check,
-                work=work, case_id=case_id, task_id=task_id,
-                conversation_key=conversation_key,
-                evidence=_current_node_evidence(recipe_runtime, conversation_key), kind="CHECK",
-            )
-        except ValueError as exc:
-            return {"status": "INVALID_REQUEST", "reason": str(exc)}
-        return {"status": "OK", "check_node": result}
+        return await _node_recovery_commands().check(
+            work_id=work_id, conversation_key=conversation_key, task_id=task_id, case_id=case_id,
+        )
 
     @server.tool(
         name="bct_recheck_node",
@@ -723,23 +710,7 @@ def build_mcp(
         structured_output=True,
     )
     async def bct_recheck_node(work_id: str, case_id: str) -> dict[str, Any]:
-        from bct.node_recovery import NodeRecoveryLedger
-        work = await _recovery_work(work_id)
-        ledger = NodeRecoveryLedger(bct.store)
-        case = await asyncio.to_thread(ledger.get, work=work, case_id=case_id)
-        if case is None:
-            return {"status": "NOT_FOUND", "case_id": case_id}
-        try:
-            result = await asyncio.to_thread(
-                ledger.check, work=work, case_id=case_id,
-                task_id=str(case["task_id"]),
-                conversation_key=str(case["conversation_key"]),
-                evidence=_current_node_evidence(recipe_runtime, str(case["conversation_key"])),
-                kind="RECHECK",
-            )
-        except ValueError as exc:
-            return {"status": "INVALID_REQUEST", "reason": str(exc)}
-        return {"status": "OK", "recheck_node": result}
+        return await _node_recovery_commands().recheck(work_id=work_id, case_id=case_id)
 
     @server.tool(
         name="bct_pause_node",
@@ -751,16 +722,9 @@ def build_mcp(
         structured_output=True,
     )
     async def bct_pause_node(work_id: str, case_id: str, reason: str) -> dict[str, Any]:
-        from bct.node_recovery import NodeRecoveryLedger
-        work = await _recovery_work(work_id)
-        try:
-            result = await asyncio.to_thread(
-                NodeRecoveryLedger(bct.store).pause,
-                work=work, case_id=case_id, reason=reason,
-            )
-        except ValueError as exc:
-            return {"status": "INVALID_REQUEST", "reason": str(exc)}
-        return {"status": "OK", "pause_node": result}
+        return await _node_recovery_commands().pause(
+            work_id=work_id, case_id=case_id, reason=reason,
+        )
 
     @server.tool(
         name="bct_replace_node",
@@ -781,54 +745,15 @@ def build_mcp(
         target_tab_id: int = 0, target_window_id: int = 0,
         origin_conversation_key: str = "", origin_instance_id: str = "",
     ) -> dict[str, Any]:
-        from bct.node_recovery import NodeRecoveryLedger
-        work = await _recovery_work(work_id)
-        ledger = NodeRecoveryLedger(bct.store)
-        if action == "status":
-            case = await asyncio.to_thread(ledger.get, work=work, case_id=case_id)
-            return ({"status": "NOT_FOUND", "case_id": case_id} if case is None
-                    else {"status": "OK", "replace_node": case})
-        if action not in {"prepare", "start", "commit"}:
-            return {"status": "INVALID_REQUEST", "reason": "NODE_REPLACEMENT_ACTION_INVALID"}
-        if action == "start" and not operation_id:
-            return {"status": "INVALID_REQUEST", "reason": "NODE_REPLACEMENT_OPERATION_REQUIRED"}
-        try:
-            if action in {"prepare", "start"}:
-                prepared = await asyncio.to_thread(
-                    ledger.prepare_replace, work=work, case_id=case_id,
-                    successor_conversation_key=successor_conversation_key,
-                    inheritance_task_id=inheritance_task_id,
-                    successor_evidence=_current_node_evidence(recipe_runtime, successor_conversation_key),
-                )
-                if action == "prepare":
-                    return {"status": "OK", "replace_node": prepared}
-                sent = await send_chain_delivery(recipe_runtime,
-                    work_id=work_id, task_id=inheritance_task_id,
-                    operation_id=operation_id, action="start", instance_id=instance_id,
-                    session_id=session_id, target_tab_id=target_tab_id,
-                    target_window_id=target_window_id,
-                    target_conversation_key=successor_conversation_key,
-                    origin_conversation_key=origin_conversation_key,
-                    origin_instance_id=origin_instance_id,
-                    instruction=str(prepared["inheritance_instruction"]),
-                )
-                return {"status": "INHERITANCE_SENT" if sent.get("status") == "WATCHING"
-                        else "INHERITANCE_UNCONFIRMED",
-                        "replace_node": prepared, "delivery": sent}
-            if action == "commit":
-                current_case = await asyncio.to_thread(
-                    ledger.get, work=work, case_id=case_id,
-                )
-                successor_key = successor_conversation_key or str(
-                    (current_case or {}).get("replacement_conversation_key") or ""
-                )
-                result = await asyncio.to_thread(
-                    ledger.commit_replace, work=work, case_id=case_id,
-                    successor_evidence=_current_node_evidence(recipe_runtime, successor_key),
-                )
-                return {"status": "OK", "replace_node": result}
-        except ValueError as exc:
-            return {"status": "INVALID_REQUEST", "reason": str(exc)}
+        return await _node_recovery_commands().replace(
+            work_id=work_id, case_id=case_id,
+            successor_conversation_key=successor_conversation_key,
+            inheritance_task_id=inheritance_task_id, action=action,
+            operation_id=operation_id, instance_id=instance_id, session_id=session_id,
+            target_tab_id=target_tab_id, target_window_id=target_window_id,
+            origin_conversation_key=origin_conversation_key,
+            origin_instance_id=origin_instance_id,
+        )
 
     @server.tool(
         name="bct_reset_node",
@@ -845,43 +770,11 @@ def build_mcp(
         instance_id: str = "", session_id: str = "", tab_id: int = 0,
         window_id: int = 0, conversation_key: str = "",
     ) -> dict[str, Any]:
-        from bct.node_recovery import NodeRecoveryLedger
-        work = await _recovery_work(work_id)
-        ledger = NodeRecoveryLedger(bct.store)
-        case = await asyncio.to_thread(ledger.get, work=work, case_id=case_id)
-        if case is None:
-            return {"status": "NOT_FOUND", "case_id": case_id}
-        if action == "status":
-            return {"status": "OK", "reset_node": case}
-        if action not in {"plan", "apply"}:
-            return {"status": "INVALID_REQUEST", "reason": "NODE_RESET_ACTION_INVALID"}
-        if action == "apply" and not operation_id:
-            return {"status": "INVALID_REQUEST", "reason": "NODE_RESET_OPERATION_REQUIRED"}
-        key = str(case["conversation_key"])
-        if conversation_key and conversation_key.lower() != key:
-            return {"status": "INVALID_REQUEST", "reason": "NODE_RESET_CONVERSATION_CONFLICT"}
-        try:
-            planned = await asyncio.to_thread(
-                ledger.prepare_reset, work=work, case_id=case_id,
-                node_evidence=_current_node_evidence(recipe_runtime, key),
-            )
-            if action == "plan":
-                return {"status": "OK", "reset_node": planned}
-            closed = await make_executor("browser")(
-                work_id, operation_id,
-                {"command": "close-conversation-tab", "instance_id": instance_id,
-                 "session_id": session_id, "tab_id": tab_id, "window_id": window_id,
-                 "conversation_key": key},
-            )
-            outcome = str(closed.get("outcome") or "UNKNOWN")
-            finished = await asyncio.to_thread(
-                ledger.finish_reset, work=work, case_id=case_id,
-                close_outcome=outcome, operation_id=operation_id,
-            )
-            return {"status": "OK" if outcome == "APPLIED" else "CLOSE_" + outcome,
-                    "reset_node": finished, "close": closed}
-        except ValueError as exc:
-            return {"status": "INVALID_REQUEST", "reason": str(exc)}
+        return await _node_recovery_commands().reset(
+            work_id=work_id, case_id=case_id, action=action, operation_id=operation_id,
+            instance_id=instance_id, session_id=session_id, tab_id=tab_id,
+            window_id=window_id, conversation_key=conversation_key,
+        )
 
     @server.tool(
         name="bct_set_direction",
