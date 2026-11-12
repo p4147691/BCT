@@ -15,6 +15,7 @@ MANUAL = "docs/CHAIN_MESSAGE_RECIPE_V2.md"
 CATALOGUE = "docs/component-library.v1.json"
 OUTPUT = "src/bct/data/component-library.json"
 FLOW_SOURCES = (
+    "src/bct/recipes/__init__.py",
     "src/bct/mcp_server.py", "src/bct/chain_direction.py", "src/bct/chain_execution_plan.py",
     "src/bct/chain_entry_policy.py", "src/bct/chain_message_preflight.py",
     "src/bct/send_delayed_message.py", "src/bct/continuation_primitives.py",
