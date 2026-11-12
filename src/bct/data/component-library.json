@@ -1,6 +1,6 @@
 {
   "schema": "bct.component-library.bundle.v1",
-  "source_fingerprint": "01cae580459ef43072da98eda45849446050708789abcde1d39c0dd93fe9850a",
+  "source_fingerprint": "f8deff8dbb07556bf8092be25c778157f90c64812e5613ff400260a80a300d4e",
   "source_hashes": {
     "docs/CHAIN_MESSAGE_RECIPE_V2.md": "1484b088885a3fcb540217fab6f787ea248305477c8a40e1e22633d9a91f24eb",
     "docs/component-library.v1.json": "756b0add48cfccf59d11d0d799b5ac24052d0ed4ed96c13c7cef82b7083174b6",
@@ -46,7 +46,7 @@
     "src/bct/loop_store.py": "232e7b8d7362ba20b17d601be62d04f7c9f165c3aa27958ca956b1de7e5128ec",
     "src/bct/loop_successor.py": "0059ed34a1b14508c04306086a5fad95ee600b24391450c98145548556aec5f0",
     "src/bct/loop_supervisor_handoff.py": "10337fe0b64b47a93e12bea9c354c0fdb40887d715c311fea019b700f6dfe220",
-    "src/bct/loop_turns.py": "ceb6d8c81d69b23aa21207962a1004feadd892a99ca1ae84d25a5bc0ab79e924",
+    "src/bct/loop_turns.py": "ff3b7831a8b7a91b504333e41342c64807b475fdd472d32bc6917fb9de71b617",
     "src/bct/mcp_server.py": "3837ff57b2d9e71af79b248ac7c34cd339d54c44928e8448daa293d90e0fa35a",
     "src/bct/node_recovery.py": "1c84150ae1af8cc285432565097ac071a2af6c4b2534f1d19ac7f75d7bec2438",
     "src/bct/persistent_loop_recovery.py": "4508fdeeab8a960c16c4ca131476afc896ad46449298652fa7a24224e173c8bf",
@@ -64,7 +64,7 @@
     "src/bct/recipes/runtime.py": "c9cd3a2ce51b2acdc7539fb44c6488b1d9ccaac6d2953755965c0ecf90c00667",
     "src/bct/recipes/state.py": "2055bfc5d1b1428f3ce2554ae05ddbd86eed97f5a9d2ca2d618502e71f516b0e",
     "src/bct/runtime_server.py": "fd058289041f6aa4fef1ea9e5f3fffda4febff4e7e32a1a454fe4b427a505ece",
-    "src/bct/send_delayed_message.py": "1e6bddb81321934b2cc66216d9aeb50a63357311143267c87c1bb051da379485",
+    "src/bct/send_delayed_message.py": "1383a556b7163ee3f3b5aa4bcd1e2250dc04f46d2f8bce4effa0f910b2cf7916",
     "src/bct/status_queries.py": "a58bac39ecfd03b9f83a7c6551cb2589c2eede6ae9b44a53cd13a7d1c2b061ed",
     "src/bct/task_message.py": "c2dec08eb945f546ac548b8ce7d8da1ef39bdd774cd0ade25e046a53c58014ad"
   },

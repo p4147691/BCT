@@ -1,7 +1,9 @@
 """Public LOOP round trips using the real durable Watch and Operation stores."""
 import hashlib
+import json
 from pathlib import Path
 import tempfile
+import time
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -9,7 +11,7 @@ from unittest.mock import patch
 from bct.core.models import Outcome, Work
 from bct.core.store import Store
 from bct.loop_recipe_contracts import LoopContractError
-from bct.loop_turns import LoopTurnRunner, LoopTurns
+from bct.loop_turns import LoopTurnRunner, LoopTurns, _UNCONFIRMED_SEND
 from bct.send_delayed_message import SendDelayedMessageService, _rcc_submitted_text_sha256
 from test_loop_self_dispatch import OWNER, snapshot
 
@@ -24,6 +26,7 @@ class FakeRccOperations:
         self.calls = []
         self.sends = {}
         self.next_outcome = Outcome.APPLIED
+        self.next_error = None
         self.service = None
 
     def run(self, *, principal, work_id, operation_id, capability, arguments, expected_assignment_epoch):
@@ -31,10 +34,15 @@ class FakeRccOperations:
         work = self.store.get_work(work_id)
         if work.assignment_epoch != expected_assignment_epoch:
             raise AssertionError("operation epoch differs from Loop")
+        sending = arguments["command"] != "send-delayed-message"
+        uncertain = sending and self.next_error == _UNCONFIRMED_SEND
+        instance = arguments["instance_id"]
         created, receipt = self.store.begin_operation(
             operation_id=operation_id, work=work, principal_id=principal.principal_id,
             request_digest=operation_id, capability=capability,
-            target=arguments["conversation_key"], resources=(), policy_revision="test",
+            target=instance if uncertain else arguments["conversation_key"],
+            resources=(f"rcc-instance:{instance}:direct-tab:{arguments['tab_id']}",) if uncertain else (),
+            policy_revision="test",
         )
         if not created:
             return receipt
@@ -60,6 +68,7 @@ class FakeRccOperations:
             evidence = {"command": "send-delayed-message"}
         else:
             self.assert_watch_before_send(arguments["conversation_key"], operation_id)
+            self.store.record_effect_stage(operation_id=operation_id, stage="DISPATCH_INTENT")
             self.sends[arguments["conversation_key"]] = arguments["text"]
             outcome = self.next_outcome
             evidence = {
@@ -69,7 +78,8 @@ class FakeRccOperations:
                 "source_message_sha256": _rcc_submitted_text_sha256(arguments["text"]),
             }
         return self.store.finish_operation(operation_id=operation_id, outcome=outcome,
-                                           evidence=evidence, error=None, release_claims=True)
+                                           evidence=evidence, error=self.next_error if uncertain else None,
+                                           release_claims=not uncertain)
 
     def assert_watch_before_send(self, conversation, operation_id):
         with self.store._readonly() as db:
@@ -214,6 +224,57 @@ class LoopTurnTests(unittest.TestCase):
         self.assertEqual(status["supervisor_return_evidence"]["send_operation_id"],
                          original["send_operation_id"])
         self.assertEqual(sum(op == original["send_operation_id"] for op, _ in self.ops.calls), 1)
+        self.prepare(OWNER)
+        self.decision(3, OWNER, "complete", condition_evidence={"criterion": "verified"})
+        self.reply(3, OWNER)
+        self.assertEqual(self.turns.status("loop")["objective"]["run_state"], "COMPLETED")
+
+    def test_unknown_exact_send_uses_original_watch_and_never_replays(self):
+        self.decision(1, OWNER, "handoff")
+        self.reply(1, OWNER)
+        self.target = SUPERVISOR
+        self.ops.next_outcome = Outcome.UNKNOWN
+        self.ops.next_error = _UNCONFIRMED_SEND
+        self.assertEqual(self.runner.run_once()[0]["state"], "SEND_RECEIPT_PENDING_OR_HELD")
+        row = self.turns.status("loop")["turn"]
+        binding = self.service.ledger.get(row["watch_id"], 1)
+        context = json.loads(binding["context_json"])
+        read = {"ok": True, "conversationKey": SUPERVISOR,
+                "tabId": context["watched_tab_id"], "windowId": context["watched_window_id"],
+                "latestUserTurnKey": "user-2", "latestUserSha256": context["source_send_sha256"],
+                "latestUserTextOccurrenceCount": 2, "observedAt": int(time.time() * 1000) + 1}
+        self.responses[SUPERVISOR] = read
+        with self.store.transaction() as db:
+            db.execute("UPDATE loop_recipe_turns SET due_at=0 WHERE turn=2")
+        self.assertEqual(self.runner.run_once()[0]["state"], "SEND_RECEIPT_PENDING_OR_HELD")
+        read["latestUserTextOccurrenceCount"] = 1
+        read["tabId"] += 1
+        with self.store.transaction() as db:
+            db.execute("UPDATE loop_recipe_turns SET due_at=0 WHERE turn=2")
+        self.assertEqual(self.runner.run_once()[0]["state"], "SEND_RECEIPT_PENDING_OR_HELD")
+        read["tabId"] -= 1
+        with self.store.transaction() as db:
+            db.execute("UPDATE loop_recipe_turns SET due_at=0 WHERE turn=2")
+        self.runner = self.make_runner()
+        self.assertEqual(self.runner.run_once()[0]["state"], "WATCHING")
+        receipt = self.turns.status("loop")["receipts"][row["send_operation_id"]]
+        self.assertEqual(receipt["outcome"], "UNKNOWN")
+        self.assertEqual(receipt["reconciliation"]["source_user_turn_key"], "user-2")
+        self.assertEqual(sum(op == row["send_operation_id"] for op, _ in self.ops.calls), 1)
+        with self.store._readonly() as db:
+            self.assertEqual(db.execute("SELECT unresolved FROM resource_claims WHERE operation_id=?",
+                                        (row["send_operation_id"],)).fetchone()[0], 0)
+        self.decision(2, SUPERVISOR, "return")
+        text = "exact supervisor reply"
+        read.update(responseTurnCount=1, generating=False, terminal=True, inputReady=True,
+                    observationState="TERMINAL", responseSourceUserTurnKey="user-2",
+                    responseSourceUserSha256=context["source_send_sha256"],
+                    responseSourceUserTextOccurrenceCount=1, responseTurnKey="assistant-2",
+                    responseText=text, responseSha256=hashlib.sha256(text.encode()).hexdigest())
+        self.assertEqual(self.runner.run_once()[0]["state"], "OBSERVED")
+        self.assertEqual(self.turns.status("loop")["turn"]["conversation_key"], OWNER)
+        self.ops.next_outcome = Outcome.APPLIED
+        self.ops.next_error = None
         self.prepare(OWNER)
         self.decision(3, OWNER, "complete", condition_evidence={"criterion": "verified"})
         self.reply(3, OWNER)
