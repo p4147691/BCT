@@ -295,7 +295,10 @@ class LoopTurns:
                           (conversation_key,)).fetchone():
                 raise LoopContractError("LOOP_CONVERSATION_ALREADY_WATCHED")
             self._insert_turn(db, objective, turn=turn + 1, actor="MANAGER",
-                              source_turn=turn, instruction=instruction)
+                              source_turn=turn, instruction=instruction, deliver=True)
+            db.execute("""UPDATE loop_recipe_v2_runs SET state='WAITING',
+                current_block_id='resume',revision=revision+1,updated_at=? WHERE loop_id=?""",
+                (time.time(), loop_id))
         return self.status(loop_id)
 
     def _working_turn(self, db, loop_id, turn, conversation_key):

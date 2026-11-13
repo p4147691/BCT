@@ -25,6 +25,7 @@ class FakeRccOperations:
         self.store = store
         self.calls = []
         self.sends = {}
+        self.baselines = {}
         self.next_outcome = Outcome.APPLIED
         self.next_error = None
         self.service = None
@@ -48,8 +49,8 @@ class FakeRccOperations:
             return receipt
         if arguments["command"] == "send-delayed-message":
             conversation = arguments["conversation_key"]
-            baseline = {"responseTurnCount": 0}
-            if not arguments.get("planned_send_operation_id"):
+            baseline = dict(self.baselines.get(conversation, {"responseTurnCount": 0}))
+            if not arguments.get("planned_send_operation_id") and conversation not in self.baselines:
                 baseline.update(generating=True, latestUserTurnKey="user-first",
                                 latestUserSha256=_rcc_submitted_text_sha256("original"))
             self.service.ledger.prearm_task(
@@ -174,6 +175,30 @@ class LoopTurnTests(unittest.TestCase):
         with self.assertRaisesRegex(LoopContractError, "LOOP_RUN_SUPERSEDED"):
             self.turns.resume("loop", 1, OWNER, "resume old turn")
         self.assertEqual(len(self.ops.calls), 1)
+
+    def test_resume_prearms_a_new_message_after_an_already_terminal_response(self):
+        self.reply(1, OWNER)
+        previous = self.turns.status("loop")
+        self.assertEqual(previous["turn"]["state"], "BLOCKED")
+        self.ops.baselines[OWNER] = self.responses[OWNER]
+
+        resumed = self.turns.resume("loop", 1, OWNER, "resume the same work")
+        self.assertEqual(resumed["objective"]["run_state"], "WAITING")
+        self.assertEqual(resumed["turn"]["source_turn"], 1)
+        self.assertEqual(resumed["turn"]["conversation_key"], OWNER)
+        self.assertEqual(resumed["previous_turn"], previous["turn"])
+        with self.assertRaisesRegex(LoopContractError, "LOOP_BLOCKED_MANAGER_RESUME_REQUIRED"):
+            self.turns.resume("loop", 1, OWNER, "resume the same work")
+
+        self.prepare(OWNER)
+        status = self.turns.status("loop")
+        for field in ("watch_operation_id", "send_operation_id"):
+            self.assertEqual(status["receipts"][status["turn"][field]]["outcome"], "APPLIED")
+        self.assertEqual(status["receipts"][previous["turn"]["watch_operation_id"]],
+                         previous["receipts"][previous["turn"]["watch_operation_id"]])
+        self.assertIn("resume the same work", self.ops.sends[OWNER])
+        self.assertEqual([args["command"] for _, args in self.ops.calls],
+                         ["send-delayed-message", "send-delayed-message", "send-message"])
 
     def test_initial_watch_registers_before_fallback_and_never_sends(self):
         self.reply(1, OWNER)
