@@ -175,6 +175,44 @@ class LoopTurnTests(unittest.TestCase):
             self.turns.resume("loop", 1, OWNER, "resume old turn")
         self.assertEqual(len(self.ops.calls), 1)
 
+    def test_initial_watch_registers_before_fallback_and_never_sends(self):
+        self.reply(1, OWNER)
+        context = ("original", "direction", OWNER, SUPERVISOR, "new-network")
+        self.turns.start(work=self.work, loop_id="new-loop", task_id="new-task",
+                         context=context, overall_plan="overall",
+                         conditions={"criterion": "result"}, replace_observed_first_watch=True)
+        with self.store.transaction() as db:
+            db.execute("INSERT INTO conversation_network_projects VALUES('new-network','New Loop',1,0,0)")
+            db.execute("UPDATE conversation_network_memberships SET activity='EXCLUDED' WHERE project_id='network'")
+            db.execute("INSERT INTO conversation_network_memberships VALUES('new-network',?,'ACTIVE',0,0)", (OWNER,))
+        self.turns.arm("new-loop", OWNER, recovery_delay=30)
+        self.assertEqual(self.turns.due(), [])
+        target = dict(conversation_key=OWNER, instance_id="a"*32, session_id="b"*32,
+                      tab_id=2, window_id=3)
+        self.assertEqual(self.runner.register_initial_watch("new-loop", target), "WATCHING")
+        status = self.turns.status("new-loop")
+        self.assertEqual(status["turn"]["state"], "WATCHING")
+        self.assertEqual(status["receipts"][status["turn"]["watch_operation_id"]]["outcome"], "APPLIED")
+        self.assertEqual([args["command"] for _, args in self.ops.calls], ["send-delayed-message"] * 2)
+
+    def test_new_start_preserves_a_late_first_watch_receipt(self):
+        row = self.turns.due()[0]
+        with self.store.transaction() as db:
+            db.execute("DELETE FROM delayed_send_watches WHERE task_id=?", (row["watch_id"],))
+            db.execute("""UPDATE operations SET outcome='NOT_APPLIED',
+                       error='DELAYED_PREARM_RESPONSE_ALREADY_TERMINAL' WHERE operation_id=?""",
+                       (row["watch_operation_id"],))
+        self.turns.update(row, "BLOCKED")
+        old = self.turns.status("loop")
+        self.turns.start(work=self.work, loop_id="new-loop", task_id="new-task",
+                         context=("new", "direction", OWNER, SUPERVISOR, "new-network"),
+                         overall_plan="overall", conditions={"criterion": "result"},
+                         replace_observed_first_watch=True)
+        saved = self.turns.status("loop")
+        self.assertEqual(saved["objective"]["run_state"], "SUPERSEDED")
+        self.assertEqual(saved["turn"], old["turn"])
+        self.assertEqual(saved["receipts"], old["receipts"])
+
     def test_partial_progress_and_supervisor_rework_then_complete(self):
         self.assertEqual(len(self.ops.calls), 1)
         self.turns.save_plan("loop", 1, OWNER, plan_id="plan-1", expected_revision=0, plan=PLAN)

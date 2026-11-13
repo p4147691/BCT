@@ -76,15 +76,15 @@ class LoopTurns:
 
     @staticmethod
     def _supersede_observed_first_watch(db, work, manager, now):
-        # An observed first response without a plan, decision, or outgoing
-        # send can relinquish the Manager. Preserve its original evidence.
+        # A first turn with no plan, decision, or outgoing send can relinquish
+        # the Manager after observation or a confirmed late registration.
         db.execute("""UPDATE loop_recipe_v2_runs
             SET state='SUPERSEDED', revision=revision+1, updated_at=?
             WHERE state='BLOCKED' AND work_id=? AND loop_id IN (
                 SELECT c.loop_id FROM loop_recipe_v2_contexts c
                 JOIN loop_recipe_objectives o USING(loop_id)
                 JOIN loop_recipe_turns t USING(loop_id)
-                JOIN delayed_send_watches w ON w.task_id=t.watch_id AND w.generation=1
+                LEFT JOIN delayed_send_watches w ON w.task_id=t.watch_id AND w.generation=1
                     AND w.source_send_receipt=t.watch_operation_id
                 JOIN operations op ON op.operation_id=t.watch_operation_id
                     AND op.work_id=? AND op.principal_id=o.owner_principal_id
@@ -93,8 +93,11 @@ class LoopTurns:
                   AND o.assignment_epoch=? AND o.completion_json IS NULL
                   AND t.turn=1 AND t.actor='MANAGER' AND t.conversation_key=?
                   AND t.state='BLOCKED' AND t.due_at IS NULL AND t.decision_json IS NULL
-                  AND t.send_operation_id IS NULL AND t.response_turn_key<>'' AND t.response_sha256<>''
-                  AND w.state='LOOP_OBSERVED' AND op.state='FINISHED' AND op.outcome='APPLIED'
+                  AND t.send_operation_id IS NULL AND op.state='FINISHED'
+                  AND ((w.state='LOOP_OBSERVED' AND op.outcome='APPLIED'
+                        AND t.response_turn_key<>'' AND t.response_sha256<>'')
+                       OR (w.task_id IS NULL AND op.outcome='NOT_APPLIED'
+                           AND op.error='DELAYED_PREARM_RESPONSE_ALREADY_TERMINAL'))
                   AND NOT EXISTS (SELECT 1 FROM loop_recipe_turns n WHERE n.loop_id=c.loop_id AND n.turn>1)
                   AND NOT EXISTS (SELECT 1 FROM loop_recipe_detail_plans p WHERE p.loop_id=c.loop_id)
                   AND NOT EXISTS (SELECT 1 FROM loop_recipe_v2_continuations n WHERE n.loop_id=c.loop_id)
@@ -260,7 +263,7 @@ class LoopTurns:
         if [tuple(row) for row in memberships] != [(project, manager)]:
             raise LoopContractError("LOOP_MANAGER_ONLY_NETWORK_REQUIRED")
 
-    def arm(self, loop_id, conversation_key):
+    def arm(self, loop_id, conversation_key, *, recovery_delay=0):
         with self.store.transaction() as db:
             objective = self._objective(db, loop_id)
             self._check_owner(db, objective)
@@ -273,7 +276,7 @@ class LoopTurns:
                 if db.execute("SELECT 1 FROM loop_recipe_turns WHERE conversation_key=? AND due_at IS NOT NULL",
                               (conversation_key,)).fetchone():
                     raise LoopContractError("LOOP_CONVERSATION_ALREADY_WATCHED")
-                self._insert_turn(db, objective, turn=1, actor="MANAGER")
+                self._insert_turn(db, objective, turn=1, actor="MANAGER", delay=recovery_delay)
         return self.status(loop_id)
 
     def resume(self, loop_id, turn, conversation_key, instruction):
@@ -696,7 +699,18 @@ class LoopTurnRunner:
             raise LoopContractError("LOOP_WATCH_BINDING_MISMATCH")
         return watch
 
-    def _prepare(self, row, objective):
+    def register_initial_watch(self, loop_id, target):
+        with self.turns.store._readonly() as db:
+            objective = self.turns._objective(db, loop_id)
+            self.turns._check_owner(db, objective)
+            row = self.turns._current(db, loop_id)
+        if (row and row["turn"] == 1 and row["state"] == "PREPARING"
+                and row["actor"] == "MANAGER" and not row["send_operation_id"]
+                and row["conversation_key"] == target["conversation_key"]):
+            return self._prepare(row, objective, initial_target=target)
+        return "LOOP_FIRST_WATCH_NOT_PREPARING"
+
+    def _prepare(self, row, objective, *, initial_target=None):
         from bct.loop_self_dispatch import LoopSelfDispatcher
 
         work = self.turns.store.get_work(objective["work_id"])
@@ -726,8 +740,9 @@ class LoopTurnRunner:
             work_id=work.work_id, conversation_key=conversation,
         )
         # The route comes from fresh RCC state, independently of advisory Node Info.
-        target = LoopSelfDispatcher.exact_route(self.snapshot(), conversation,
-                                                require_idle=bool(send_id))
+        target = initial_target or LoopSelfDispatcher.exact_route(
+            self.snapshot(), conversation, require_idle=bool(send_id),
+        )
         message = ""
         if row["send_operation_id"]:
             message = (

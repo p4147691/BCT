@@ -13,6 +13,7 @@ from bct.core.models import Work
 from bct.core.store import Store
 from bct.mcp_server import build_mcp
 from bct.persistent_loop_runtime import PersistentLoopCoordinator
+from bct.loop_turns import LoopTurnRunner
 from bct.send_delayed_message import _rcc_submitted_text_sha256
 from test_loop_self_dispatch import snapshot as loop_snapshot
 
@@ -95,14 +96,19 @@ class PersistentLoopPublicTests(unittest.IsolatedAsyncioTestCase):
                     _, stale = await server.call_tool("bct_loop_recipe", start)
                 self.assertEqual(stale["reason"], "LOOP_PREPARED_SOURCE_CHANGED")
                 topology.assert_not_awaited()
-                _, started = await server.call_tool("bct_loop_recipe", start)
-                self.assertEqual(started.get("status"), "OK", started)
+                with patch.object(LoopTurnRunner, "register_initial_watch",
+                                  return_value="WATCH_RECEIPT_PENDING_OR_HELD") as register:
+                    _, started = await server.call_tool("bct_loop_recipe", start)
+                    register.assert_called_once()
+                self.assertEqual(started.get("status"), "FIRST_WATCH_UNCONFIRMED", started)
                 self.assertEqual(started["objective"]["manager_conversation_key"], MANAGER)
                 self.assertEqual(started["objective"]["supervisor_conversation_key"], SUPERVISOR)
                 self.assertEqual(started["objective"]["instruction_text"], source)
                 self.assertEqual(started["turn"]["state"], "PREPARING")
                 self.assertIsNone(started["turn"]["send_operation_id"])
-                _, retry = await server.call_tool("bct_loop_recipe", start)
+                with patch.object(LoopTurnRunner, "register_initial_watch",
+                                  return_value="WATCH_RECEIPT_PENDING_OR_HELD"):
+                    _, retry = await server.call_tool("bct_loop_recipe", start)
                 self.assertEqual(retry["turn"]["watch_operation_id"],
                                  started["turn"]["watch_operation_id"])
                 topology.assert_awaited_once()
