@@ -149,6 +149,32 @@ class LoopTurnTests(unittest.TestCase):
         }
         self.assertEqual(self.runner.run_once()[0]["state"], "OBSERVED")
 
+    def test_new_prepared_start_preserves_observed_watch_without_a_decision(self):
+        self.reply(1, OWNER)
+        old = self.turns.status("loop")
+        self.assertEqual(old["objective"]["run_state"], "BLOCKED")
+        new = dict(work=self.work, loop_id="new-loop", task_id="new-task",
+                   context=("new", "direction", OWNER, SUPERVISOR, "new-network"),
+                   overall_plan="overall", conditions={"criterion": "result"})
+        with self.assertRaisesRegex(LoopContractError, "LOOP_MANAGER_PROJECT_OR_TASK_ALREADY_BOUND"):
+            self.turns.start(**new)
+        with self.store.transaction() as db:
+            db.execute("UPDATE loop_recipe_turns SET decision_json='{}' WHERE loop_id='loop'")
+        with self.assertRaisesRegex(LoopContractError, "LOOP_MANAGER_PROJECT_OR_TASK_ALREADY_BOUND"):
+            self.turns.start(**new, replace_observed_first_watch=True)
+        with self.store.transaction() as db:
+            db.execute("UPDATE loop_recipe_turns SET decision_json=NULL WHERE loop_id='loop'")
+        self.turns.start(**new, replace_observed_first_watch=True)
+        saved = self.turns.status("loop")
+        self.assertEqual(saved["objective"]["run_state"], "SUPERSEDED")
+        self.assertIsNone(saved["objective"]["completion"])
+        self.assertEqual(saved["turn"], old["turn"])
+        self.assertEqual(saved["receipts"], old["receipts"])
+        self.assertEqual(self.turns.previous_manager_scope(self.work, OWNER), "network")
+        with self.assertRaisesRegex(LoopContractError, "LOOP_RUN_SUPERSEDED"):
+            self.turns.resume("loop", 1, OWNER, "resume old turn")
+        self.assertEqual(len(self.ops.calls), 1)
+
     def test_partial_progress_and_supervisor_rework_then_complete(self):
         self.assertEqual(len(self.ops.calls), 1)
         self.turns.save_plan("loop", 1, OWNER, plan_id="plan-1", expected_revision=0, plan=PLAN)
