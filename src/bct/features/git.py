@@ -38,8 +38,9 @@ def _repo_root(path: Path) -> Path:
     return root
 
 
-def _dirty_paths(root: Path) -> set[str]:
-    result = _git(root, "status", "--porcelain=v1", "--untracked-files=all")
+def _dirty_paths(root: Path, *, include_untracked: bool = True) -> set[str]:
+    result = _git(root, "status", "--porcelain=v1",
+                  "--untracked-files=all" if include_untracked else "--untracked-files=no")
     if result.returncode != 0:
         raise PreconditionError("GIT_STATUS_FAILED")
     dirty: set[str] = set()
@@ -61,10 +62,21 @@ class GitCommitFeature:
         self.policy_path = policy_path
 
     def _prepare_local_main_merge(self, *, work: Work, arguments: dict[str, Any]) -> FeatureRequest:
-        if set(arguments) != {"operation", "path", "branch", "expected_head", "expected_feature_head", "message"}:
+        required = {"operation", "path", "branch", "expected_head", "expected_feature_head", "message"}
+        preserve = arguments.get("preserve_untracked")
+        if set(arguments) - {"preserve_untracked"} != required or (
+            "preserve_untracked" in arguments and (not isinstance(preserve, str) or not preserve)
+        ):
             raise PreconditionError("LOCAL_MAIN_MERGE_ARGUMENTS_INVALID")
         root = _repo_root(resolve_in_work(work, arguments["path"], must_exist=True))
         authority = require_local_main(self.policy_path, root)
+        preserved = {}
+        if preserve:
+            path = resolve_in_work(work, str(root / preserve), must_exist=True)
+            relative = relative_git_path(root, path)
+            if preserve != relative or not path.is_file():
+                raise PreconditionError("LOCAL_MAIN_PRESERVED_FILE_INVALID")
+            preserved = {relative: sha256_file(path)}
         branch = str(arguments["branch"])
         if (branch == "main" or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/-]{0,119}", branch)
                 or ".." in branch or branch.endswith(("/", ".", ".lock"))
@@ -82,7 +94,8 @@ class GitCommitFeature:
         return FeatureRequest(
             self.capability, str(root),
             {"operation": "merge_local_main", "branch": branch,
-             "expected_head": before, "expected_feature_head": feature_head, "message": message},
+             "expected_head": before, "expected_feature_head": feature_head, "message": message,
+             **({"preserved_untracked": preserved} if preserved else {})},
             ("git-index:" + str(root).casefold(), "git-worktree:" + str(root).casefold(),
              "github-base:" + authority.repository.casefold()),
             {"expected_head": before, "expected_feature_head": feature_head},
@@ -163,13 +176,21 @@ class GitCommitFeature:
         before = request.preconditions["expected_head"]
         feature_head = request.preconditions["expected_feature_head"]
         branch = request.arguments["branch"]
+        preserved = request.arguments.get("preserved_untracked", {})
+
+        def clean_with_preserved():
+            if _dirty_paths(root) != preserved.keys() or _dirty_paths(root, include_untracked=False):
+                return False
+            return all((root / path).is_file() and sha256_file(root / path) == digest
+                       for path, digest in preserved.items())
+
         head = _git(root, "rev-parse", "HEAD")
         current_branch = _git(root, "branch", "--show-current")
         if head.returncode != 0 or head.stdout.strip().lower() != before:
             raise PreconditionError("LOCAL_MAIN_HEAD_MISMATCH")
         if current_branch.returncode != 0 or current_branch.stdout.strip() != "main":
             raise PreconditionError("LOCAL_MAIN_BRANCH_REQUIRED")
-        if _dirty_paths(root):
+        if not clean_with_preserved():
             raise PreconditionError("LOCAL_MAIN_WORKTREE_DIRTY")
         feature = _git(root, "rev-parse", "--verify", f"refs/heads/{branch}^{{commit}}")
         if feature.returncode != 0 or feature.stdout.strip().lower() != feature_head:
@@ -186,20 +207,29 @@ class GitCommitFeature:
         tree_sha = preview.stdout.splitlines()[0].strip().lower() if preview.stdout else ""
         if not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", tree_sha):
             raise PreconditionError("LOCAL_MAIN_PREVIEW_TREE_INVALID")
+        if preserved:
+            listed = _git(root, "ls-tree", "-r", "--name-only", "-z", tree_sha)
+            if listed.returncode != 0:
+                raise PreconditionError("LOCAL_MAIN_PRESERVED_FILE_UNVERIFIED")
+            for untracked in preserved:
+                u = untracked.casefold()
+                if any(p.casefold() == u or p.casefold().startswith(u + "/") or u.startswith(p.casefold() + "/")
+                       for p in listed.stdout.split("\0") if p):
+                    raise PreconditionError("LOCAL_MAIN_PRESERVED_FILE_COLLISION")
         # Re-fence both refs immediately before the effect.
         if (_git(root, "rev-parse", "HEAD").stdout.strip().lower() != before
                 or _git(root, "rev-parse", f"refs/heads/{branch}").stdout.strip().lower() != feature_head
-                or _dirty_paths(root)):
+                or not clean_with_preserved()):
             raise PreconditionError("LOCAL_MAIN_REFS_CHANGED")
         try:
-            merged = _git(root, "merge", "--no-ff", "--no-edit",
+            merged = _git(root, "merge", "--no-ff", "--no-edit", "--no-overwrite-ignore",
                           "-m", request.arguments["message"], feature_head)
         except (OSError, subprocess.TimeoutExpired):
             merged = None
         if merged is None or merged.returncode != 0:
             try:
                 current = _git(root, "rev-parse", "HEAD")
-                clean = not _dirty_paths(root)
+                clean = clean_with_preserved()
                 state = _git(root, "rev-parse", "--verify", "-q", "MERGE_HEAD")
             except Exception as exc:
                 raise UnknownEffectError("LOCAL_MAIN_MERGE_POSTSTATE_UNAVAILABLE") from exc
@@ -214,13 +244,14 @@ class GitCommitFeature:
         if (after.returncode != 0 or not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", after.stdout.strip().lower())
                 or tokens != [after.stdout.strip().lower(), before, feature_head]
                 or actual_tree.returncode != 0 or actual_tree.stdout.strip().lower() != tree_sha
-                or _dirty_paths(root)):
+                or not clean_with_preserved()):
             raise UnknownEffectError("LOCAL_MAIN_MERGE_POSTSTATE_UNVERIFIED")
         return FeatureResult(Outcome.APPLIED, {
             "operation": "merge_local_main", "root": str(root),
             "head_before": before, "feature_head": feature_head,
             "head_after": after.stdout.strip().lower(), "tree_sha": tree_sha,
             "remote_ci_required": False,
+            **({"preserved_untracked": preserved} if preserved else {}),
         })
 
     def _execute_local_main_fast_forward(self, request: FeatureRequest) -> FeatureResult:

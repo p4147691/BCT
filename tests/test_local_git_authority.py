@@ -153,6 +153,21 @@ class LocalGitAuthorityTests(unittest.TestCase):
         self.assertEqual(Outcome.APPLIED, contender.outcome, contender.as_dict())
         self.assertNotEqual(self.initial, head(self.source))
 
+    def test_merge_preserves_exact_untracked_file_and_rejects_collision(self):
+        scratch = self.source / "scratch.txt"
+        scratch.write_bytes(b"local draft")
+        branch, sha = self.feature("collision", filename="scratch.txt")
+        args = {"operation": "merge_local_main", "path": str(self.source), "branch": branch,
+                "expected_head": self.initial, "expected_feature_head": sha,
+                "message": "merge with preserved draft", "preserve_untracked": "scratch.txt"}
+        rejected = self.call("merge-collision", "git_commit", args)
+        self.assertEqual("LOCAL_MAIN_PRESERVED_FILE_COLLISION", rejected.error)
+        branch, sha = self.feature("disjoint")
+        applied = self.call("merge-disjoint", "git_commit", {**args, "branch": branch, "expected_feature_head": sha})
+        self.assertEqual(Outcome.APPLIED, applied.outcome, applied.as_dict())
+        self.assertEqual(b"local draft", scratch.read_bytes())
+        self.assertEqual("?? scratch.txt", git(self.source, "status", "--porcelain"))
+
     def test_legacy_remote_authority_routes_fail_closed(self):
         with self.assertRaises(PreconditionError):
             self.call("legacy-merge-denied", "github_pr_merge", {
