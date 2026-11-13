@@ -21,7 +21,7 @@ from bct.loop_recipe_flow import LinkKind
 from bct.loop_self_dispatch import LoopSelfDispatcher
 from bct.loop_store import LoopStateError
 from bct.persistent_loop_commands import PersistentLoopCommands
-from bct.loop_turns import LoopTurns
+from bct.loop_turns import LoopTurnRunner, LoopTurns
 from bct.send_delayed_message import SendDelayedMessageService, _rcc_submitted_text_sha256
 
 
@@ -260,19 +260,32 @@ class PersistentLoopCoordinator:
             overall_plan=overall_plan, conditions=conditions,
             replace_observed_first_watch=bool(entry_context_id),
         )
-        if started["turn"] is not None:
-            return started
-        topology = await self.configure_topology(
-            loop_id=loop_id, project_operation_id=f"loop-project-op-{suffix}",
-            manager_operation_id=f"loop-manager-op-{suffix}", supervisor_operation_id="",
-            display_name="LOOP " + suffix[:8],
-            expected_manager_scope_id=await asyncio.to_thread(
-                turns.previous_manager_scope, work, manager_key,
-            ),
-        )
-        if topology["status"] != "READY":
-            return {**topology, "loop_id": loop_id}
-        return await asyncio.to_thread(turns.arm, loop_id, manager_key)
+        if started["turn"] is None:
+            topology = await self.configure_topology(
+                loop_id=loop_id, project_operation_id=f"loop-project-op-{suffix}",
+                manager_operation_id=f"loop-manager-op-{suffix}", supervisor_operation_id="",
+                display_name="LOOP " + suffix[:8],
+                expected_manager_scope_id=await asyncio.to_thread(
+                    turns.previous_manager_scope, work, manager_key,
+                ),
+            )
+            if topology["status"] != "READY":
+                return {**topology, "loop_id": loop_id}
+            # Persist the turn first, with a fallback deadline for Core recovery.
+            await asyncio.to_thread(turns.arm, loop_id, manager_key, recovery_delay=30)
+        operations = self.runtime.bct.operations
+        runner = LoopTurnRunner(SendDelayedMessageService(
+            store=self.runtime.bct.store, operations=operations,
+            browser_feature=operations._features["browser"],
+        ), turns, self.runtime.status_provider)
+        result = await asyncio.to_thread(runner.register_initial_watch, loop_id, manager)
+        status = await asyncio.to_thread(turns.status, loop_id)
+        turn = status["turn"]
+        receipt = status["receipts"].get(turn["watch_operation_id"], {})
+        if turn["turn"] == 1 and turn["state"] == "WATCHING" and receipt.get("outcome") == "APPLIED":
+            return status
+        return {**status, "status": "FIRST_WATCH_UNCONFIRMED",
+                "reason": receipt.get("error") or result}
 
     def _attachment(self, *, instance_id: str = "", tab_id: int = 0,
                     conversation_key: str = "") -> dict[str, Any] | None:
