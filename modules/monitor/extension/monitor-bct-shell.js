@@ -9,6 +9,7 @@
     dotInfo: "http://127.0.0.1:18790/monitor/dot-node-info",
     monitorState: "http://127.0.0.1:18790/monitor/state",
     rosterRevision: "http://127.0.0.1:18790/monitor/roster-revision",
+    rosterEvents: "http://127.0.0.1:18790/monitor/roster-events",
     rccCommandCatalog: "http://127.0.0.1:18790/monitor/rcc-command-catalog",
     renameConversation: "http://127.0.0.1:18790/monitor/conversation-title/rename",
     renameDot: "http://127.0.0.1:18790/monitor/dot-title/rename",
@@ -19,6 +20,65 @@
     status: "http://127.0.0.1:18790/monitor",
     localLlm: "http://127.0.0.1:18790/monitor#local-llm",
   });
+
+  function subscribeRosterChanges(onChange) {
+    if (!root.navigator?.locks || typeof root.BroadcastChannel !== "function") return;
+    const controller = new AbortController();
+    const { signal } = controller;
+    const channel = new root.BroadcastChannel("bct-monitor-roster");
+    channel.onmessage = () => onChange();
+    root.addEventListener("pagehide", () => {
+      controller.abort();
+      channel.close();
+    }, { once:true });
+
+    void root.navigator.locks.request("bct-monitor-roster", { signal }, async () => {
+      let retryMs = 1000;
+      while (!signal.aborted) {
+        try {
+          const response = await root.fetch(URLS.rosterEvents, {
+            headers: { "X-BCT-Monitor-Events": "1" }, cache:"no-store", signal,
+          });
+          // Startup and focus still reconcile when an older Core lacks events.
+          if (response.status === 404 || response.status === 403) return;
+          if (!response.ok || !response.body) throw new Error("BCT_MONITOR_EVENTS_UNAVAILABLE");
+          retryMs = 1000;
+          const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+          let pending = "";
+          try {
+            while (!signal.aborted) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              pending += value;
+              const messages = pending.split("\n\n");
+              pending = messages.pop();
+              if (messages.includes("data: changed")) {
+                channel.postMessage("roster-changed");
+                onChange();
+              }
+            }
+          } finally {
+            reader.releaseLock();
+          }
+        } catch (_) {
+          if (signal.aborted) return;
+        }
+        if (!signal.aborted) {
+          await new Promise(resolve => {
+            const stop = () => { clearTimeout(timer); resolve(); };
+            const timer = setTimeout(() => {
+              signal.removeEventListener("abort", stop);
+              resolve();
+            }, retryMs);
+            signal.addEventListener("abort", stop, { once:true });
+          });
+          retryMs = Math.min(retryMs * 2, 30000);
+        }
+      }
+    }).catch(error => {
+      if (!signal.aborted) console.warn("BCT Monitor roster events unavailable", error);
+    });
+  }
 
   function create(options = {}) {
     const fetcher = options.fetcher || root.fetch?.bind(root);
@@ -487,6 +547,7 @@
     return Object.freeze({
       health,
       monitorState,
+      subscribeRosterChanges,
       rosterRevision,
       rccCommandCatalog,
       windowNodes,

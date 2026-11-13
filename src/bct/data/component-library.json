@@ -1,6 +1,6 @@
 {
   "schema": "bct.component-library.bundle.v1",
-  "source_fingerprint": "0be6c75a1b32716f662d425ea26d0c0ff14025380ea6156ce33cdd36974f6008",
+  "source_fingerprint": "6c39704f046ac30bc954b5705373e3d9a57bfcd3d116bff678ec4c44691d5b5d",
   "source_hashes": {
     "docs/CHAIN_MESSAGE_RECIPE_V2.md": "1484b088885a3fcb540217fab6f787ea248305477c8a40e1e22633d9a91f24eb",
     "docs/component-library.v1.json": "756b0add48cfccf59d11d0d799b5ac24052d0ed4ed96c13c7cef82b7083174b6",
@@ -10,10 +10,10 @@
     "modules/browser-bridge/native/native_host.py": "7a618302522f954fb953ce4f24c273d9fb1bc1d9c4eb0846f0c4cccdfb818b78",
     "modules/browser-bridge/native/persistent_host.py": "306d2bf6618cd5a274dd4e91fe0a2999ee0ce8cba1171bbfa80c4cb2d003f015",
     "modules/monitor/domains/desktop-lifecycle.js": "8269e05b3597723b2d47fdf2a8ddc8d3cca7cc93ae49a0f4db6ec506a6084158",
-    "modules/monitor/domains/node-identity.js": "1cd97c72147bdda59c07aa92aa2b62fd44db132712c24da8a3e0f85f4087ce86",
+    "modules/monitor/domains/node-identity.js": "1563c15040048238314eb973ebc60cb33ecbfa7f91b2a6b275b5bec9c7005b70",
     "modules/monitor/extension/browser/tab-close-adapter.js": "25098987008308e97822ee12b5e62e93f39506bae165014c51b0aab3c95025b7",
     "modules/monitor/extension/features/rcc-command-catalog/monitor-rcc-command-catalog.js": "baf346f2f1e94c93d367cbd8a241c68a38a7ce7f4a4b20d32b0e3db33a40a651",
-    "modules/monitor/extension/monitor-bct-shell.js": "a269ed0228afb799ab1406e54d30527f04430d113149f9853f9220d7a9f4f853",
+    "modules/monitor/extension/monitor-bct-shell.js": "3d36d3c04aa4f35b2a019075ec871a6be9865c0017e1b07f8f9d4b27659b56e0",
     "modules/monitor/extension/monitor-bct-thumbnail-projection.js": "844b22e3ce253938e8672d86979ff6d462bdbeb14e55f59452462373ffa4b03d",
     "modules/monitor/extension/monitor-node-token-visual-contract.js": "08e8b59f51a46c31d13784b56beefa8ae3365d076e665a016425b3306282e1bc",
     "modules/monitor/extension/monitor-window-hwnd-contract.js": "81b0050ba0231328ad3514b35e1d085e18afcf7315bf4674d3e5604a61b34e6e",
@@ -63,7 +63,7 @@
     "src/bct/recipes/recovery.py": "652250acc02ff53b22fe417c798dfd9f412c3b701878204815486843059a58ff",
     "src/bct/recipes/runtime.py": "c9cd3a2ce51b2acdc7539fb44c6488b1d9ccaac6d2953755965c0ecf90c00667",
     "src/bct/recipes/state.py": "2055bfc5d1b1428f3ce2554ae05ddbd86eed97f5a9d2ca2d618502e71f516b0e",
-    "src/bct/runtime_server.py": "fd058289041f6aa4fef1ea9e5f3fffda4febff4e7e32a1a454fe4b427a505ece",
+    "src/bct/runtime_server.py": "c5ea26fe766375623d2d60cfe8616360b30a7fe3dfe953ab727d2f1a7558bb2d",
     "src/bct/send_delayed_message.py": "1383a556b7163ee3f3b5aa4bcd1e2250dc04f46d2f8bce4effa0f910b2cf7916",
     "src/bct/status_queries.py": "a58bac39ecfd03b9f83a7c6551cb2589c2eede6ae9b44a53cd13a7d1c2b061ed",
     "src/bct/task_message.py": "c2dec08eb945f546ac548b8ce7d8da1ef39bdd774cd0ade25e046a53c58014ad"

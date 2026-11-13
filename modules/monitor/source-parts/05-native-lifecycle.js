@@ -49,8 +49,6 @@ const MONITOR_BCT_DROP_EDGE_Y_PX = 10;
 
 /*@@MONITOR_FUNCTION:scheduleMonitorBctNodeStartupRevalidation@@*/
 
-/*@@MONITOR_FUNCTION:checkMonitorBctRosterRevision@@*/
-
 /*@@MONITOR_FUNCTION:startMonitorBctRosterWatch@@*/
 
 /*@@MONITOR_FUNCTION:refreshMonitorBctWindowNodes@@*/
@@ -330,6 +328,7 @@ globalThis.MonitorDesktopThumbnailV2.configure({
 
 const monitorWindowLifecyclePendingEvents = new Map();
 let monitorWindowLifecycleDrainBusy = false;
+const monitorWindowFrameRefreshes = new Map();
 
 /*@@MONITOR_FUNCTION:scheduleMonitorWindowLifecycleEvent@@*/
 

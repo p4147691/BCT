@@ -486,6 +486,30 @@ class DeploymentServiceTests(unittest.TestCase):
         self.assertFalse((self.runtime / "current.json").exists())
         self.assertFalse((self.runtime / "service.json").exists())
 
+    def test_deployment_uses_clean_linked_worktree_at_exact_canonical_main(self):
+        from bct.features.deploy import _target_profile, _validate_source
+        from bct.core.models import PreconditionError
+
+        alternate = self.base / "alternate"
+        git(self.source, "worktree", "add", "--detach", str(alternate), self.head)
+        scratch = self.source / "untracked.py"
+        scratch.write_bytes(b"local work")
+        profile = DeploymentProfiles(self.running_policy).get("test_runtime")
+        selected = _target_profile(profile, self.head, alternate)
+        self.assertEqual(str(alternate.resolve()), _validate_source(selected, self.head, alternate)["source_root"])
+        self.assertEqual(b"local work", scratch.read_bytes())
+        (alternate / "scratch.txt").write_bytes(b"dirty")
+        with self.assertRaisesRegex(PreconditionError, "DEPLOYMENT_SOURCE_NOT_CLEAN"):
+            _validate_source(selected, self.head, alternate)
+        (alternate / "scratch.txt").unlink()
+        clone = self.base / "clone"
+        git(self.base, "clone", str(self.source), str(clone))
+        with self.assertRaisesRegex(PreconditionError, "DEPLOYMENT_SOURCE_WORKTREE_REPOSITORY_MISMATCH"):
+            _validate_source(selected, self.head, clone)
+        git(self.source, "commit", "--allow-empty", "-m", "advance main")
+        with self.assertRaisesRegex(PreconditionError, "DEPLOYMENT_CANONICAL_MAIN_HEAD_MISMATCH"):
+            _validate_source(selected, self.head, alternate)
+
     def test_health_contract_allows_v1_upgrade_and_requires_v2_mcp_fields(self):
         identity = process_identity(os.getpid())
         self.assertIsNotNone(identity)

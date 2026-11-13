@@ -185,6 +185,7 @@ files = [
   "src/bct/status_views.py",
   "src/bct/trace_timing.py",
   "src/bct/monitor_runtime.py",
+  "src/bct/monitor_events.py",
   "src/bct/dot_identity.py",
   "src/bct/codex_surface.py",
   "src/bct/current_nodes.py",

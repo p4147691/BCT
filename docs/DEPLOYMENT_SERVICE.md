@@ -3,7 +3,7 @@
 ## Boundary
 
 BCT deploys only a named profile stored in `bct.toml`. A caller cannot supply a source
-path, destination path, file list, service name, executable, command, or port. The
+repository, destination path, file list, service name, executable, command, or port. The
 `bct_runtime_v1` remains the production profile and lists every copied file.
 The deployment module retains tested support for a separately activated migration
 target rooted at `%LOCALAPPDATA%\BCT\runtime`, but the shipped `bct.toml` no longer
@@ -26,6 +26,10 @@ service control actually begins.
 ## Deployment lifecycle
 
 1. Verify the source is the clean `main` checkout at the exact requested commit.
+   Apply may explicitly name a clean, Work-scoped `source_worktree`. It must
+   share Git metadata with the configured repository and its HEAD must match
+   both canonical `refs/heads/main` and the requested commit. The named profile
+   still owns all deployment paths and service settings.
 2. Hash the exact profile file set.
 3. Copy into an immutable staging directory and verify every copied hash.
 4. Atomically rename staging into `releases/<source-head>`.

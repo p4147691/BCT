@@ -235,7 +235,7 @@ monitorRoot.innerHTML = `
 // Presentation-only layout: no controls or identities are recreated.
 const bwmUiLayoutControl = window.MonitorUiLayout?.create?.(
   monitorRoot, chrome.storage, (error) => console.warn("BWM UI layout rejected", error),
-  { onCaptureFallbackChange: () => globalThis.dispatchEvent(new Event("bwm-thumbnail-policy-changed")) }
+  { pollMs: 0, onCaptureFallbackChange: () => globalThis.dispatchEvent(new Event("bwm-thumbnail-policy-changed")) }
 );
 
 // Runtime feature boundaries. Keep these explicit so future isolation does not
@@ -6540,10 +6540,6 @@ let monitorBctWindowNodeRefreshPending = false;
 // This checks one small Core-owned revision marker for every durable value that
 // can change the Monitor display. A full RCC/desktop roster read still happens
 // only when that marker changes.
-const MONITOR_BCT_ROSTER_WATCH_INTERVAL_MS = 750;
-let monitorBctRosterWatchTimer = 0;
-let monitorBctRosterWatchBusy = false;
-let monitorBctRosterRevision = "";
 // A reload can observe cached RCC rows while Chrome/RCC complete their own
 // restart. Revalidate only during this bounded warm-up; this is not a poll.
 const MONITOR_BCT_STARTUP_REVALIDATION_DELAYS_MS = Object.freeze([250, 800, 1800, 3200]);
@@ -8181,33 +8177,10 @@ function scheduleMonitorBctNodeStartupRevalidation() {
   }, delay);
 }
 
-async function checkMonitorBctRosterRevision() {
-  if (monitorBctRosterWatchBusy || !monitorBctShell?.rosterRevision) return;
-  monitorBctRosterWatchBusy = true;
-  try {
-    const next = await monitorBctShell.rosterRevision();
-    const revision = String(next?.revision || "").trim().toLowerCase();
-    if (!revision) return;
-    const previous = monitorBctRosterRevision;
-    monitorBctRosterRevision = revision;
-    // The initial marker is also followed by a roster read. That closes the
-    // startup race where any Core-owned display write lands after the first
-    // snapshot but before this watcher establishes its baseline.
-    if (!previous || previous !== revision) void refreshMonitorBctWindowNodes();
-  } catch (_) {
-    // This detector is advisory. Existing Chrome/RCC events and manual refresh
-    // remain usable if Core is restarting or an older Core is still installed.
-  } finally {
-    monitorBctRosterWatchBusy = false;
-  }
-}
-
 function startMonitorBctRosterWatch() {
-  if (!MONITOR_ACTIVE_STARTUP_ENABLED || monitorBctRosterWatchTimer || !monitorBctShell?.rosterRevision) return;
-  void checkMonitorBctRosterRevision();
-  monitorBctRosterWatchTimer = globalThis.setInterval(() => {
-    void checkMonitorBctRosterRevision();
-  }, MONITOR_BCT_ROSTER_WATCH_INTERVAL_MS);
+  if (MONITOR_ACTIVE_STARTUP_ENABLED) {
+    monitorBctShell?.subscribeRosterChanges(() => void refreshMonitorBctWindowNodes());
+  }
 }
 
 async function refreshMonitorBctWindowNodes() {
@@ -8874,6 +8847,11 @@ function ensureMonitorNativePort() {
   port.onMessage.addListener((response) => {
 
     if (response?.event === true && response?.type === "windowMoveSizeEnd") { scheduleMonitorWindowLifecycleEvent(response); return; }
+    if (response?.event === true && response?.type === "monitorDeploymentChanged") {
+      clearTimeout(monitorDeploymentEventTimer);
+      monitorDeploymentEventTimer = setTimeout(() => void checkMonitorDeploymentUpdate(), 100);
+      return;
+    }
     if (response?.event === true && response?.type === "externalWindowDropFinished") { void handleMonitorExternalWindowDropFinished(response); return; }
     if (response?.event === true && response?.type === "windowForegroundChanged") { handleMonitorForegroundChangedEvent(response); return; }
     if (response?.event === true && response?.type === "desktopWallpaperChanged") {
@@ -9000,14 +8978,34 @@ function scheduleMonitorV2WindowRefresh(event) {
   const tile=[...monitorDesktopThumbs.children].find(t=>String(t.dataset.desktopId||"")===id);
   const visual=tile?.querySelector(".monitor-desktop-thumb-visual");
   if (!visual?.isConnected || !globalThis.MonitorDesktopThumbnailV2) return false;
-  // Source of pixels remains getDesktopVisualSnapshot/captureDesktopFrame only.
-  // Never accept the old event's thumbnail-service snapshot, SVG or cache.
-  void refreshDesktopThumb(visual,id).catch(()=>false);
+  let refresh = monitorWindowFrameRefreshes.get(id);
+  if (refresh) {
+    if (refresh.running) refresh.pending = true;
+    return true;
+  }
+  refresh = { running:false, pending:false };
+  monitorWindowFrameRefreshes.set(id, refresh);
+  setTimeout(async () => {
+    try {
+      do {
+        refresh.running = true;
+        refresh.pending = false;
+        const currentTile = [...monitorDesktopThumbs.children].find(tile => tile.dataset.desktopId === id);
+        const currentVisual = currentTile?.querySelector(".monitor-desktop-thumb-visual");
+        if (!currentVisual?.isConnected) return;
+        invalidateMonitorDesktopFrames(id);
+        await refreshDesktopThumb(currentVisual, id).catch(() => false);
+      } while (refresh.pending);
+    } finally {
+      monitorWindowFrameRefreshes.delete(id);
+    }
+  }, 90);
   return true;
 }
 
 const monitorWindowLifecyclePendingEvents = new Map();
 let monitorWindowLifecycleDrainBusy = false;
+const monitorWindowFrameRefreshes = new Map();
 
 function scheduleMonitorWindowLifecycleEvent(event) {
   const hwnd = String(event?.hwnd || "").trim();
@@ -9050,8 +9048,7 @@ async function handleMonitorWindowLifecycleEvent(event) {
   if (!desktopId) {
     for (const tile of monitorDesktopThumbs.children) {
       const id=String(tile.dataset.desktopId||"");
-      const visual=tile.querySelector(".monitor-desktop-thumb-visual");
-      if (id&&visual?.isConnected) void refreshDesktopThumb(visual,id).catch(()=>false);
+      if (id) scheduleMonitorV2WindowRefresh({desktopId:id});
     }
     return;
   }
@@ -9078,7 +9075,7 @@ async function handleMonitorWindowLifecycleEvent(event) {
   // HWND node immediately; the slower WGC refresh runs independently below.
   const eventTile=[...monitorDesktopThumbs.children].find((item)=>String(item.dataset.desktopId||"")===desktopId);
   const eventVisual=eventTile?.querySelector(".monitor-desktop-thumb-visual");
-  globalThis.MonitorDesktopThumbnailV2?.windowEvent?.(eventVisual,desktopId,event);
+  const geometryApplied=globalThis.MonitorDesktopThumbnailV2?.windowEvent?.(eventVisual,desktopId,event);
 
   monitorWindowDesktopLocations.set(hwnd,{...prior,hwnd,desktopId,desktop:monitorDesktopState.desktopIds.indexOf(desktopId)+1,title:String(event.title||prior.title||""),className:String(event.className||prior.className||""),left:Number(event.left),top:Number(event.top),width:Number(event.width),height:Number(event.height),iconic:minimized,iconicLifecycleLocked,visible:event.visible!==false,at:Date.now()});
   syncMonitorMinimizedNodeBadges(monitorLastAiState);
@@ -9115,28 +9112,28 @@ async function handleMonitorWindowLifecycleEvent(event) {
     return;
   }
 
+  const sameSize = Number(prior.width) === Number(event.width) && Number(prior.height) === Number(event.height);
+  const sameWindow = previousDesktopId === desktopId && prior.title === String(event.title || prior.title || "");
+  if (geometryApplied && sameSize && sameWindow && !prior.iconic && prior.visible !== false &&
+      (reason === "locationchange" || reason === "movesizeend") &&
+      !monitorWindowFrameRefreshes.has(desktopId) && !monitorFrameInflight.size) {
+    invalidateMonitorDesktopFrames(desktopId);
+    return;
+  }
+
   monitorThumbnailService.invalidate(hwnd);
 
   if (previousDesktopId && previousDesktopId!==desktopId) {
-    void actFetch("act:/monitor/node-state/refresh",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"}).then(()=>refreshAiMonitor()).catch(()=>{});
-    await actFetch("act:/monitor/node-state/refresh",{method:"POST"}).catch(()=>null);
-    await refreshAiMonitor().catch(()=>{});
-
     removeMonitorV2Window(hwnd,desktopId);
+    scheduleMonitorV2WindowRefresh({desktopId:previousDesktopId});
 
     scheduleMonitorV2WindowRefresh(event);
+    if (MONITOR_LEGACY_ACT_COMPATIBILITY_ENABLED) {
+      void actFetch("act:/monitor/node-state/refresh",{method:"POST"}).then(()=>refreshAiMonitor()).catch(()=>{});
+    }
 
     return;
 
-  }
-
-  invalidateMonitorDesktopFrames(desktopId);
-
-  const selectedDesktopId=String(monitorDesktopState.desktopIds[monitorDesktopState.selectedIndex]||"");
-  const selectedDesktop=desktopId===selectedDesktopId;
-  if (selectedDesktop) {
-    scheduleMonitorV2WindowRefresh(event);
-    return;
   }
 
   scheduleMonitorV2WindowRefresh(event);
@@ -13944,6 +13941,7 @@ async function checkMonitorDeploymentUpdate() {
   }
 
 }
+let monitorDeploymentEventTimer = 0;
 
 // Desktop selection is synchronized through the Native shared selection state so
 
@@ -13982,13 +13980,6 @@ if (MONITOR_ACTIVE_STARTUP_ENABLED) {
   void refreshWindowsCurrentState();
   checkMonitorDeploymentUpdate();
 
-  // Ordinary Chat can request the same bounded reload token used by the
-  // deployment path without focusing this window or using DevTools.  The
-  // function is re-entrancy guarded and the native read is intentionally
-  // low-frequency; only a changed, gate-published token can cause a reload.
-  globalThis.setInterval(() => {
-    void checkMonitorDeploymentUpdate();
-  }, 2000);
 }
 
 // Lightweight endpoint/node-state refresh keeps same-tab conversation changes responsive
@@ -14072,6 +14063,7 @@ window.addEventListener("focus", () => {
 
   void refreshMonitorBctStatus();
   void refreshMonitorBctWindowNodes();
+  void bwmUiLayoutControl?.refreshRemote();
 
   void refreshWindowsCurrentState();
 

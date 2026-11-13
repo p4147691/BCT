@@ -10,6 +10,7 @@ from typing import Any, Iterator
 
 from .models import ConflictError, OperationResult, OperationState, Outcome, Work
 from .capabilities import capability_matches
+from ..monitor_events import DISPLAY_TABLES
 
 
 # Read-only cause hints. These describe where evidence was lost, never whether
@@ -61,6 +62,8 @@ def _claim_executor_identity(pid: int | None, fingerprint: str | None) -> tuple[
 
 
 class Store:
+    monitor_display_changed = None
+
     def __init__(self, path: str | Path):
         self.path = str(path)
         self._lock = threading.RLock()
@@ -79,6 +82,17 @@ class Store:
     def transaction(self) -> Iterator[sqlite3.Connection]:
         with self._lock:
             connection = self._connect()
+            notify = self.monitor_display_changed
+            display_write = False
+            if notify is not None:
+                def observe_write(action, table, _column, database, _source):
+                    nonlocal display_write
+                    if (database == "main" and table in DISPLAY_TABLES
+                            and action in (sqlite3.SQLITE_INSERT, sqlite3.SQLITE_UPDATE, sqlite3.SQLITE_DELETE)):
+                        display_write = True
+                    return sqlite3.SQLITE_OK
+
+                connection.set_authorizer(observe_write)
             try:
                 connection.execute("BEGIN IMMEDIATE")
                 yield connection
@@ -87,7 +101,10 @@ class Store:
                 connection.rollback()
                 raise
             finally:
+                changed = display_write and connection.total_changes
                 connection.close()
+            if changed:
+                notify()
 
     def _initialize(self) -> None:
         Path(self.path).parent.mkdir(parents=True, exist_ok=True)

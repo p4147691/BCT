@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import tempfile
+import asyncio
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -8,6 +9,7 @@ from unittest.mock import patch
 from bct.core.models import Principal, Work
 from bct.core.store import Store
 from bct.monitor_runtime import _rcc_states, build_monitor_state, build_monitor_ui_state, monitor_roster_revision
+from bct.monitor_events import MonitorEvents
 from bct.conversation_network import configure_conversation_scope, upsert_conversation
 from bct.codex_surface import register_codex_surfaces
 from bct.dot_identity import save_dot_info
@@ -65,6 +67,31 @@ class MonitorRuntimeTests(unittest.TestCase):
             )
             after_inbox = monitor_roster_revision(store)["revision"]
             self.assertNotEqual(after_codex, after_inbox)
+
+    def test_roster_events_only_after_committed_display_writes(self):
+        async def check(store):
+            events = MonitorEvents()
+            store.monitor_display_changed = events.publish
+            first, second = events.stream(), events.stream()
+            for stream in (first, second):
+                self.assertEqual(await anext(stream), "data: changed\n\n")
+            listeners = [asyncio.create_task(anext(stream)) for stream in (first, second)]
+            store.create_work(Work("unrelated", "unrelated", (str(store.path),), frozenset({"read"}), "owner"))
+            with self.assertRaises(ValueError), store.transaction() as db:
+                db.execute("DELETE FROM conversation_network_projects")
+                raise ValueError("rollback")
+            self.assertEqual(events.revision, 0)
+            for number in range(3):
+                upsert_conversation(store, conversation_key=f"6ad733b6-95d4-83ee-b4ba-49a671229d7{number}",
+                                    display_name=f"Node {number}")
+            self.assertEqual(await asyncio.wait_for(asyncio.gather(*listeners), 1), ["data: changed\n\n"] * 2)
+            self.assertEqual(events.revision, 3)
+            for stream in (first, second):
+                await stream.aclose()
+            self.assertFalse(events._subscribers)
+
+        with tempfile.TemporaryDirectory() as directory:
+            asyncio.run(check(Store(Path(directory) / "state.sqlite")))
 
     def test_ui_snapshot_is_read_only_and_uses_existing_labels_only(self):
         conversation = "6ad733b6-95d4-83ee-b4ba-49a671229d77"

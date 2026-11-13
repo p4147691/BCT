@@ -29,6 +29,7 @@ from bct.service_runtime import (
     atomic_json,
     read_json,
 )
+from .common import resolve_in_work
 
 
 _SHA = re.compile(r"[0-9a-f]{40}")
@@ -208,8 +209,11 @@ class DeploymentProfiles:
         return matches[0]
 
 
-def _validate_source_repository(profile: DeploymentProfile, expected_head: str) -> Path:
-    root = profile.source_root
+def _validate_source_repository(
+    profile: DeploymentProfile, expected_head: str, source_worktree: Path | None = None,
+) -> Path:
+    canonical = profile.source_root
+    root = source_worktree.resolve() if source_worktree is not None else canonical
     top = _git(root, "rev-parse", "--show-toplevel")
     head = _git(root, "rev-parse", "HEAD")
     branch = _git(root, "branch", "--show-current")
@@ -218,8 +222,20 @@ def _validate_source_repository(profile: DeploymentProfile, expected_head: str) 
         raise PreconditionError("DEPLOYMENT_SOURCE_NOT_REPOSITORY_ROOT")
     if head.returncode != 0 or head.stdout.strip().lower() != expected_head:
         raise PreconditionError("DEPLOYMENT_SOURCE_HEAD_MISMATCH")
-    if branch.returncode != 0 or branch.stdout.strip() != "main":
+    if source_worktree is None and (branch.returncode != 0 or branch.stdout.strip() != "main"):
         raise PreconditionError("DEPLOYMENT_SOURCE_MAIN_REQUIRED")
+    if source_worktree is not None:
+        main = _git(canonical, "rev-parse", "--verify", "refs/heads/main")
+        canonical_top = _git(canonical, "rev-parse", "--show-toplevel")
+        canonical_git = _git(canonical, "rev-parse", "--path-format=absolute", "--git-common-dir")
+        source_git = _git(root, "rev-parse", "--path-format=absolute", "--git-common-dir")
+        if (canonical_top.returncode != 0 or Path(canonical_top.stdout.strip()).resolve() != canonical
+                or canonical_git.returncode != 0 or source_git.returncode != 0
+                or Path(canonical_git.stdout.strip()).resolve() != Path(source_git.stdout.strip()).resolve()
+                or root == canonical):
+            raise PreconditionError("DEPLOYMENT_SOURCE_WORKTREE_REPOSITORY_MISMATCH")
+        if main.returncode != 0 or main.stdout.strip().lower() != expected_head:
+            raise PreconditionError("DEPLOYMENT_CANONICAL_MAIN_HEAD_MISMATCH")
     if status.returncode != 0 or status.stdout.strip():
         raise PreconditionError("DEPLOYMENT_SOURCE_NOT_CLEAN")
     policy = root / "bct.toml"
@@ -232,11 +248,16 @@ def _validate_source_repository(profile: DeploymentProfile, expected_head: str) 
         or tracked.returncode != 0
     ):
         raise PreconditionError("DEPLOYMENT_SOURCE_POLICY_INVALID")
+    committed = _git(root, "rev-parse", f"{expected_head}:bct.toml")
+    if committed.returncode != 0 or _git_filtered_oid(root, "bct.toml", policy.read_bytes()) != committed.stdout.strip():
+        raise PreconditionError("DEPLOYMENT_SOURCE_GIT_BLOB_MISMATCH:bct.toml")
     return policy
 
 
-def _target_profile(profile: DeploymentProfile, expected_head: str) -> DeploymentProfile:
-    policy = _validate_source_repository(profile, expected_head)
+def _target_profile(
+    profile: DeploymentProfile, expected_head: str, source_worktree: Path | None = None,
+) -> DeploymentProfile:
+    policy = _validate_source_repository(profile, expected_head, source_worktree)
     target = DeploymentProfiles(policy).get(profile.name)
     invariant_values = (
         ("SOURCE_ROOT", target.source_root, profile.source_root),
@@ -464,9 +485,10 @@ def _record_protected_cutover(
     atomic_json(marker_path, completed)
 
 
-def _validate_source(profile: DeploymentProfile, expected_head: str) -> dict[str, Any]:
-    _validate_source_repository(profile, expected_head)
-    root = profile.source_root
+def _validate_source(
+    profile: DeploymentProfile, expected_head: str, source_worktree: Path | None = None,
+) -> dict[str, Any]:
+    root = _validate_source_repository(profile, expected_head, source_worktree).parent
     hashes: dict[str, str] = {}
     for relative in profile.files:
         path = root / Path(relative)
@@ -696,7 +718,7 @@ def _stage_release(profile: DeploymentProfile, manifest: dict[str, Any]) -> dict
         if staging.resolve().parent != staging_root.resolve():
             raise PreconditionError("DEPLOYMENT_STAGING_ESCAPE")
         for relative, digest in manifest["files"].items():
-            source = profile.source_root / Path(relative)
+            source = Path(manifest["source_root"]) / Path(relative)
             destination = staging / Path(relative)
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(source, destination)
@@ -861,6 +883,11 @@ class DeployFeature:
         profile = self.profiles.get(profile_name)
         expected_source_head = str(arguments.get("expected_source_head") or "").lower()
         expected_current = arguments.get("expected_current_source_head")
+        source_worktree = arguments.get("source_worktree")
+        if source_worktree is not None:
+            if operation != "apply":
+                raise PreconditionError("DEPLOYMENT_SOURCE_WORKTREE_APPLY_REQUIRED")
+            source_worktree = str(resolve_in_work(work, source_worktree, must_exist=True))
         restart = arguments.get("restart", operation == "apply")
         if not _SHA.fullmatch(expected_source_head):
             raise PreconditionError("DEPLOYMENT_SOURCE_SHA_INVALID")
@@ -912,7 +939,8 @@ class DeployFeature:
             self.capability,
             profile.name,
             {"profile": profile.name, "expected_source_head": expected_source_head,
-             "expected_current_source_head": expected_current, "restart": restart},
+             "expected_current_source_head": expected_current, "restart": restart,
+             **({"source_worktree": source_worktree} if source_worktree is not None else {})},
             (f"deployment:{str(profile.runtime_root).casefold()}", f"service:{profile.service_name.casefold()}"),
             {"expected_source_head": expected_source_head, "expected_current_source_head": expected_current},
         )
@@ -973,7 +1001,9 @@ class DeployFeature:
         if request.arguments.get("operation") == "reconcile-rollback":
             return self._reconcile_rollback(request)
         trusted_profile = self.profiles.get(request.arguments["profile"])
-        profile = _target_profile(trusted_profile, request.arguments["expected_source_head"])
+        source_worktree = request.arguments.get("source_worktree")
+        profile = (_target_profile(trusted_profile, request.arguments["expected_source_head"], Path(source_worktree))
+                   if source_worktree else _target_profile(trusted_profile, request.arguments["expected_source_head"]))
         if not profile.protected_activation_required:
             _validate_profile_start_allowed(self.profiles, profile)
         source_lock = _validate_protected_deploy_gate(
@@ -1230,7 +1260,9 @@ class DeployFeature:
     def _execute_apply(
         self, request: FeatureRequest, profile: DeploymentProfile
     ) -> FeatureResult:
-        manifest = _validate_source(profile, request.arguments["expected_source_head"])
+        source_worktree = request.arguments.get("source_worktree")
+        head = request.arguments["expected_source_head"]
+        manifest = _validate_source(profile, head, Path(source_worktree) if source_worktree else None)
         current = _read_current(profile)
         current_head = current.get("source_head") if current else None
         if current_head != request.arguments["expected_current_source_head"]:
@@ -1282,6 +1314,8 @@ class DeployFeature:
                 "service": service, "already_current": True,
             })
         release = _stage_release(profile, manifest)
+        if source_worktree:
+            _validate_source_repository(profile, head, Path(source_worktree))
         receipt_path = profile.runtime_root / "deployments" / (manifest["source_head"] + ".json")
         receipt = {
             "profile": profile.name,

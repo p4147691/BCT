@@ -29,6 +29,7 @@ from bct.core.policy import Policy
 from bct.core.store import Store
 from bct.features.git import GitCommitFeature
 from bct.features.git_authority import require_local_main
+from bct.features.deploy import DeployFeature, DeploymentProfiles
 
 _SHA = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})\Z")
 _ID = re.compile(r"[A-Za-z0-9_.:-]{1,128}\Z")
@@ -45,7 +46,8 @@ def _opened_store(path: Path) -> Store:
 
 
 def verify_outer(store: Store, *, work_id: str, operation_id: str,
-                 candidate_root: Path, canonical_root: Path) -> Principal:
+                 candidate_root: Path, canonical_root: Path,
+                 capability: str = "git_commit") -> Principal:
     """Require an authorized, actually running execute Operation from BCT."""
     with closing(sqlite3.connect("file:" + store.path.replace("\\", "/") + "?mode=ro",
                                  uri=True, timeout=10)) as db:
@@ -70,7 +72,7 @@ def verify_outer(store: Store, *, work_id: str, operation_id: str,
     if (work.state != "ACTIVE" or
             work.assignment_epoch != op["assignment_epoch"] or
             work.owner_principal_id != op["principal_id"] or
-            not {"execute", "git_commit"}.issubset(work.actions)):
+            not {"execute", capability}.issubset(work.actions)):
         raise ValueError("BOOTSTRAP_WORK_AUTHORIZATION_INVALID")
     real_roots = {Path(root).resolve() for root in work.roots}
     if canonical_root not in real_roots or candidate_root not in real_roots:
@@ -132,8 +134,47 @@ def main(argv: list[str] | None = None) -> int:
                  "work-id", "outer-operation-id", "git-operation-id",
                  "expected-head", "expected-remote-head"):
         p.add_argument("--" + name, required=True)
+    p.add_argument("--feature-branch")
+    p.add_argument("--preserve-untracked")
+    p.add_argument("--deployment-worktree")
     a = p.parse_args(argv)
     try:
+        if a.feature_branch or a.deployment_worktree:
+            if bool(a.feature_branch) == bool(a.deployment_worktree):
+                raise ValueError("BOOTSTRAP_MODE_INVALID")
+            candidate = Path(a.candidate_root).resolve()
+            canonical = Path(a.canonical_root).resolve()
+            policy = Path(a.policy_path).resolve()
+            if (candidate != Path(__file__).resolve().parents[1] or candidate == canonical
+                    or not _SHA.fullmatch(a.expected_head) or not _SHA.fullmatch(a.expected_remote_head)
+                    or any(not _ID.fullmatch(x) for x in (a.work_id, a.outer_operation_id, a.git_operation_id))
+                    or a.git_operation_id == a.outer_operation_id):
+                raise ValueError("BOOTSTRAP_REQUEST_INVALID")
+            require_local_main(policy, canonical)
+            store = _opened_store(Path(a.state_db).resolve())
+            capability = "git_commit" if a.feature_branch else "deploy"
+            principal = verify_outer(store, work_id=a.work_id, operation_id=a.outer_operation_id,
+                                     candidate_root=candidate, canonical_root=canonical, capability=capability)
+            coordinator = OperationCoordinator(store=store, policy=Policy(policy))
+            if a.feature_branch:
+                coordinator.register(GitCommitFeature(policy))
+                arguments = {"operation": "merge_local_main", "path": str(canonical),
+                             "branch": a.feature_branch, "expected_head": a.expected_head,
+                             "expected_feature_head": a.expected_remote_head,
+                             "message": "Merge Monitor event refresh and worktree deployment"}
+                if a.preserve_untracked:
+                    arguments["preserve_untracked"] = a.preserve_untracked
+            else:
+                profiles = DeploymentProfiles(policy)
+                profile = profiles.for_runtime_root(Path(store.path).parent.parent)
+                coordinator.register(DeployFeature(profiles))
+                arguments = {"profile": profile.name, "expected_source_head": a.expected_head,
+                             "expected_current_source_head": a.expected_remote_head,
+                             "source_worktree": a.deployment_worktree, "restart": False}
+            result = coordinator.run(principal=principal, work_id=a.work_id, operation_id=a.git_operation_id,
+                                     capability=capability, arguments=arguments)
+            print(json.dumps(result.as_dict(), ensure_ascii=False))
+            return 0 if result.outcome.value == "APPLIED" else 3
         payload = run_bootstrap(
             candidate_root=Path(a.candidate_root),
             canonical_root=Path(a.canonical_root),

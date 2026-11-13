@@ -12,13 +12,14 @@ from typing import Any
 
 import uvicorn
 from starlette.requests import Request
-from starlette.responses import FileResponse, JSONResponse
+from starlette.responses import FileResponse, JSONResponse, StreamingResponse
 
 from bct import BCT
 from bct.core.capabilities import canonical_capability
 from bct.core.models import BCTError, Principal, Work
 from bct.mcp_server import LocalBearerMiddleware, build_mcp
 from bct.monitor_runtime import build_monitor_state, build_monitor_ui_state, monitor_roster_revision
+from bct.monitor_events import MonitorEvents
 from bct.codex_surface import register_codex_surfaces
 from bct.dot_identity import dot_directory, dot_key, save_dot_info
 from bct.status_views import status_view
@@ -725,6 +726,10 @@ def main() -> int:
         }
 
     mcp = build_mcp(bct, status_provider=status_snapshot, compact_catalogue=compact_catalogue, hybrid_catalogue=hybrid_catalogue)
+    monitor_events = MonitorEvents()
+    bct.store.monitor_display_changed = monitor_events.publish
+    monitor_snapshot_task = None
+    monitor_snapshot_revision = -1
     holder: dict[str, uvicorn.Server] = {}
 
     @mcp.custom_route("/health", methods=["GET"], include_in_schema=False)
@@ -744,13 +749,29 @@ def main() -> int:
     @mcp.custom_route("/monitor/state", methods=["GET"], include_in_schema=False)
     async def monitor_state(request: Request) -> JSONResponse:
         """Serve the display roster without running Monitor maintenance work."""
-        snapshot = await asyncio.to_thread(
-            build_monitor_ui_state,
-            store=bct.store,
-            service_state=state,
-            data_root=runtime_root.parent / "data",
-        )
+        nonlocal monitor_snapshot_task, monitor_snapshot_revision
+        revision = monitor_events.revision
+        if monitor_snapshot_task is None or monitor_snapshot_task.done() or monitor_snapshot_revision != revision:
+            monitor_snapshot_revision = revision
+            monitor_snapshot_task = asyncio.create_task(asyncio.to_thread(
+                build_monitor_ui_state,
+                store=bct.store,
+                service_state=state,
+                data_root=runtime_root.parent / "data",
+            ))
+        snapshot = await asyncio.shield(monitor_snapshot_task)
         return JSONResponse(snapshot)
+
+    @mcp.custom_route("/monitor/roster-events", methods=["GET"], include_in_schema=False)
+    async def monitor_roster_events(request: Request):
+        origin = request.headers.get("origin", "")
+        if request.headers.get("x-bct-monitor-events") != "1" or (
+            origin and not monitor_extension_origin_allowed(origin)
+        ):
+            return JSONResponse({"error": "MONITOR_EXTENSION_ORIGIN_REQUIRED"}, status_code=403)
+        return StreamingResponse(monitor_events.stream(), media_type="text/event-stream", headers={
+            "Cache-Control": "no-store",
+        })
 
     @mcp.custom_route("/monitor/roster-revision", methods=["GET"], include_in_schema=False)
     async def monitor_roster_revision_state(request: Request) -> JSONResponse:

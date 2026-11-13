@@ -236,10 +236,8 @@ vm.runInContext(source, context);
     "startup revalidation remains strictly bounded and cannot become polling");
   assert.match(monitorSource, /monitorBctWindowNodesCache\.some\(\(node\) => node\.displayStale === true\)[\s\S]*?scheduleMonitorBctNodeStartupRevalidation\(\)/,
     "a stale initial node list must refresh without a Monitor focus click");
-  assert.match(monitorSource, /const MONITOR_BCT_ROSTER_WATCH_INTERVAL_MS = 750;[\s\S]*?function checkMonitorBctRosterRevision\(\)[\s\S]*?monitorBctShell\.rosterRevision\(\)[\s\S]*?previous !== revision[\s\S]*?refreshMonitorBctWindowNodes\(\)/,
-    "a durable Monitor display revision must trigger one full Monitor refresh without focus");
-  assert.match(monitorSource, /function startMonitorBctRosterWatch\(\)[\s\S]*?setInterval\([\s\S]*?MONITOR_BCT_ROSTER_WATCH_INTERVAL_MS[\s\S]*?startMonitorBctRosterWatch\(\);/,
-    "the light revision watcher must be started with the Monitor and not depend on a click");
+  assert.match(monitorSource, /subscribeRosterChanges\(\(\) => void refreshMonitorBctWindowNodes\(\)\)/);
+  assert.doesNotMatch(monitorSource, /MONITOR_BCT_ROSTER_WATCH_INTERVAL_MS/);
   assert.match(monitorSource, /const location = monitorWindowDesktopLocations\.get\(String\(hwnd\)\);\s*if \(!location \|\| monitorDesktopState\.desktopIds\.indexOf\(String\(location\.desktopId \|\| ""\)\) < 0\) return true;/,
     "projection convergence must continue until the resolved HWND has a visible desktop location");
   assert.match(monitorSource, /const frame = \[\.\.\.visual\.querySelectorAll\("\.monitor-desktop-thumb-window\[data-hwnd\]"\)\][\s\S]*?return !frame \|\| frame\.hidden \|\| frame\.style\.display === "none";/,
