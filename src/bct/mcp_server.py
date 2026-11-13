@@ -719,8 +719,10 @@ def build_mcp(
             "network_project_id to resolve the current turn, prepare topology and arm. Read the "
             "returned loop_id and wait for status WATCHING before working. Explicit start callers can configure topology "
             "with a Manager-only project and an unassigned Supervisor. Arm reserves the current "
-            "Manager response. Read status on every turn, save_plan before execution, and "
-            "decide before ending the response. The exact RCC Watch drives continuation, "
+            "Manager response. Read status and follow planning_guidance on every turn. "
+            "Use one plan_id across turns for the same deliverable, save_plan before execution, "
+            "and include turn_review in decide before ending the response. "
+            "The exact RCC Watch drives continuation, "
             "handoff, return and final completion. prepare_supervisor uses existing creation "
             "receipts. Historical status and sync remain available for receipt reconciliation."
         ),

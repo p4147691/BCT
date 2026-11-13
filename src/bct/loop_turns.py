@@ -19,6 +19,21 @@ from bct.status_views import status_view
 _ID = re.compile(r"[A-Za-z0-9_.:-]{1,80}")
 _UNCONFIRMED_SEND = "RCC_HOST_OUTCOME_UNVERIFIED:UNKNOWN:RELAY_EXACT_USER_TURN_NOT_CONFIRMED"
 
+_PLAN_FIELDS = ("remaining", "steps", "verification", "reason")
+_EXECUTION_PLAN_FIELDS = ("target", "inputs", "deliverables", "dependencies", "blockers")
+_REVIEW_FIELDS = ("delivered", "verification", "unfinished")
+_PLAN_GUIDANCE = (
+    "Review the original request, overall completion conditions, previous result and receipts. "
+    "Keep one plan_id for the same multi-turn deliverable and revise it using the latest revision. "
+    "Alongside remaining, steps, verification and reason, save target, inputs (paths, tools or receipts), "
+    "deliverables, dependencies and blockers (write 'none' when absent). "
+    "Choose ordered work that can advance the deliverable now. "
+    "In decide.turn_review record delivered, verification and unfinished, including why and what to do next. "
+    "If waiting on an external result, use wait with a meaningful delay; use blocked when no work can advance. "
+    "Judge completion against the requested output and quality evidence, independently of turn or test counts."
+)
+
+
 
 def _text(value, limit=12000):
     if not isinstance(value, str) or not value.strip() or len(value) > limit:
@@ -167,6 +182,11 @@ class LoopTurns:
                         WHERE loop_id=? AND turn=? AND plan_id=? AND plan_revision=?""",
                         (loop_id, plan["turn"], plan["plan_id"], plan["revision"])).fetchone()
                         if plan else None)
+            previous_progress = (db.execute("""SELECT * FROM loop_recipe_progress
+                        WHERE loop_id=? AND plan_id=? AND plan_revision<?
+                        ORDER BY plan_revision DESC LIMIT 1""",
+                        (loop_id, plan["plan_id"], plan["revision"])).fetchone()
+                        if plan and progress is None else None)
             receipts = {}
             supervisor_return_evidence = None
             for item in (turn, prior):
@@ -216,8 +236,11 @@ class LoopTurns:
         objective["completion_conditions"] = json.loads(objective.pop("conditions_json"))
         objective["completion"] = json.loads(objective.pop("completion_json") or "null")
         result = {"status": "OK", "objective": objective, "turn": self._turn_view(turn),
+                  "planning_guidance": _PLAN_GUIDANCE,
                   "previous_turn": self._turn_view(prior), "plan": dict(plan) if plan else None,
-                  "progress": dict(progress) if progress else None, "receipts": receipts,
+                  "progress": dict(progress) if progress else None,
+                  "previous_plan_progress": dict(previous_progress) if previous_progress else None,
+                  "receipts": receipts,
                   "node_recovery": recovery, "supervisor_return_evidence": supervisor_return_evidence}
         if plan:
             result["plan"]["plan"] = json.loads(result["plan"].pop("plan_json"))
@@ -313,7 +336,10 @@ class LoopTurns:
     def save_plan(self, loop_id, turn, conversation_key, *, plan_id, expected_revision, plan):
         if not _ID.fullmatch(plan_id) or not isinstance(plan, dict):
             raise LoopContractError("LOOP_DETAIL_PLAN_REQUIRED")
-        plan = {key: _text(plan.get(key)) for key in ("remaining", "steps", "verification", "reason")}
+        fields = _PLAN_FIELDS
+        if any(key in plan for key in _EXECUTION_PLAN_FIELDS):
+            fields += _EXECUTION_PLAN_FIELDS
+        plan = {key: _text(plan.get(key), 12000 if key in _PLAN_FIELDS else 4000) for key in fields}
         with self.store.transaction() as db:
             _, current = self._working_turn(db, loop_id, turn, conversation_key)
             previous = db.execute("""SELECT actor,revision FROM loop_recipe_detail_plans
@@ -373,11 +399,16 @@ class LoopTurns:
             manager = current["actor"] == "MANAGER"
             if (route in {"handoff", "complete"} and not manager) or (route == "return" and manager):
                 raise LoopContractError("LOOP_DECISION_ACTOR_MISMATCH")
-            plan = db.execute("""SELECT plan_id,revision FROM loop_recipe_detail_plans
+            plan = db.execute("""SELECT plan_id,revision,plan_json FROM loop_recipe_detail_plans
                     WHERE loop_id=? AND turn=? AND actor=?
                     ORDER BY rowid DESC LIMIT 1""", (loop_id, turn, current["actor"])).fetchone()
             if plan is None and route not in {"blocked", "wait"}:
                 raise LoopContractError("LOOP_DETAIL_PLAN_REQUIRED")
+            turn_review = decision.get("turn_review")
+            if turn_review is not None or (plan and "target" in json.loads(plan["plan_json"])):
+                if not isinstance(turn_review, dict):
+                    raise LoopContractError("LOOP_TURN_REVIEW_REQUIRED")
+                turn_review = {key: _text(turn_review.get(key), 4000) for key in _REVIEW_FIELDS}
             capabilities = set()
             for ref in operation_refs:
                 operation = db.execute("""SELECT capability,created_at FROM operations
@@ -419,8 +450,10 @@ class LoopTurns:
                     raise LoopContractError("LOOP_COMPLETION_EVIDENCE_INCOMPLETE")
             value = {"route": route, "result": summary, "next_instruction": next_instruction,
                      "condition_evidence": condition_evidence, "operation_refs": operation_refs,
-                     "plan": dict(plan) if plan else None, "delay_seconds": delay,
-                     "required_capabilities": required_capabilities}
+                     "plan": {key: plan[key] for key in ("plan_id", "revision")} if plan else None,
+                     "delay_seconds": delay, "required_capabilities": required_capabilities}
+            if turn_review is not None:
+                value["turn_review"] = turn_review
             db.execute("UPDATE loop_recipe_turns SET decision_json=? WHERE loop_id=? AND turn=?",
                        (json.dumps(value), loop_id, turn))
         return self.status(loop_id)
@@ -754,8 +787,9 @@ class LoopTurnRunner:
                 f"Read bct_loop_recipe(action='status', loop_id='{row['loop_id']}') first. "
                 "Compare this turn's instruction, the original request, overall plan and "
                 "completion conditions with the previous turn's result and receipts. "
-                "Save or revise a detail plan, execute and verify it, then record your "
-                "decision using action='decide' before ending your response. "
+                "Follow planning_guidance from status. Keep the same plan_id across turns for "
+                "the same deliverable. Execute an actionable step, compare the actual output to "
+                "the plan, and save turn_review in action='decide' before ending your response. "
                 "For save_plan and decide, supply the current turn and your conversation key "
                 "from status. If the turn is still PREPARING, reread status once it is WATCHING.\n\n"
                 + row["instruction"]

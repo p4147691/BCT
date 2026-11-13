@@ -150,6 +150,40 @@ class LoopTurnTests(unittest.TestCase):
         }
         self.assertEqual(self.runner.run_once()[0]["state"], "OBSERVED")
 
+    def test_multi_turn_dubbing_plan_carries_quality_failure_and_next_step(self):
+        plan = dict(PLAN, target="324-second source, cues 12 and 17",
+                    inputs="Review manifest and the existing Qwen Base worker",
+                    deliverables="Sentence-level Korean WAV and cue comparison record",
+                    dependencies="Approved reference and original cue timestamps",
+                    blockers="Cue 12 needs listening to distinguish intended repetition")
+        saved = self.turns.save_plan("loop", 1, OWNER, plan_id="dubbing",
+                                     expected_revision=0, plan=plan)
+        self.assertEqual(saved["plan"]["plan"], plan)
+        self.turns.record_progress("loop", 1, OWNER, plan_id="dubbing", revision=1,
+                                   progress={"completed": 1, "total": 2, "evidence": "Cue 17 draft"})
+        decision = {"route": "continue", "result": "One draft; one unresolved cue",
+                    "next_instruction": "Compare cue 12 with the original audio."}
+        with self.assertRaisesRegex(LoopContractError, "LOOP_TURN_REVIEW_REQUIRED"):
+            self.turns.decide("loop", 1, OWNER, decision=decision)
+        decision["turn_review"] = {
+            "delivered": "Cue 17 trial WAV",
+            "verification": "Korean text matched; listening review still pending",
+            "unfinished": "Cue 12 repetition unclear; compare source and draft by ear",
+        }
+        self.turns.decide("loop", 1, OWNER, decision=decision)
+        self.reply(1, OWNER)
+        self.prepare(OWNER)
+        resumed = self.turns.status("loop")
+        self.assertEqual(resumed["previous_turn"]["decision"]["turn_review"], decision["turn_review"])
+        self.assertEqual(resumed["plan"]["revision"], 1)
+        self.assertEqual(resumed["progress"]["completed"], 1)
+        revised = self.turns.save_plan("loop", 2, OWNER, plan_id="dubbing", expected_revision=1,
+                                       plan=dict(plan, steps="Compare cue 12 with source audio"))
+        self.assertEqual(revised["plan"]["revision"], 2)
+        self.assertIsNone(revised["progress"])
+        self.assertEqual(revised["previous_plan_progress"]["evidence"], "Cue 17 draft")
+        self.assertIsNone(revised["objective"]["completion"])
+
     def test_new_prepared_start_preserves_observed_watch_without_a_decision(self):
         self.reply(1, OWNER)
         old = self.turns.status("loop")
