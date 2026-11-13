@@ -213,7 +213,7 @@ def _validate_source_repository(
     profile: DeploymentProfile, expected_head: str, source_worktree: Path | None = None,
 ) -> Path:
     canonical = profile.source_root
-    root = source_worktree or canonical
+    root = source_worktree.resolve() if source_worktree is not None else canonical
     top = _git(root, "rev-parse", "--show-toplevel")
     head = _git(root, "rev-parse", "HEAD")
     branch = _git(root, "branch", "--show-current")
