@@ -22,13 +22,18 @@ _UNCONFIRMED_SEND = "RCC_HOST_OUTCOME_UNVERIFIED:UNKNOWN:RELAY_EXACT_USER_TURN_N
 _PLAN_FIELDS = ("remaining", "steps", "verification", "reason")
 _EXECUTION_PLAN_FIELDS = ("target", "inputs", "deliverables", "dependencies", "blockers")
 _REVIEW_FIELDS = ("delivered", "verification", "unfinished")
+_STAGE_FIELDS = ("goal", "work", "deliverable", "acceptance")
 _PLAN_GUIDANCE = (
     "Review the original request, overall completion conditions, previous result and receipts. "
-    "Keep one plan_id for the same multi-turn deliverable and revise it using the latest revision. "
+    "Before the first execution step, save a roadmap for the whole deliverable as stages: "
+    "each has id, goal, work, deliverable, acceptance and depends_on (earlier stage IDs). "
+    "Set active_stage_id to the stage this turn advances. Keep the same plan_id and stage IDs "
+    "across turns, revising the saved plan as evidence changes. A stage can take multiple turns. "
     "Alongside remaining, steps, verification and reason, save target, inputs (paths, tools or receipts), "
     "deliverables, dependencies and blockers (write 'none' when absent). "
     "Choose ordered work that can advance the deliverable now. "
-    "In decide.turn_review record delivered, verification and unfinished, including why and what to do next. "
+    "In action='decide', put turn_review inside turn_decision. Record delivered, verification and unfinished, "
+    "including why and what to do next. "
     "If waiting on an external result, use wait with a meaningful delay; use blocked when no work can advance. "
     "Judge completion against the requested output and quality evidence, independently of turn or test counts."
 )
@@ -39,6 +44,30 @@ def _text(value, limit=12000):
     if not isinstance(value, str) or not value.strip() or len(value) > limit:
         raise LoopContractError("LOOP_TEXT_REQUIRED_OR_TOO_LONG")
     return value.strip()
+
+
+def _plan_roadmap(plan):
+    stages = plan.get("stages")
+    active = plan.get("active_stage_id")
+    if not isinstance(stages, list) or not 1 <= len(stages) <= 24:
+        raise LoopContractError("LOOP_PLAN_STAGES_REQUIRED")
+    saved = []
+    seen = set()
+    for stage in stages:
+        stage_id = stage.get("id") if isinstance(stage, dict) else None
+        if not isinstance(stage_id, str) or not _ID.fullmatch(stage_id) or stage_id in seen:
+            raise LoopContractError("LOOP_PLAN_STAGE_ID_INVALID")
+        dependencies = stage.get("depends_on")
+        if (not isinstance(dependencies, list) or
+                any(not isinstance(item, str) or item not in seen for item in dependencies) or
+                len(set(dependencies)) != len(dependencies)):
+            raise LoopContractError("LOOP_PLAN_STAGE_DEPENDENCY_INVALID")
+        saved.append({"id": stage_id, "depends_on": dependencies,
+                      **{key: _text(stage.get(key), 2000) for key in _STAGE_FIELDS}})
+        seen.add(stage_id)
+    if not isinstance(active, str) or active not in seen:
+        raise LoopContractError("LOOP_PLAN_ACTIVE_STAGE_INVALID")
+    return {"stages": saved, "active_stage_id": active}
 
 
 class LoopTurns:
@@ -337,17 +366,22 @@ class LoopTurns:
         if not _ID.fullmatch(plan_id) or not isinstance(plan, dict):
             raise LoopContractError("LOOP_DETAIL_PLAN_REQUIRED")
         fields = _PLAN_FIELDS
-        if any(key in plan for key in _EXECUTION_PLAN_FIELDS):
+        roadmap = _plan_roadmap(plan) if "stages" in plan or "active_stage_id" in plan else {}
+        if roadmap or any(key in plan for key in _EXECUTION_PLAN_FIELDS):
             fields += _EXECUTION_PLAN_FIELDS
-        plan = {key: _text(plan.get(key), 12000 if key in _PLAN_FIELDS else 4000) for key in fields}
+        plan = {key: _text(plan.get(key), 12000 if key in _PLAN_FIELDS else 4000) for key in fields} | roadmap
         with self.store.transaction() as db:
             _, current = self._working_turn(db, loop_id, turn, conversation_key)
-            previous = db.execute("""SELECT actor,revision FROM loop_recipe_detail_plans
+            previous = db.execute("""SELECT actor,revision,plan_json FROM loop_recipe_detail_plans
                 WHERE loop_id=? AND plan_id=? ORDER BY revision DESC LIMIT 1""",
                 (loop_id, plan_id)).fetchone()
             if ((previous["revision"] if previous else 0) != expected_revision
                     or previous and previous["actor"] != current["actor"]):
                 raise LoopContractError("LOOP_PLAN_REVISION_STALE")
+            prior_stages = json.loads(previous["plan_json"]).get("stages", []) if previous else []
+            if not {stage["id"] for stage in prior_stages}.issubset(
+                    stage["id"] for stage in plan.get("stages", [])):
+                raise LoopContractError("LOOP_PLAN_STAGE_HISTORY_REQUIRED")
             db.execute("INSERT INTO loop_recipe_detail_plans VALUES(?,?,?,?,?,?)",
                        (loop_id, plan_id, expected_revision + 1, turn, current["actor"], json.dumps(plan)))
         return self.status(loop_id)
@@ -454,6 +488,10 @@ class LoopTurns:
                      "delay_seconds": delay, "required_capabilities": required_capabilities}
             if turn_review is not None:
                 value["turn_review"] = turn_review
+            if plan:
+                stage_id = json.loads(plan["plan_json"]).get("active_stage_id")
+                if stage_id:
+                    value["active_stage_id"] = stage_id
             db.execute("UPDATE loop_recipe_turns SET decision_json=? WHERE loop_id=? AND turn=?",
                        (json.dumps(value), loop_id, turn))
         return self.status(loop_id)

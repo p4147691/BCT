@@ -155,7 +155,26 @@ class LoopTurnTests(unittest.TestCase):
                     inputs="Review manifest and the existing Qwen Base worker",
                     deliverables="Sentence-level Korean WAV and cue comparison record",
                     dependencies="Approved reference and original cue timestamps",
-                    blockers="Cue 12 needs listening to distinguish intended repetition")
+                    blockers="Cue 12 needs listening to distinguish intended repetition",
+                    active_stage_id="sentence-trial",
+                    stages=[
+                        {"id": "sentence-trial", "goal": "Natural continuous speech",
+                         "work": "Compare source timing with two whole-sentence trials",
+                         "deliverable": "Timed Korean trial WAVs and evaluation",
+                         "acceptance": "No missing words; timing and prosody heard in comparison",
+                         "depends_on": []},
+                        {"id": "whole-file", "goal": "Complete the first source file",
+                         "work": "Apply the accepted synthesis settings and assemble the timeline",
+                         "deliverable": "324-second dubbed audio",
+                         "acceptance": "Listen for gaps and check all required lines",
+                         "depends_on": ["sentence-trial"]},
+                    ])
+        with self.assertRaisesRegex(LoopContractError, "LOOP_PLAN_ACTIVE_STAGE_INVALID"):
+            self.turns.save_plan("loop", 1, OWNER, plan_id="dubbing", expected_revision=0,
+                                 plan=dict(plan, active_stage_id="unknown"))
+        with self.assertRaisesRegex(LoopContractError, "LOOP_PLAN_STAGE_DEPENDENCY_INVALID"):
+            self.turns.save_plan("loop", 1, OWNER, plan_id="dubbing", expected_revision=0,
+                                 plan=dict(plan, stages=list(reversed(plan["stages"]))))
         saved = self.turns.save_plan("loop", 1, OWNER, plan_id="dubbing",
                                      expected_revision=0, plan=plan)
         self.assertEqual(saved["plan"]["plan"], plan)
@@ -175,8 +194,13 @@ class LoopTurnTests(unittest.TestCase):
         self.prepare(OWNER)
         resumed = self.turns.status("loop")
         self.assertEqual(resumed["previous_turn"]["decision"]["turn_review"], decision["turn_review"])
+        self.assertEqual(resumed["previous_turn"]["decision"]["active_stage_id"], "sentence-trial")
+        self.assertEqual(resumed["plan"]["plan"]["stages"], plan["stages"])
         self.assertEqual(resumed["plan"]["revision"], 1)
         self.assertEqual(resumed["progress"]["completed"], 1)
+        with self.assertRaisesRegex(LoopContractError, "LOOP_PLAN_STAGE_HISTORY_REQUIRED"):
+            self.turns.save_plan("loop", 2, OWNER, plan_id="dubbing", expected_revision=1,
+                                 plan=dict(plan, stages=plan["stages"][:1]))
         revised = self.turns.save_plan("loop", 2, OWNER, plan_id="dubbing", expected_revision=1,
                                        plan=dict(plan, steps="Compare cue 12 with source audio"))
         self.assertEqual(revised["plan"]["revision"], 2)

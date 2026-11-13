@@ -806,7 +806,7 @@ async def persistent_loop_command(
     inheritance_task_id: str = "",
     overall_plan: str = "", completion_conditions: dict[str, str] | None = None,
     turn: int = 0, plan_id: str = "", expected_revision: int = 0,
-    plan: dict[str, str] | None = None, turn_decision: dict[str, Any] | None = None,
+    plan: dict[str, Any] | None = None, turn_decision: dict[str, Any] | None = None,
     progress: dict[str, Any] | None = None,
     loop_recipe_runtime: Any = None,
 ) -> dict[str, Any]:
