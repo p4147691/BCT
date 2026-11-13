@@ -31,7 +31,8 @@ class NoEffects:
 
 class PersistentLoopPublicTests(unittest.IsolatedAsyncioTestCase):
     async def test_start_from_chat_uses_unique_rcc_turn_and_reuses_armed_run(self):
-        source = "BCT Control Start this task in LOOP."
+        prompt = "Start this `task` in LOOP.\n\nCheck the first Watch."
+        source = "BCT Control Start this task in LOOP.\n\n\nCheck the first Watch."
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "state.sqlite")
             store.create_work(Work(
@@ -51,7 +52,7 @@ class PersistentLoopPublicTests(unittest.IsolatedAsyncioTestCase):
                                status_provider=lambda: {"monitor": monitor}, compact_catalogue=True)
             arguments = {
                 "action": "start", "work_id": "loop-public-work",
-                "instruction_text": "Start this task in LOOP.", "direction_text": "Verify results.",
+                "instruction_text": prompt, "direction_text": "Verify results.",
                 "overall_plan": "Execute and verify.",
                 "completion_conditions": {"result": "Result independently verified."},
             }
@@ -80,7 +81,8 @@ class PersistentLoopPublicTests(unittest.IsolatedAsyncioTestCase):
                        ) as topology:
                 _, prepared = await server.call_tool("bct_loop_recipe", {
                     "action": "prepare", "work_id": arguments["work_id"],
-                    "instruction_text": "@BCT Control\n" + arguments["instruction_text"],
+                    "instruction_text": ("[$bct-control](app://asdk_app_6ac3a06ea58c819195b90feb131b6da5) "
+                                         + prompt),
                 })
                 self.assertEqual(prepared.get("status"), "PREPARED", prepared)
                 self.assertEqual(prepared["effects"], "NONE_READ_ONLY")

@@ -135,9 +135,17 @@ class PersistentLoopCoordinator:
             store=self.runtime.bct.store, operations=operations,
             browser_feature=operations._features["browser"],
         )
-        body = re.sub(r"^@?BCT Control\s+", "", instruction, count=1)
-        texts = {_rcc_submitted_text_sha256(value): value
-                 for value in (instruction, body, "BCT Control " + body)}
+        app_link = r"^\[\$bct-control\]\\?\(app\\?://asdk_app_6ac3a06ea58c819195b90feb131b6da5\\?\)\s+"
+        app_name = r"^@?BCT Control\s+"
+        body = re.sub(f"{app_link}|{app_name}", "", instruction, count=1)
+        body = body.replace("\r\n", "\n").replace("\r", "\n")
+        # The ChatGPT app mention is a label in the RCC DOM. Inline code loses
+        # its delimiters and RCC's block walk can add a newline at paragraphs.
+        rendered = re.sub(r"(?<!`)`([^`\n]+)`(?!`)", r"\1", body)
+        paragraphs = re.sub(r"(?<!\n)\n\n(?!\n)", "\n\n\n", rendered)
+        candidates = (instruction, body, "BCT Control " + body, rendered,
+                      "BCT Control " + rendered, paragraphs, "BCT Control " + paragraphs)
+        texts = {_rcc_submitted_text_sha256(value): value for value in candidates}
         outcomes = set()
 
         def read(key):
