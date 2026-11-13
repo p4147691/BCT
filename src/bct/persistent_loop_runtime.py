@@ -258,6 +258,7 @@ class PersistentLoopCoordinator:
         started = await asyncio.to_thread(
             turns.start, work=work, loop_id=loop_id, task_id=task_id, context=context,
             overall_plan=overall_plan, conditions=conditions,
+            replace_observed_first_watch=bool(entry_context_id),
         )
         if started["turn"] is not None:
             return started
@@ -265,6 +266,9 @@ class PersistentLoopCoordinator:
             loop_id=loop_id, project_operation_id=f"loop-project-op-{suffix}",
             manager_operation_id=f"loop-manager-op-{suffix}", supervisor_operation_id="",
             display_name="LOOP " + suffix[:8],
+            expected_manager_scope_id=await asyncio.to_thread(
+                turns.previous_manager_scope, work, manager_key,
+            ),
         )
         if topology["status"] != "READY":
             return {**topology, "loop_id": loop_id}
@@ -551,11 +555,23 @@ class PersistentLoopCoordinator:
         if project.get("outcome") != "APPLIED":
             return {"status": "NETWORK_UNCONFIRMED", "project": project,
                     "warning": "NO_UNKNOWN_REPLAY"}
-        manager = await execute(work_id, manager_operation_id, {
-            "operation": "membership-assign", "project": context["network_project_id"],
-            "conversation_key": context["manager_conversation_key"],
-            "role_tags": ["Manager"], "expected_scope_id": expected_manager_scope_id,
-        })
+        manager = None
+        with self.runtime.bct.store._readonly() as db:
+            assigned = db.execute("""SELECT project_id FROM conversation_network_memberships
+                WHERE conversation_key=? AND activity='ACTIVE'""",
+                                  (context["manager_conversation_key"],)).fetchall()
+        if [row["project_id"] for row in assigned] == [context["network_project_id"]]:
+            manager = self._receipt(work=work, operation_id=manager_operation_id,
+                                    capability="conversation_network_update")
+            if manager and ((manager.get("evidence") or {}).get("operation") != "membership-assign"
+                            or (manager.get("evidence") or {}).get("project_id") != context["network_project_id"]):
+                raise LoopContractError("LOOP_MANAGER_MEMBERSHIP_RECEIPT_MISMATCH")
+        if manager is None:
+            manager = await execute(work_id, manager_operation_id, {
+                "operation": "membership-assign", "project": context["network_project_id"],
+                "conversation_key": context["manager_conversation_key"],
+                "role_tags": ["Manager"], "expected_scope_id": expected_manager_scope_id,
+            })
         if manager.get("outcome") != "APPLIED":
             return {"status": "MANAGER_MEMBERSHIP_UNCONFIRMED", "project": project,
                     "manager": manager, "warning": "NO_UNKNOWN_REPLAY"}

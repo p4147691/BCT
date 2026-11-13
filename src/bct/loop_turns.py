@@ -32,7 +32,8 @@ class LoopTurns:
         if initialize:
             LoopRecipeLedger(store)
 
-    def start(self, *, work, loop_id, task_id, context, overall_plan, conditions):
+    def start(self, *, work, loop_id, task_id, context, overall_plan, conditions,
+              replace_observed_first_watch=False):
         if not _ID.fullmatch(loop_id) or not _ID.fullmatch(task_id):
             raise LoopContractError("LOOP_RUN_IDENTITY_REQUIRED")
         overall_plan, conditions_json = self.validate_plan(overall_plan, conditions)
@@ -54,10 +55,12 @@ class LoopTurns:
                         work.owner_principal_id)):
                     raise LoopContractError("LOOP_RUN_ID_CONFLICT")
             else:
+                if replace_observed_first_watch:
+                    self._supersede_observed_first_watch(db, work, context[2], now)
                 if db.execute("""SELECT 1 FROM loop_recipe_objectives o
                         JOIN loop_recipe_v2_contexts c USING(loop_id)
                         JOIN loop_recipe_v2_runs r USING(loop_id)
-                        WHERE (c.manager_conversation_key=? AND r.state<>'COMPLETED')
+                        WHERE (c.manager_conversation_key=? AND r.state NOT IN ('COMPLETED','SUPERSEDED'))
                            OR c.network_project_id=? OR o.task_id=?""",
                               (context[2], context[4], task_id)).fetchone():
                     raise LoopContractError("LOOP_MANAGER_PROJECT_OR_TASK_ALREADY_BOUND")
@@ -70,6 +73,47 @@ class LoopTurns:
                         VALUES(?,?,?,?,?,?)""", (loop_id, task_id, work.owner_principal_id,
                                                 work.assignment_epoch, overall_plan, conditions_json))
         return self.status(loop_id)
+
+    @staticmethod
+    def _supersede_observed_first_watch(db, work, manager, now):
+        # An observed first response without a plan, decision, or outgoing
+        # send can relinquish the Manager. Preserve its original evidence.
+        db.execute("""UPDATE loop_recipe_v2_runs
+            SET state='SUPERSEDED', revision=revision+1, updated_at=?
+            WHERE state='BLOCKED' AND work_id=? AND loop_id IN (
+                SELECT c.loop_id FROM loop_recipe_v2_contexts c
+                JOIN loop_recipe_objectives o USING(loop_id)
+                JOIN loop_recipe_turns t USING(loop_id)
+                JOIN delayed_send_watches w ON w.task_id=t.watch_id AND w.generation=1
+                    AND w.source_send_receipt=t.watch_operation_id
+                JOIN operations op ON op.operation_id=t.watch_operation_id
+                    AND op.work_id=? AND op.principal_id=o.owner_principal_id
+                    AND op.assignment_epoch=o.assignment_epoch
+                WHERE c.manager_conversation_key=? AND o.owner_principal_id=?
+                  AND o.assignment_epoch=? AND o.completion_json IS NULL
+                  AND t.turn=1 AND t.actor='MANAGER' AND t.conversation_key=?
+                  AND t.state='BLOCKED' AND t.due_at IS NULL AND t.decision_json IS NULL
+                  AND t.send_operation_id IS NULL AND t.response_turn_key<>'' AND t.response_sha256<>''
+                  AND w.state='LOOP_OBSERVED' AND op.state='FINISHED' AND op.outcome='APPLIED'
+                  AND NOT EXISTS (SELECT 1 FROM loop_recipe_turns n WHERE n.loop_id=c.loop_id AND n.turn>1)
+                  AND NOT EXISTS (SELECT 1 FROM loop_recipe_detail_plans p WHERE p.loop_id=c.loop_id)
+                  AND NOT EXISTS (SELECT 1 FROM loop_recipe_v2_continuations n WHERE n.loop_id=c.loop_id)
+            )""", (now, work.work_id, work.work_id, manager, work.owner_principal_id,
+                   work.assignment_epoch, manager))
+
+    def previous_manager_scope(self, work, manager):
+        with self.store._readonly() as db:
+            row = db.execute("""SELECT m.project_id FROM conversation_network_memberships m
+                JOIN loop_recipe_v2_contexts c ON c.network_project_id=m.project_id
+                    AND c.manager_conversation_key=m.conversation_key
+                JOIN loop_recipe_v2_runs r USING(loop_id)
+                JOIN loop_recipe_objectives o USING(loop_id)
+                WHERE m.activity='ACTIVE' AND m.conversation_key=? AND r.work_id=?
+                  AND r.state IN ('COMPLETED','SUPERSEDED')
+                  AND o.owner_principal_id=? AND o.assignment_epoch=?""",
+                             (manager, work.work_id, work.owner_principal_id,
+                              work.assignment_epoch)).fetchone()
+            return row["project_id"] if row else ""
 
     @staticmethod
     def validate_plan(overall_plan, conditions):
@@ -220,6 +264,8 @@ class LoopTurns:
         with self.store.transaction() as db:
             objective = self._objective(db, loop_id)
             self._check_owner(db, objective)
+            if objective["run_state"] == "SUPERSEDED":
+                raise LoopContractError("LOOP_RUN_SUPERSEDED")
             if objective["manager_conversation_key"] != conversation_key:
                 raise LoopContractError("LOOP_MANAGER_IDENTITY_MISMATCH")
             if self._current(db, loop_id) is None:
@@ -235,6 +281,8 @@ class LoopTurns:
         with self.store.transaction() as db:
             objective = self._objective(db, loop_id)
             self._check_owner(db, objective)
+            if objective["run_state"] == "SUPERSEDED":
+                raise LoopContractError("LOOP_RUN_SUPERSEDED")
             current = self._current(db, loop_id)
             if (not current or current["turn"] != turn or current["state"] != "BLOCKED"
                     or conversation_key != objective["manager_conversation_key"]):
