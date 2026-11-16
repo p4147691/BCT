@@ -32,7 +32,7 @@ class FaviconMonitorHttpProjectionTests(unittest.TestCase):
         # Keep the route's read-only builder and exact arguments fenced here.
         ui_target, ui_keywords = snapshot_target(methods["monitor_state"])
         self.assertEqual("build_monitor_ui_state", ui_target)
-        self.assertEqual({"store", "service_state", "data_root"}, ui_keywords)
+        self.assertEqual({"revision", "store", "service_state", "data_root"}, ui_keywords)
 
         status_calls = [node for node in ast.walk(methods["status_snapshot"])
                         if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)

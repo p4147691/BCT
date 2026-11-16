@@ -27,6 +27,27 @@ class NativeTypeRetentionTests(unittest.TestCase):
 
 
 class SnapshotFlightTests(unittest.IsolatedAsyncioTestCase):
+    async def test_revision_change_waits_then_rebuilds_without_overlap(self):
+        flight = SnapshotFlight()
+        started, release = threading.Event(), threading.Event()
+        calls = []
+        def build():
+            calls.append(1)
+            number = len(calls)
+            if number == 1:
+                started.set()
+                release.wait(5)
+            return number
+        old = asyncio.create_task(flight.get(build, revision=1))
+        await asyncio.to_thread(started.wait, 5)
+        new = asyncio.create_task(flight.get(build, revision=2))
+        await asyncio.sleep(0)
+        self.assertEqual(1, len(calls))
+        release.set()
+        self.assertEqual(1, await old)
+        self.assertEqual(2, await new)
+        self.assertEqual(2, len(calls))
+
     async def test_concurrent_clients_and_cancel_share_one_build(self):
         flight = SnapshotFlight()
         started = threading.Event()

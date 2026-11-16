@@ -1,6 +1,6 @@
 {
   "schema": "bct.component-library.bundle.v1",
-  "source_fingerprint": "34b3c7334705ed2ddc9a402f7f695cf089cd6414595e43dfe18b38f098156dcf",
+  "source_fingerprint": "176547be4ba689c6da4c8d54024baedb63f25fe073b73e754e859cf93e2af067",
   "source_hashes": {
     "docs/CHAIN_MESSAGE_RECIPE_V2.md": "1484b088885a3fcb540217fab6f787ea248305477c8a40e1e22633d9a91f24eb",
     "docs/component-library.v1.json": "7964ac4697143fbe815ef1f2d11e8d2ab40c24e27edf5fe78000c0bc3d421a92",
@@ -48,7 +48,7 @@
     "src/bct/loop_supervisor_handoff.py": "10337fe0b64b47a93e12bea9c354c0fdb40887d715c311fea019b700f6dfe220",
     "src/bct/loop_turns.py": "95a33e77f62c57eac6f631123632da88bb875c3a154557af9d5afc74116ed5ba",
     "src/bct/mcp_server.py": "e3b2c1fb0f0131427f94860383ba8b3ba6de596e21bf0843b05d8673a712c849",
-    "src/bct/monitor_events.py": "0b2fe8b412bc4dca8e521c24a1d4f140d5f67f76313b4c6d65380fa300857d3c",
+    "src/bct/monitor_events.py": "c0ccbd09016280d477cbdbe736d00ca502213a5a12896007b91b89a66b3edaad",
     "src/bct/node_recovery.py": "1c84150ae1af8cc285432565097ac071a2af6c4b2534f1d19ac7f75d7bec2438",
     "src/bct/persistent_loop_recovery.py": "4508fdeeab8a960c16c4ca131476afc896ad46449298652fa7a24224e173c8bf",
     "src/bct/persistent_loop_runtime.py": "7cb0d4f603544f9da98f62890243ec7ae5f05595c09e5e4132483baa8f4dd9d1",
@@ -64,7 +64,7 @@
     "src/bct/recipes/recovery.py": "652250acc02ff53b22fe417c798dfd9f412c3b701878204815486843059a58ff",
     "src/bct/recipes/runtime.py": "c9cd3a2ce51b2acdc7539fb44c6488b1d9ccaac6d2953755965c0ecf90c00667",
     "src/bct/recipes/state.py": "2055bfc5d1b1428f3ce2554ae05ddbd86eed97f5a9d2ca2d618502e71f516b0e",
-    "src/bct/runtime_server.py": "86e0215fd92a41432b5692d1aa1b625c19ced68cb683aee2ed4084ba071b46d2",
+    "src/bct/runtime_server.py": "4ba445e7bf786503d086eb5bab1f827995af8f39aa16810137b5a2156830ad2f",
     "src/bct/send_delayed_message.py": "1383a556b7163ee3f3b5aa4bcd1e2250dc04f46d2f8bce4effa0f910b2cf7916",
     "src/bct/status_queries.py": "a58bac39ecfd03b9f83a7c6551cb2589c2eede6ae9b44a53cd13a7d1c2b061ed",
     "src/bct/task_message.py": "c2dec08eb945f546ac548b8ce7d8da1ef39bdd774cd0ade25e046a53c58014ad"

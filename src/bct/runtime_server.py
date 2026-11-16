@@ -750,6 +750,7 @@ def main() -> int:
         """Serve the display roster without running Monitor maintenance work."""
         snapshot = await monitor_snapshot.get(
             build_monitor_ui_state,
+            revision=monitor_events.revision,
             store=bct.store,
             service_state=state,
             data_root=runtime_root.parent / "data",
