@@ -44,3 +44,31 @@ class MonitorEvents:
         finally:
             with self._lock:
                 self._subscribers.discard(subscriber)
+
+
+class SnapshotFlight:
+    """Share only an in-flight build; the next completed request builds afresh."""
+
+    def __init__(self):
+        self._task = None
+        self._revision = -1
+
+    async def get(self, build, *, revision=0, **kwargs):
+        # A change received during a build must not be lost. Drain the older
+        # build before starting the newer one, instead of overlapping threads.
+        while (self._task is not None and not self._task.done()
+               and self._revision < revision):
+            try:
+                await asyncio.shield(self._task)
+            except Exception:
+                # This caller needs a newer snapshot, not the older failure.
+                pass
+        if self._task is None or self._task.done():
+            self._revision = revision
+            self._task = asyncio.create_task(asyncio.to_thread(build, **kwargs))
+        task = self._task
+        try:
+            return await asyncio.shield(task)
+        finally:
+            if task.done() and self._task is task:
+                self._task = None

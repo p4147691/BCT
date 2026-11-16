@@ -19,16 +19,20 @@ class FaviconMonitorHttpProjectionTests(unittest.TestCase):
         }
         self.assertEqual({"monitor_state", "status_snapshot"}, set(methods))
 
-        def threaded_target(method):
+        def snapshot_target(method):
             calls = [node for node in ast.walk(method) if isinstance(node, ast.Call)
-                     and isinstance(node.func, ast.Attribute) and node.func.attr == "to_thread"]
+                     and isinstance(node.func, ast.Attribute) and node.func.attr == "get"
+                     and isinstance(node.func.value, ast.Name)
+                     and node.func.value.id == "monitor_snapshot"]
             self.assertEqual(1, len(calls))
             self.assertIsInstance(calls[0].args[0], ast.Name)
             return calls[0].args[0].id, {keyword.arg for keyword in calls[0].keywords}
 
-        ui_target, ui_keywords = threaded_target(methods["monitor_state"])
+        # SnapshotFlight owns the to_thread call and prevents concurrent builds.
+        # Keep the route's read-only builder and exact arguments fenced here.
+        ui_target, ui_keywords = snapshot_target(methods["monitor_state"])
         self.assertEqual("build_monitor_ui_state", ui_target)
-        self.assertEqual({"store", "service_state", "data_root"}, ui_keywords)
+        self.assertEqual({"revision", "store", "service_state", "data_root"}, ui_keywords)
 
         status_calls = [node for node in ast.walk(methods["status_snapshot"])
                         if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)

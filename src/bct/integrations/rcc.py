@@ -8,6 +8,35 @@ from dataclasses import dataclass
 from typing import Any, Callable, Protocol
 
 
+# Stable ABI types: ctypes caches POINTER(type) for the process lifetime.
+# Defining these inside each probe retains a fresh type graph on every call.
+import ctypes
+from ctypes import wintypes
+
+class SidAndAttributes(ctypes.Structure):
+    _fields_ = [("Sid", ctypes.c_void_p), ("Attributes", wintypes.DWORD)]
+
+class TokenUser(ctypes.Structure):
+    _fields_ = [("User", SidAndAttributes)]
+
+class TokenGroupsOne(ctypes.Structure):
+    _fields_ = [("GroupCount", wintypes.DWORD), ("Groups", SidAndAttributes * 1)]
+
+class AceHeader(ctypes.Structure):
+    _fields_ = [
+        ("AceType", ctypes.c_ubyte),
+        ("AceFlags", ctypes.c_ubyte),
+        ("AceSize", wintypes.WORD),
+    ]
+
+class AclSizeInformation(ctypes.Structure):
+    _fields_ = [
+        ("AceCount", wintypes.DWORD),
+        ("AclBytesInUse", wintypes.DWORD),
+        ("AclBytesFree", wintypes.DWORD),
+    ]
+
+
 PIPE_ROOT = r"\\.\pipe" + "\\"
 PIPE_PREFIX = "ai_workspace_relay_"
 
@@ -103,29 +132,6 @@ def _collect_windows_pipe_server_identity(pipe) -> PipeServerIdentity:
         pipe_handle = wintypes.HANDLE(handle_value)
         kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
         advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)
-
-        class SidAndAttributes(ctypes.Structure):
-            _fields_ = [("Sid", ctypes.c_void_p), ("Attributes", wintypes.DWORD)]
-
-        class TokenUser(ctypes.Structure):
-            _fields_ = [("User", SidAndAttributes)]
-
-        class TokenGroupsOne(ctypes.Structure):
-            _fields_ = [("GroupCount", wintypes.DWORD), ("Groups", SidAndAttributes * 1)]
-
-        class AceHeader(ctypes.Structure):
-            _fields_ = [
-                ("AceType", ctypes.c_ubyte),
-                ("AceFlags", ctypes.c_ubyte),
-                ("AceSize", wintypes.WORD),
-            ]
-
-        class AclSizeInformation(ctypes.Structure):
-            _fields_ = [
-                ("AceCount", wintypes.DWORD),
-                ("AclBytesInUse", wintypes.DWORD),
-                ("AclBytesFree", wintypes.DWORD),
-            ]
 
         get_server_pid = kernel32.GetNamedPipeServerProcessId
         get_server_pid.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.ULONG)]

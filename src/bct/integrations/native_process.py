@@ -67,6 +67,8 @@ def process_snapshot(pid: int) -> dict[str, Any]:
             "cwd": _safe_call(process.cwd),
             "argv": redact_argv(_safe_call(process.cmdline) or []),
             "memory_rss": int(process.memory_info().rss),
+            "memory_private_bytes": getattr(process.memory_info(), "private", None),
+            "memory_vms": int(process.memory_info().vms),
         })
     return result
 

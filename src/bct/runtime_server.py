@@ -19,7 +19,7 @@ from bct.core.capabilities import canonical_capability
 from bct.core.models import BCTError, Principal, Work
 from bct.mcp_server import LocalBearerMiddleware, build_mcp
 from bct.monitor_runtime import build_monitor_state, build_monitor_ui_state, monitor_roster_revision
-from bct.monitor_events import MonitorEvents
+from bct.monitor_events import MonitorEvents, SnapshotFlight
 from bct.codex_surface import register_codex_surfaces
 from bct.dot_identity import dot_directory, dot_key, save_dot_info
 from bct.status_views import status_view
@@ -728,8 +728,7 @@ def main() -> int:
     mcp = build_mcp(bct, status_provider=status_snapshot, compact_catalogue=compact_catalogue, hybrid_catalogue=hybrid_catalogue)
     monitor_events = MonitorEvents()
     bct.store.monitor_display_changed = monitor_events.publish
-    monitor_snapshot_task = None
-    monitor_snapshot_revision = -1
+    monitor_snapshot = SnapshotFlight()
     holder: dict[str, uvicorn.Server] = {}
 
     @mcp.custom_route("/health", methods=["GET"], include_in_schema=False)
@@ -749,17 +748,13 @@ def main() -> int:
     @mcp.custom_route("/monitor/state", methods=["GET"], include_in_schema=False)
     async def monitor_state(request: Request) -> JSONResponse:
         """Serve the display roster without running Monitor maintenance work."""
-        nonlocal monitor_snapshot_task, monitor_snapshot_revision
-        revision = monitor_events.revision
-        if monitor_snapshot_task is None or monitor_snapshot_task.done() or monitor_snapshot_revision != revision:
-            monitor_snapshot_revision = revision
-            monitor_snapshot_task = asyncio.create_task(asyncio.to_thread(
-                build_monitor_ui_state,
-                store=bct.store,
-                service_state=state,
-                data_root=runtime_root.parent / "data",
-            ))
-        snapshot = await asyncio.shield(monitor_snapshot_task)
+        snapshot = await monitor_snapshot.get(
+            build_monitor_ui_state,
+            revision=monitor_events.revision,
+            store=bct.store,
+            service_state=state,
+            data_root=runtime_root.parent / "data",
+        )
         return JSONResponse(snapshot)
 
     @mcp.custom_route("/monitor/roster-events", methods=["GET"], include_in_schema=False)
