@@ -15,6 +15,32 @@
   },
   "components": [
     {
+      "id": "monitor.snapshot_flight",
+      "kind": "primitive",
+      "maturity": "bounded",
+      "implementation": [
+        {
+          "path": "src/bct/monitor_events.py",
+          "symbol": "SnapshotFlight.get"
+        }
+      ],
+      "contract": "Share one running display snapshot across concurrent callers; caller cancellation does not cancel the build. Release completed results and exceptions; later requests rebuild. Inputs: synchronous builder and keyword arguments. Output: builder result.",
+      "effects": [
+        "local-background-read"
+      ],
+      "safety": [
+        "no-receipt-or-claim-mutation",
+        "no-cross-request-result-cache",
+        "failed-build-retry"
+      ],
+      "used_by": [
+        "runtime_server.monitor_state"
+      ],
+      "tests": [
+        "tests/test_memory_retention.py"
+      ]
+    },
+    {
       "id": "browser_bridge.bct_tool_transport",
       "kind": "partial_recipe",
       "maturity": "isolated",

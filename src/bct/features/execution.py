@@ -4,6 +4,7 @@ import os
 import psutil
 import shutil
 import subprocess
+import tempfile
 import sys
 import time
 from pathlib import Path
@@ -172,57 +173,83 @@ class ExecuteFeature:
         timeout_s = float(request.arguments["timeout_s"])
         creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
         started = time.time()
-        process = subprocess.Popen(
-            argv,
-            cwd=cwd,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            creationflags=creationflags,
-            shell=False,
-        )
-        try:
-            fingerprint = process_fingerprint(process.pid)
-        except psutil.NoSuchProcess:
-            # A very short-lived process may exit between Popen and psutil's
-            # identity read. Popen still owns the pipes and authoritative exit
-            # code, so collect them instead of misclassifying a known result as
-            # an UNKNOWN external effect.
-            stdout_raw, stderr_raw = process.communicate()
+        # communicate(PIPE) buffers the complete output before truncation.
+        # Anonymous temporary files keep Core memory bounded even for noisy tools.
+        with tempfile.TemporaryFile() as stdout_file, tempfile.TemporaryFile() as stderr_file:
+            def read_output():
+                stdout_file.seek(0)
+                stderr_file.seek(0)
+                return (stdout_file.read(_MAX_CAPTURE_BYTES + 1),
+                        stderr_file.read(_MAX_CAPTURE_BYTES + 1))
+            process = subprocess.Popen(
+                argv,
+                cwd=cwd,
+                stdin=subprocess.DEVNULL,
+                stdout=stdout_file,
+                stderr=stderr_file,
+                creationflags=creationflags,
+                shell=False,
+            )
+            try:
+                fingerprint = process_fingerprint(process.pid)
+            except psutil.NoSuchProcess:
+                # A very short-lived process may exit between Popen and psutil's
+                # identity read. Popen still owns the pipes and authoritative exit
+                # code, so collect them instead of misclassifying a known result as
+                # an UNKNOWN external effect.
+                process.wait()
+                stdout_raw, stderr_raw = read_output()
+                stdout, stdout_truncated = _bounded_text(stdout_raw)
+                stderr, stderr_truncated = _bounded_text(stderr_raw)
+                outcome = Outcome.APPLIED if process.returncode == 0 else Outcome.FAILED
+                return FeatureResult(
+                    outcome,
+                    {
+                        "phase": "EXITED_BEFORE_FINGERPRINT", "pid": process.pid,
+                        "returncode": process.returncode,
+                        "duration_ms": int((time.time() - started) * 1000),
+                    },
+                    output={
+                        "argv": redact_argv(argv), "returncode": process.returncode,
+                        "stdout": stdout, "stderr": stderr,
+                        "stdout_truncated": stdout_truncated,
+                        "stderr_truncated": stderr_truncated,
+                    },
+                )
+            try:
+                process.wait(timeout=timeout_s)
+                stdout_raw, stderr_raw = read_output()
+            except subprocess.TimeoutExpired:
+                process.kill()
+                try:
+                    process.wait(timeout=5.0)
+                    stdout_raw, stderr_raw = read_output()
+                except subprocess.TimeoutExpired as exc:
+                    if process_matches(fingerprint):
+                        raise UnknownEffectError("EXECUTION_TIMEOUT_PROCESS_STILL_RUNNING") from exc
+                    stdout_raw, stderr_raw = b"", b""
+                stdout, stdout_truncated = _bounded_text(stdout_raw)
+                stderr, stderr_truncated = _bounded_text(stderr_raw)
+                return FeatureResult(
+                    Outcome.FAILED,
+                    {
+                        "phase": "TIMEOUT", "pid": process.pid, "fingerprint": fingerprint,
+                        "terminated": not process_matches(fingerprint), "duration_ms": int((time.time() - started) * 1000),
+                    },
+                    output={
+                        "argv": redact_argv(argv), "returncode": process.returncode,
+                        "stdout": stdout, "stderr": stderr,
+                        "stdout_truncated": stdout_truncated, "stderr_truncated": stderr_truncated,
+                    },
+                )
             stdout, stdout_truncated = _bounded_text(stdout_raw)
             stderr, stderr_truncated = _bounded_text(stderr_raw)
             outcome = Outcome.APPLIED if process.returncode == 0 else Outcome.FAILED
             return FeatureResult(
                 outcome,
                 {
-                    "phase": "EXITED_BEFORE_FINGERPRINT", "pid": process.pid,
-                    "returncode": process.returncode,
-                    "duration_ms": int((time.time() - started) * 1000),
-                },
-                output={
-                    "argv": redact_argv(argv), "returncode": process.returncode,
-                    "stdout": stdout, "stderr": stderr,
-                    "stdout_truncated": stdout_truncated,
-                    "stderr_truncated": stderr_truncated,
-                },
-            )
-        try:
-            stdout_raw, stderr_raw = process.communicate(timeout=timeout_s)
-        except subprocess.TimeoutExpired:
-            process.kill()
-            try:
-                stdout_raw, stderr_raw = process.communicate(timeout=5.0)
-            except subprocess.TimeoutExpired as exc:
-                if process_matches(fingerprint):
-                    raise UnknownEffectError("EXECUTION_TIMEOUT_PROCESS_STILL_RUNNING") from exc
-                stdout_raw, stderr_raw = b"", b""
-            stdout, stdout_truncated = _bounded_text(stdout_raw)
-            stderr, stderr_truncated = _bounded_text(stderr_raw)
-            return FeatureResult(
-                Outcome.FAILED,
-                {
-                    "phase": "TIMEOUT", "pid": process.pid, "fingerprint": fingerprint,
-                    "terminated": not process_matches(fingerprint), "duration_ms": int((time.time() - started) * 1000),
+                    "phase": "EXITED", "pid": process.pid, "fingerprint": fingerprint,
+                    "returncode": process.returncode, "duration_ms": int((time.time() - started) * 1000),
                 },
                 output={
                     "argv": redact_argv(argv), "returncode": process.returncode,
@@ -230,18 +257,3 @@ class ExecuteFeature:
                     "stdout_truncated": stdout_truncated, "stderr_truncated": stderr_truncated,
                 },
             )
-        stdout, stdout_truncated = _bounded_text(stdout_raw)
-        stderr, stderr_truncated = _bounded_text(stderr_raw)
-        outcome = Outcome.APPLIED if process.returncode == 0 else Outcome.FAILED
-        return FeatureResult(
-            outcome,
-            {
-                "phase": "EXITED", "pid": process.pid, "fingerprint": fingerprint,
-                "returncode": process.returncode, "duration_ms": int((time.time() - started) * 1000),
-            },
-            output={
-                "argv": redact_argv(argv), "returncode": process.returncode,
-                "stdout": stdout, "stderr": stderr,
-                "stdout_truncated": stdout_truncated, "stderr_truncated": stderr_truncated,
-            },
-        )

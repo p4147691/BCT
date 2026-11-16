@@ -44,3 +44,20 @@ class MonitorEvents:
         finally:
             with self._lock:
                 self._subscribers.discard(subscriber)
+
+
+class SnapshotFlight:
+    """Share only an in-flight build; the next completed request builds afresh."""
+
+    def __init__(self):
+        self._task = None
+
+    async def get(self, build, **kwargs):
+        if self._task is None or self._task.done():
+            self._task = asyncio.create_task(asyncio.to_thread(build, **kwargs))
+        task = self._task
+        try:
+            return await asyncio.shield(task)
+        finally:
+            if task.done() and self._task is task:
+                self._task = None
