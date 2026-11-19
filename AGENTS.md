@@ -134,6 +134,9 @@ does not by itself require redeploying an unaffected target.
 
 ## 5A. Chain Recipe is the default execution route
 
+- Section 5B takes precedence for BCT self-maintenance. That route requires no
+  repeated user opt-out from Chain Recipe.
+
 - When the user assigns an implementation, inspection, repair, verification,
   deployment, or other executable BCT task, use Chain Recipe as the default
   coordination and continuation route without requiring the user to name it.
@@ -152,18 +155,31 @@ does not by itself require redeploying an unaffected target.
   do not silently substitute another execution route. Preserve current receipts
   and report the exact blocked stage or ask for the necessary target choice.
 
-### 5B. BCT self-maintenance is an external development route
+### 5B. BCT self-maintenance defaults to the independent route
 
-- BCT source inspection, isolated implementation and local tests may use the
-  external editor, terminal and Git without Chain Recipe or a running Core.
-- Keep shared-main integration and LIVE activation separate from development.
-  Existing exact-SHA, authorization, CI and no-replay requirements still apply.
-- The independent maintenance candidate is documented in
-  `docs/INDEPENDENT_MAINTENANCE.md`. It is not automatically installed or enabled
-  by changing source. Do not invent LIVE approval or activate a generated bundle.
-- Never use an external route to erase unresolved work or bypass an existing
-  protected cutover. Preserve active operations and require explicit, verified
-  maintenance readiness before touching the shared runtime.
+- Requests to inspect, modify, fix, refactor, test or maintain BCT itself default
+  to the external editor, terminal, Git and independent maintenance tools.
+  Do not require Chain Recipe, a running Core, or a BCT Work just to develop
+  and verify BCT. Do not ask the user to repeat "without BCT" in each chat.
+- The assistant executes the necessary commands. Do not offload ordinary
+  maintenance command execution to the user when the tools are available.
+- Read this current canonical file even from an older worktree. Implement in
+  an isolated worktree, preserve existing work and receipts, and run affected
+  tests and the required exact-SHA CI before protected integration/deployment.
+- Separate source changes from LIVE activation. Follow the current request's
+  scope: inspection-only or no-deployment instructions remain binding. When
+  deployment is already authorized, use the independent tools without asking
+  for duplicate approval. Never infer blanket future deployment permission.
+- For LIVE maintenance, inspect D:/BCT/maintenance/operational-entry.json,
+  README.md and the actual runtime/receipts. The installed independent tool is
+  the normal route for pause, stop, backup, activation, recovery and resume.
+  Verify current pins and readiness; do not trust old chat version claims.
+- Preserve UNKNOWN/Claim history and active work. Never erase, complete or replay
+  ambiguous operations to make maintenance pass, or bypass a protected cutover.
+- Explain what changed, where it is implemented, how it was tested and how the
+  user can use it. Distinguish source, tests, CI, installation and LIVE evidence.
+- This exception is specific to BCT self-maintenance; ordinary BCT-managed
+  projects keep section 5A unless the user requests another route.
 
 ## 6. UNKNOWN, retries and completion
 
