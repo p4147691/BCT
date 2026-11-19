@@ -67,6 +67,11 @@ BCT 본체와 정비 도구는 별도로 보관한다. 정비 도구는 `bct`를
 구현은 `src/bct_maintenance/operator.py::start`, 공통 미확정 정비 기록 검사는
 `src/bct_maintenance/cli.py::Maintenance.check_pending_effects`를 사용한다.
 
+2026-11-20 운영에서 정상 실행 start, pause 후 start의 접수 재개, 재개 후 새 읽기 전용
+Work/Operation의 실제 접수·완료를 확인했다. 재기동 없이 기존 작업·기록을 보존했으며
+테스트 기록도 남겼다. 정확한 증거·비교 범위·미검증 항목은
+[운영 검증 기록](INDEPENDENT_MAINTENANCE_VALIDATION.md#start-및-접수-재개-운영-검증-2026-11-20-kst)을 따른다.
+
 ## 최초 전환에서 보존하는 것
 
 구형 Core는 pause 계약을 모르므로 파일만 만든 것으로 안전을 주장하지 않는다.

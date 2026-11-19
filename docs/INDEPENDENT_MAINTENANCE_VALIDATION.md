@@ -30,6 +30,51 @@ Operation, Claim 전체 행과 보존용 데이터를 비교해 유지됨을 확
 문서 정리 시점에는 소스/문서만 반영하며 Core·독립 묶음 재설치가 필요 없다.
 실제 설치 버전은 항상 `D:/BCT/maintenance/operational-entry.json`에서 다시 확인한다.
 
+## start 및 접수 재개 운영 검증 (2026-11-20, KST)
+
+수정은 `operator.py::start`에서 정상 실행·소유한 정비 일시중지·정지를 구분한다.
+정상 실행이면 pause 없이 반환하고, 실행 중인 정비 일시중지 상태에서는 기존 resume
+검사를 사용한다. 릴리스 신원·표식 소유권·UNKNOWN 검사는 유지한다.
+설치된 독립 도구는 `5ead8775987b10250a1a337af1065462bca28b15`, 운영 Core는
+`dc4cc9d5d9cff15d44c60b9616f03a0153881367`이다. 이번 검증 중 재기동은 없었다.
+
+- 해당 도구 SHA의 후보 CI `44551520940`과 main CI `44552733341`은 각각 14개
+  작업 성공을 조회했다. main CI의 최초 실패와 재실행, 후속 테스트 경합 수정은 아래
+  DB 스키마 지문 절에 구분해 보존한다. 이 문서 변경에 대한 CI 결과는 아니다.
+- 정상 실행 상태에서 실제 `maintenance.cmd start` 성공. PID 4524·세대 470 유지,
+  두 정비 표식 없음, Core health의 `maintenance_paused=false` 확인.
+- 외부 도구로 pause한 뒤 Core health의 `maintenance_paused=true`를 확인하고
+  실제 `maintenance.cmd start` 호출. 재기동 없이 `false`로 전환하고 두 표식을 제거했다.
+  기존 정비 영수증은 동일하며 이번 pause·resume의 COMPLETED 영수증만 추가됐다.
+- 접수 재개 후 실제 MCP로 읽기 전용 Work를 새로 만들고 `bct_read`로 정비 README를
+  한 번 읽었다. 새 Operation은 `FINISHED / APPLIED`, `duplicate=false`, `error=null`이며
+  영수증을 재조회하고 반환 파일 해시를 로컬 파일과 대조했다. APPLIED는 이 읽기 요청의
+  성공 결과이며 파일 수정이나 메시지 전송을 뜻하지 않는다.
+- 접수 시험 전후 기존 Work·Operation·Claim·background_jobs의 모든 행 해시가 보존됐다.
+  Work 2,320→2,321, Operation 33,898→33,899, Claim 5,668 유지,
+  background_jobs 830 유지. 새 Claim·백그라운드 작업은 없다.
+  테스트 Work는 read 권한만 가진 ACTIVE 범위로 남기며 자동 실행을 의미하지 않는다.
+  완료된 테스트 Operation과 기존 UNKNOWN/Claim을 삭제하거나 상태 변경하지 않았다.
+
+운영 증거는 다음 로컬 파일에 보관한다. JSON 시각은 UTC이며 위 날짜는 KST이다.
+
+- 정상 실행 start: `D:/BCT/maintenance/start-verification-20261120-current-chat.json`
+- pause 후 start: `D:/BCT/maintenance/paused-start-verification-55d3d1ad0244424687c209af08790bfa.json`
+- 접수 전 행 해시: `D:/BCT/maintenance/admission-read-test-20261120-before.json`
+- 새 접수·완료·보존 비교: `D:/BCT/maintenance/admission-read-test-20261120-result.json`
+- Work: `maintenance-admission-read-20261120-01a1f450`
+- Operation: `maintenance-admission-read-20261120-01a1f450-op1`
+
+별도 격리 폴더 `D:/BCT/worktrees/maintenance-start-20261120`에는 정지+pause에서
+start 후 재개하는 회귀 테스트 추가분을 보존했다. 기준 `5ead877`과 해당 미커밋 추가분에서
+독립 정비 24개·접수 5개 테스트, compileall, diff 검사를 통과했다.
+이 추가분이 운영 묶음이나 위 CI에 포함됐다고 주장하지 않는다.
+
+이번 운영 확인은 실행 중인 Core의 start 및 읽기 요청 한 건의 실제 접수·완료 범위다.
+정지+pause의 start는 위 격리 증거와 구분한다. 쓰기·외부 메시지·브라우저 조작·장시간 작업,
+동시 접수 경쟁·부하·장애 중 재개는 이번 운영 시험 대상이 아니다.
+보존 비교는 명시한 네 테이블과 관측한 영수증·서비스 파일 범위이며 DB 전체 바이트 검증은 아니다.
+
 ## 남은 한계
 
 - DB 자체 손상 복원, 과거 DB 덮어쓰기, 스키마·데이터 마이그레이션은 자동 처리 범위가
