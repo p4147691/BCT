@@ -14,7 +14,7 @@ import tomllib
 import unittest
 from pathlib import Path
 from typing import Any
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock, patch
 
 import uvicorn
 
@@ -59,15 +59,82 @@ def free_port() -> int:
         return int(server.getsockname()[1])
 
 
+def wait_for_loop_schema(controller, *, timeout=15, on_pending=None):
+    """Test-fixture barrier, not a claim that HTTP readiness freezes the schema.
+
+    The first completed Loop cycle follows construction of its durable ledgers.
+    A fresh, empty test runtime has no work to dispatch. Wait for that existing
+    completion signal rather than a delay or repeated matching schema hashes.
+    """
+    deadline = time.monotonic() + timeout
+    while True:
+        observed = controller.inspect()
+        if observed.get("state") != "RUNNING":
+            raise AssertionError("TEST_CORE_NOT_RUNNING:" + repr(observed))
+        health = observed.get("health", {})
+        loop = health.get("loop_recipe_recovery", {})
+        if loop.get("runs", 0) > 0:
+            if loop.get("last_error") is not None:
+                raise AssertionError("TEST_LOOP_INITIALIZATION_FAILED:" + repr(loop))
+            return health
+        if time.monotonic() >= deadline:
+            raise AssertionError("TEST_SCHEMA_INITIALIZATION_TIMEOUT:" + repr(health))
+        if on_pending is not None:
+            on_pending()
+        time.sleep(0.05)
+
+
+class LoopSchemaBarrierTests(unittest.TestCase):
+    def test_http_ready_does_not_release_barrier(self):
+        pending = {"state": "RUNNING", "health": {
+            "ready": True, "loop_recipe_recovery": {"runs": 0}}}
+        completed = {"state": "RUNNING", "health": {
+            "ready": True, "loop_recipe_recovery": {"runs": 1, "last_error": None}}}
+        controller = Mock()
+        controller.inspect.side_effect = [pending, completed]
+        on_pending = Mock()
+        with patch("test_deployment_service.time.sleep"):
+            self.assertEqual(wait_for_loop_schema(controller, on_pending=on_pending),
+                             completed["health"])
+        on_pending.assert_called_once_with()
+
+    def test_initialization_timeout_fails_closed(self):
+        controller = Mock()
+        controller.inspect.return_value = {"state": "RUNNING", "health": {
+            "ready": True, "loop_recipe_recovery": {"runs": 0}}}
+        with self.assertRaisesRegex(AssertionError, "TEST_SCHEMA_INITIALIZATION_TIMEOUT"):
+            wait_for_loop_schema(controller, timeout=0)
+
+    def test_failed_loop_cycle_is_not_initialization_success(self):
+        controller = Mock()
+        controller.inspect.return_value = {"state": "RUNNING", "health": {
+            "loop_recipe_recovery": {"runs": 1, "last_error": "OperationalError"}}}
+        with self.assertRaisesRegex(AssertionError, "TEST_LOOP_INITIALIZATION_FAILED"):
+            wait_for_loop_schema(controller)
+
+    def test_dead_runtime_fails_without_waiting(self):
+        controller = Mock()
+        controller.inspect.return_value = {"state": "STOPPED"}
+        with self.assertRaisesRegex(AssertionError, "TEST_CORE_NOT_RUNNING"):
+            wait_for_loop_schema(controller)
+
+
 class DeploymentServiceTests(unittest.TestCase):
     def test_external_maintenance_controls_real_isolated_core(self):
+        deployed = self.deploy("initial-real-core", self.head, None)
+        self.assertEqual(Outcome.APPLIED, deployed.outcome, deployed.as_dict())
+        before_pid = deployed.evidence["service"]["pid"]
+        profile = DeploymentProfiles(self.running_policy).get("test_runtime")
+        controller = RuntimeServiceController(runtime_root=self.runtime,
+                                              service_name=profile.service_name, port=self.port)
+        wait_for_loop_schema(controller)
+        self._external_maintenance_roundtrip(before_pid)
+
+    def _external_maintenance_roundtrip(self, before_pid):
         import sqlite3
         import sys
         from contextlib import closing
         from bct_maintenance.cli import Maintenance, digest, state_snapshot
-        deployed = self.deploy("initial-real-core", self.head, None)
-        self.assertEqual(Outcome.APPLIED, deployed.outcome, deployed.as_dict())
-        before_pid = deployed.evidence["service"]["pid"]
         manifest = read_json(self.runtime / "releases" / self.head / "manifest.json")
         schema = state_snapshot(self.runtime)["schema_sha256"]
         config = self.base / "external-maintenance.json"
@@ -87,10 +154,93 @@ class DeploymentServiceTests(unittest.TestCase):
         self.assertTrue(tool.controller.inspect()["health"]["maintenance_paused"])
         stopped = tool.run("stop", operation_id="external-stop", expected_current=self.head)
         self.assertEqual(stopped["result"]["state"], "STOPPED")
+        self.assertEqual(state_snapshot(self.runtime)["schema_sha256"], schema)
         started = tool.run("start", operation_id="external-start", expected_current=self.head)
         self.assertNotEqual(started["result"]["pid"], before_pid)
+        self.assertEqual(state_snapshot(self.runtime)["schema_sha256"], schema)
         with closing(sqlite3.connect((self.runtime / "state/state.sqlite").as_uri() + "?mode=ro", uri=True)) as db:
             self.assertEqual(db.execute("SELECT work_id FROM works ORDER BY work_id").fetchall(), works_before)
+
+    def test_external_maintenance_waits_for_gated_loop_schema_initialization(self):
+        """Reproduce the original fingerprint race deterministically, then fix it.
+
+        Only the disposable copied release is instrumented. Its HTTP server can
+        become ready while the real Loop constructors are held behind a file
+        barrier. The production startup code and compatibility guard are intact.
+        """
+        import sqlite3
+        import threading
+        from concurrent.futures import ThreadPoolExecutor
+        from contextlib import closing
+        from bct_maintenance.cli import Maintenance, digest, state_snapshot
+        from bct_maintenance.errors import PreconditionError
+        import sys
+        runtime_source = self.source / "src/bct/runtime_server.py"
+        original = runtime_source.read_text(encoding="utf-8")
+        anchor = "        public_loop = LoopTurnRunner(\n"
+        self.assertEqual(original.count(anchor), 1)
+        injected = '''        # Test-only barrier in this disposable fixture release.
+        (runtime_root / "test-loop-schema.blocked").touch()
+        test_deadline = time.monotonic() + 45
+        while not (runtime_root / "test-loop-schema.release").exists():
+            if time.monotonic() >= test_deadline:
+                raise RuntimeError("TEST_LOOP_SCHEMA_GATE_TIMEOUT")
+            time.sleep(0.01)
+'''
+        runtime_source.write_text(original.replace(anchor, injected + anchor), encoding="utf-8")
+        git(self.source, "add", "src/bct/runtime_server.py")
+        git(self.source, "commit", "-m", "test-only delayed Loop schema fixture")
+        self.head = git(self.source, "rev-parse", "HEAD")
+        deployed = self.deploy("gated-real-core", self.head, None)
+        self.assertEqual(Outcome.APPLIED, deployed.outcome, deployed.as_dict())
+        profile = DeploymentProfiles(self.running_policy).get("test_runtime")
+        controller = RuntimeServiceController(runtime_root=self.runtime,
+                                              service_name=profile.service_name, port=self.port)
+        self.assertTrue(controller.inspect()["health"]["ready"])
+
+        def inventory():
+            with closing(sqlite3.connect((self.runtime / "state/state.sqlite").as_uri() + "?mode=ro", uri=True)) as db:
+                return {r[0]: r[1] for r in db.execute(
+                    "SELECT name,sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%'")}
+
+        before = inventory()
+        early = state_snapshot(self.runtime)["schema_sha256"]
+        pending = threading.Event()
+        release_gate = self.runtime / "test-loop-schema.release"
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(wait_for_loop_schema, controller, timeout=20,
+                                 on_pending=pending.set)
+            try:
+                self.assertTrue(pending.wait(5), "Fixture did not observe pending initialization")
+                self.assertFalse(future.done(), "HTTP-ready alone must not pass the schema barrier")
+                self.assertNotIn("loop_recipe_turns", before)
+            finally:
+                release_gate.touch()
+            future.result(timeout=25)
+        after = inventory()
+        self.assertIn("loop_recipe_turns", after)
+        self.assertIn("loop_review_handoffs", after)
+        self.assertIn("loop_result_reports", after)
+        settled = state_snapshot(self.runtime)["schema_sha256"]
+        self.assertNotEqual(early, settled)
+        self.assertTrue(set(before).issubset(after))
+        print("GATED_SCHEMA_REPRODUCTION:" + json.dumps({
+            "added": sorted(set(after) - set(before)),
+            "changed": sorted(k for k in before if before[k] != after[k]),
+            "early_sha256": early, "settled_sha256": settled,
+        }), flush=True)
+        manifest = read_json(self.runtime / "releases" / self.head / "manifest.json")
+        stale_config = self.base / "premature-schema-config.json"
+        atomic_json(stale_config, {
+            "schema": 1, "enabled": False, "allowed_actions": [],
+            "policy_path": str(self.running_policy), "policy_sha256": digest(self.running_policy),
+            "profile": "test_runtime", "runtime_root": str(self.runtime), "python_path": sys.executable,
+            "verified_releases": {self.head: {"manifest_sha256": manifest["manifest_sha256"],
+                                             "compatible_schema_sha256": [early]}},
+        })
+        with self.assertRaisesRegex(PreconditionError, "DB_COMPATIBILITY_NOT_VERIFIED"):
+            Maintenance(stale_config).verify(self.head)
+        self._external_maintenance_roundtrip(deployed.evidence["service"]["pid"])
 
     def test_production_release_list_closes_relative_python_imports(self):
         """A production release must not omit a module needed at runtime."""
