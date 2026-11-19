@@ -1408,6 +1408,8 @@ class Store:
                         operation_created_at=float(existing["created_at"]),
                     )
                 return False, self._row_result(existing, duplicate=True)
+            if (Path(self.path).resolve().parent.parent / "BCT_MAINTENANCE.PAUSE").is_file():
+                raise ConflictError("MAINTENANCE_ADMISSION_PAUSED")
             db.execute(
                 "INSERT INTO operations VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (operation_id, work.work_id, principal_id, request_digest, capability, target,

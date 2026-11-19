@@ -423,6 +423,9 @@ def main() -> int:
         if recovery is None:
             return
         while not recovery_stop.is_set():
+            if (runtime_root / "BCT_MAINTENANCE.PAUSE").is_file():
+                recovery_stop.wait(1.0)
+                continue
             try:
                 outcome = recovery.run_once(limit=8)
                 state["manager_decision_recovery"] = {
@@ -446,6 +449,9 @@ def main() -> int:
         if recovery is None:
             return
         while not recovery_stop.is_set():
+            if (runtime_root / "BCT_MAINTENANCE.PAUSE").is_file():
+                recovery_stop.wait(1.0)
+                continue
             try:
                 outcome = recovery.run_once(limit=8)
                 state["worker_dispatch_recovery"] = {
@@ -470,6 +476,9 @@ def main() -> int:
         if recovery is None:
             return
         while not recovery_stop.is_set():
+            if (runtime_root / "BCT_MAINTENANCE.PAUSE").is_file():
+                recovery_stop.wait(1.0)
+                continue
             try:
                 outcome = recovery.run_once(limit=8)
                 state["manager_succession_recovery"] = {
@@ -491,6 +500,9 @@ def main() -> int:
     def bottleneck_ack_loop() -> None:
         """Observe RCC telemetry only; the controller owns any one-shot effect."""
         while not recovery_stop.is_set():
+            if (runtime_root / "BCT_MAINTENANCE.PAUSE").is_file():
+                recovery_stop.wait(1.0)
+                continue
             try:
                 monitor = build_monitor_state(
                     store=bct.store, service_state=state,
@@ -510,6 +522,9 @@ def main() -> int:
         from .github_manager_wake import GithubWakeRecoveryAdapter
         github_wake = GithubWakeRecoveryAdapter(bct.store, manager_candidates=lambda: [])
         while not recovery_stop.is_set():
+            if (runtime_root / "BCT_MAINTENANCE.PAUSE").is_file():
+                recovery_stop.wait(1.0)
+                continue
             try:
                 outcome = recovery.run_once(limit=8)
                 outcome["github_manager_wake"] = github_wake.run_once()
@@ -566,6 +581,9 @@ def main() -> int:
         previous_snapshot = None
         delivered_cursor = None
         while not recovery_stop.is_set():
+            if (runtime_root / "BCT_MAINTENANCE.PAUSE").is_file():
+                recovery_stop.wait(1.0)
+                continue
             try:
                 due = observer.scan(limit=8)
                 reconciled = outbox.reconcile_uncertain(
@@ -668,6 +686,9 @@ def main() -> int:
         # No watches => no RCC request. No message submits or claims.
         observer = ChatStreamRccWatch(bct.store, NamedPipeRelayClient())
         while not recovery_stop.wait(15.0):
+            if (runtime_root / "BCT_MAINTENANCE.PAUSE").is_file():
+                recovery_stop.wait(1.0)
+                continue
             try:
                 events = observer.poll_once()
                 state["chat_stream_rcc_watch"] = {
@@ -690,6 +711,9 @@ def main() -> int:
             operations=bct.operations,
         )
         while not recovery_stop.wait(2.0):
+            if (runtime_root / "BCT_MAINTENANCE.PAUSE").is_file():
+                recovery_stop.wait(1.0)
+                continue
             try:
                 outcome = service.poll_once(limit=8)
                 state["delayed_send_watch"] = {
@@ -733,7 +757,8 @@ def main() -> int:
 
     @mcp.custom_route("/health", methods=["GET"], include_in_schema=False)
     async def health(request: Request) -> JSONResponse:
-        return JSONResponse(state)
+        return JSONResponse({**state, "maintenance_contract": 1,
+                             "maintenance_paused": (runtime_root / "BCT_MAINTENANCE.PAUSE").is_file()})
 
     @mcp.custom_route("/monitor/ui-layout", methods=["GET"], include_in_schema=False)
     async def monitor_ui_layout(request: Request) -> JSONResponse:

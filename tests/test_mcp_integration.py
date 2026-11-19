@@ -59,6 +59,9 @@ class MCPIntegrationTests(unittest.TestCase):
             self.release / "src" / "bct",
             ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
         )
+        shutil.copytree(source / "src" / "bct_maintenance",
+                        self.release / "src" / "bct_maintenance",
+                        ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
         capabilities = [
             "read", "write", "test", "git_commit", "github_push", "github_pr_create",
             "github_pr_status", "github_pr_merge", "github_sync_main", "github_run_watch", "deploy", "service_control",

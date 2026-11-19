@@ -1066,6 +1066,71 @@
         "LoopReviewLedger.observe_return",
         "loop_recipe_recovery_loop"
       ]
+    },
+    {
+      "id": "bct.independent_maintenance",
+      "kind": "module",
+      "maturity": "isolated",
+      "implementation": [
+        {
+          "path": "src/bct_maintenance/cli.py",
+          "symbol": "Maintenance"
+        },
+        {
+          "path": "src/bct_maintenance/engine.py",
+          "symbol": "DeploymentEngine"
+        },
+        {
+          "path": "src/bct_maintenance/releases.py",
+          "symbol": "DeploymentProfiles"
+        },
+        {
+          "path": "src/bct_maintenance/service_runtime.py",
+          "symbol": "RuntimeServiceController"
+        },
+        {
+          "path": "src/bct_maintenance/locking.py",
+          "symbol": "maintenance_lock"
+        },
+        {
+          "path": "src/bct_maintenance/errors.py",
+          "symbol": "PreconditionError"
+        },
+        {
+          "path": "src/bct_maintenance/supervisor.py",
+          "symbol": "ensure_service"
+        },
+        {
+          "path": "scripts/build_maintenance_bundle.py",
+          "symbol": "build"
+        }
+      ],
+      "contract": "External CLI and BCT adapters share release verification, activation and exact process control without importing the BCT application. Explicit pinned configuration, exact SHA, operation journal and read-only work inspection. Isolated candidate only; no LIVE installation.",
+      "effects": [
+        "runtime-release-and-pointer",
+        "exact-core-process",
+        "maintenance-journal",
+        "consistent-db-backup"
+      ],
+      "safety": [
+        "no-bct-import-in-external-cli",
+        "active-or-unresolved-work-denied",
+        "shared-os-lock",
+        "no-unknown-replay",
+        "no-db-restore",
+        "pinned-release-and-schema",
+        "explicit-maintenance-pause"
+      ],
+      "used_by": [
+        "bct.features.deploy",
+        "bct.service_runtime",
+        "external-maintenance-cli"
+      ],
+      "tests": [
+        "tests/test_independent_maintenance.py",
+        "tests/test_deployment_service.py",
+        "tests/test_service_health_preflight.py"
+      ]
     }
   ]
 }

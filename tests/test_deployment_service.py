@@ -60,6 +60,38 @@ def free_port() -> int:
 
 
 class DeploymentServiceTests(unittest.TestCase):
+    def test_external_maintenance_controls_real_isolated_core(self):
+        import sqlite3
+        import sys
+        from contextlib import closing
+        from bct_maintenance.cli import Maintenance, digest, state_snapshot
+        deployed = self.deploy("initial-real-core", self.head, None)
+        self.assertEqual(Outcome.APPLIED, deployed.outcome, deployed.as_dict())
+        before_pid = deployed.evidence["service"]["pid"]
+        manifest = read_json(self.runtime / "releases" / self.head / "manifest.json")
+        schema = state_snapshot(self.runtime)["schema_sha256"]
+        config = self.base / "external-maintenance.json"
+        atomic_json(config, {
+            "schema": 1, "enabled": True, "policy_path": str(self.running_policy),
+            "policy_sha256": digest(self.running_policy), "profile": "test_runtime",
+            "runtime_root": str(self.runtime), "python_path": sys.executable,
+            "allowed_actions": ["stop", "start"], "admission_releases": [self.head],
+            "verified_releases": {self.head: {"manifest_sha256": manifest["manifest_sha256"],
+                                             "compatible_schema_sha256": [schema]}},
+        })
+        with closing(sqlite3.connect((self.runtime / "state/state.sqlite").as_uri() + "?mode=ro", uri=True)) as db:
+            works_before = db.execute("SELECT work_id FROM works ORDER BY work_id").fetchall()
+        (self.runtime / "BCT_MAINTENANCE.PAUSE").touch()
+        (self.runtime / "BCT_CORE_SUPERVISOR.STOP").touch()
+        tool = Maintenance(config)
+        self.assertTrue(tool.controller.inspect()["health"]["maintenance_paused"])
+        stopped = tool.run("stop", operation_id="external-stop", expected_current=self.head)
+        self.assertEqual(stopped["result"]["state"], "STOPPED")
+        started = tool.run("start", operation_id="external-start", expected_current=self.head)
+        self.assertNotEqual(started["result"]["pid"], before_pid)
+        with closing(sqlite3.connect((self.runtime / "state/state.sqlite").as_uri() + "?mode=ro", uri=True)) as db:
+            self.assertEqual(db.execute("SELECT work_id FROM works ORDER BY work_id").fetchall(), works_before)
+
     def test_production_release_list_closes_relative_python_imports(self):
         """A production release must not omit a module needed at runtime."""
         project = Path(__file__).resolve().parents[1]
@@ -146,9 +178,12 @@ class DeploymentServiceTests(unittest.TestCase):
             self.source / "src" / "bct",
             ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
         )
+        shutil.copytree(project / "src" / "bct_maintenance",
+                        self.source / "src" / "bct_maintenance",
+                        ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
         self.files = [
             path.relative_to(self.source).as_posix()
-            for path in sorted((self.source / "src" / "bct").rglob("*.py"))
+            for path in sorted((self.source / "src").rglob("*.py"))
         ]
         self.files.insert(0, "bct.toml")
         self.port = free_port()

@@ -540,18 +540,18 @@ class ProtectedOperatingPathTests(unittest.TestCase):
         order: list[str] = []
         current = {"source_head": head, "manifest_sha256": "b" * 64}
         feature = DeployFeature(Mock())
-        with patch("bct.features.deploy._validate_source", return_value=current), patch(
-            "bct.features.deploy._read_current", return_value=current
-        ), patch("bct.features.deploy._validate_release"), patch(
-            "bct.features.deploy.RuntimeServiceController", return_value=controller
-        ), patch("bct.features.deploy._validate_protected_activation"), patch(
-            "bct.features.deploy._begin_protected_cutover",
+        with patch("bct_maintenance.engine._validate_source", return_value=current), patch(
+            "bct_maintenance.engine._read_current", return_value=current
+        ), patch("bct_maintenance.engine._validate_release"), patch(
+            "bct_maintenance.engine.RuntimeServiceController", return_value=controller
+        ), patch("bct_maintenance.releases._validate_protected_activation"), patch(
+            "bct_maintenance.engine._begin_protected_cutover",
             side_effect=lambda *args: order.append("begin"),
         ), patch(
-            "bct.features.deploy._start_with_one_safe_retry",
+            "bct_maintenance.engine._start_with_one_safe_retry",
             side_effect=lambda *args: order.append("start") or {"state": "RUNNING"},
         ), patch(
-            "bct.features.deploy._record_protected_cutover",
+            "bct_maintenance.engine._record_protected_cutover",
             side_effect=lambda *args: order.append("complete"),
         ):
             feature._execute_apply(request, profile)
@@ -591,7 +591,7 @@ class ProtectedOperatingPathTests(unittest.TestCase):
 
         atomic_json(marker_path, marker)
         with patch("bct.features.deploy._target_profile", return_value=target), patch(
-            "bct.features.deploy._validate_protected_activation"
+            "bct_maintenance.releases._validate_protected_activation"
         ) as legacy_activation, patch.object(
             feature, "_execute_apply", return_value="upgraded"
         ) as apply:
@@ -602,14 +602,14 @@ class ProtectedOperatingPathTests(unittest.TestCase):
         atomic_json(marker_path, {**marker, "state": "ACTIVATING"})
         held = Mock()
         with patch("bct.features.deploy._target_profile", return_value=target), patch(
-            "bct.features.deploy._validate_protected_activation", return_value=held
+            "bct_maintenance.releases._validate_protected_activation", return_value=held
         ) as first_activation, patch.object(feature, "_execute_apply", return_value="recovered"):
             self.assertEqual("recovered", feature.execute(request("a" * 40)))
         first_activation.assert_called_once()
         held.close.assert_called_once()
 
         with patch("bct.features.deploy._target_profile", return_value=target), patch(
-            "bct.features.deploy._validate_protected_activation"
+            "bct_maintenance.releases._validate_protected_activation"
         ) as wrong_activation, patch.object(feature, "_execute_apply") as apply:
             with self.assertRaisesRegex(PreconditionError, "CUTOVER_AUTHORITY_CONFLICT"):
                 feature.execute(request("b" * 40))

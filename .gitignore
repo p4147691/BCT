@@ -10,3 +10,6 @@ dist/
 modules/monitor/extension/.reload-token
 modules/monitor/extension/.reload-ack
 
+
+# Task-local frozen maintenance bundles and test evidence.
+artifacts/

@@ -152,6 +152,19 @@ does not by itself require redeploying an unaffected target.
   do not silently substitute another execution route. Preserve current receipts
   and report the exact blocked stage or ask for the necessary target choice.
 
+### 5B. BCT self-maintenance is an external development route
+
+- BCT source inspection, isolated implementation and local tests may use the
+  external editor, terminal and Git without Chain Recipe or a running Core.
+- Keep shared-main integration and LIVE activation separate from development.
+  Existing exact-SHA, authorization, CI and no-replay requirements still apply.
+- The independent maintenance candidate is documented in
+  `docs/INDEPENDENT_MAINTENANCE.md`. It is not automatically installed or enabled
+  by changing source. Do not invent LIVE approval or activate a generated bundle.
+- Never use an external route to erase unresolved work or bypass an existing
+  protected cutover. Preserve active operations and require explicit, verified
+  maintenance readiness before touching the shared runtime.
+
 ## 6. UNKNOWN, retries and completion
 
 - Never replay an `UNKNOWN` external effect under a new Operation ID just to make
