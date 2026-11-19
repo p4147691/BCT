@@ -157,6 +157,10 @@ does not by itself require redeploying an unaffected target.
 
 ### 5B. BCT self-maintenance defaults to the independent route
 
+- For implementation locations, completed verification and remaining limits,
+  read `docs/INDEPENDENT_MAINTENANCE.md` and
+  `docs/INDEPENDENT_MAINTENANCE_VALIDATION.md`. Their dated evidence is history;
+  verify installed versions through `maintenance/operational-entry.json`.
 - Requests to inspect, modify, fix, refactor, test or maintain BCT itself default
   to the external editor, terminal, Git and independent maintenance tools.
   Do not require Chain Recipe, a running Core, or a BCT Work just to develop

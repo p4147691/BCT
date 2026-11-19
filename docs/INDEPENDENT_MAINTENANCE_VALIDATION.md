@@ -1,4 +1,49 @@
-# 독립 정비 후보 검증 기록
+# 독립 정비 완료 및 검증 기록
+
+## 완료 판정 (2026-11-20)
+
+사용자 요청 범위인 **BCT 없이 수정·검증·운영 적용·복구할 수 있는 정비 경로 분리**는
+완료했다. 아래 초기 후보 기록의 "운영 미적용"은 당시 판정이며 현재 상태가 아니다.
+구현 위치와 사용 순서는 [정비 안내](INDEPENDENT_MAINTENANCE.md)를 따른다.
+
+| 단계 | 검증 결과 및 증거 |
+|---|---|
+| 최초 운영 전환 | Core `dc4cc9d5d9cff15d44c60b9616f03a0153881367`. 후보 CI `44543861111`, main CI `44545614691` 각각 14/14 통과. 외부 정지·백업·복구 기동, BCT import 차단 상태의 독립 supervisor 확인. 전후 DB 82개 테이블 동일. `D:/BCT/maintenance/operational-installation.json` |
+| 이미 실행 중인 start 보완 | 독립 도구 `5ead8775987b10250a1a337af1065462bca28b15` 설치. 정상 실행은 읽기 전용 성공, 소유한 pause는 안전 확인 후 재개. `D:/BCT/maintenance/start-fix-5ead8775987b10250a1a337af1065462bca28b15.json` |
+| DB 지문 경합 수정 | 소스 `ad240b3c1350bb428eefc2c47a4b5ab0b7d223b2`. 로컬 29개 통과. 후보 CI `44558920451`, main CI `44559922732` 각각 첫 시도 14/14 작업, Core 테스트 1,770개 통과. 초기화 지연을 강제해 실제 지문 변경·거부를 재현. 안전 검사 유지. `D:/BCT/maintenance/history/schema-ci-fix-ad240b3c1350bb428eefc2c47a4b5ab0b7d223b2.json` |
+| Core 기동 불능 격리 시험 | 설치된 독립 묶음 사용, 정비 프로세스의 `bct` import 차단. 실제 Core 시작 시 예외 주입 → 기동 실패·UNKNOWN 기록 → 새 ID 우회 거부 → 꺼진 상태에서 외부 수정·컴파일·import 검증 → 보관판 복구·기동 → 수정판 적용·기동·접수 재개 모두 PASS |
+
+격리 시험은 간단한 대체 서버가 아닌 실제 복제 Core를 사용했다. 임시 DB의 Work,
+Operation, Claim 전체 행과 보존용 데이터를 비교해 유지됨을 확인했고, 최초 UNKNOWN
+영수증도 삭제하지 않았다. 시험용 Core는 마지막에 정지했다. 운영 전후의 PID·세대·
+정비 설정·작업 건수·미해결 Claim 내용·진행 중 소스 파일 지문은 동일했다.
+이는 비교한 관측의 보존 증거이며 운영 DB 전체 바이트 비교를 주장하지 않는다.
+
+격리 시험 산출물(로컬 보관, Git 비포함):
+
+- 재현 스크립트: `D:/BCT/worktrees/core-maintenance-20261119/artifacts/dead_core_drill.py`
+- 로그: 같은 artifacts의 `dead-core-drill.log`
+- 단계별 결과·운영 비교: 같은 artifacts의 `dead-core-drill-lh3npjup/report.json`
+- 임시 정비 영수증·백업: 같은 시험 폴더의 `runtime/maintenance`
+
+위 시험 릴리스 SHA들은 임시 저장소의 고장판·복구판·수정판이며 운영 배포판이 아니다.
+문서 정리 시점에는 소스/문서만 반영하며 Core·독립 묶음 재설치가 필요 없다.
+실제 설치 버전은 항상 `D:/BCT/maintenance/operational-entry.json`에서 다시 확인한다.
+
+## 남은 한계
+
+- DB 자체 손상 복원, 과거 DB 덮어쓰기, 스키마·데이터 마이그레이션은 자동 처리 범위가
+  아니다. 코드 복구는 현재 작업 기록을 보존한다.
+- `current.json` 자체가 해석 불가능한 경우와 승인된 복구판·정책·지문이 없는 경우에는
+  별도 진단이 필요하다. UNKNOWN 효과를 추측해 재전송하거나 Claim을 지우지 않는다.
+- Python·psutil·파일/프로세스 권한은 필요하다. BCT Core에는 의존하지 않는다.
+- Chrome/RCC/Monitor, 운영 브라우저 고장, 디스크·OS 장애의 복구까지 입증한 것은 아니다.
+- 기동 불능 시험은 시작 시 코드 예외 한 종류를 주입했다. 모든 장애 조합의 보장은 아니다.
+- 기존 테스트는 CI에 포함되지만 이번 전체 기동 불능 시나리오는 로컬 격리 수동 검증이다.
+
+이번 완료 범위에 남은 필수 작업은 없다. 위 한계는 별도 요청이 필요한 범위다.
+
+## 초기 후보 기록 (역사)
 
 기준 main: `8707fb1184592809234b6968be51cff5632e1122`
 
