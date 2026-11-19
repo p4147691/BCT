@@ -356,7 +356,7 @@ class RuntimeServiceController:
         return process_identity(pid) is None
 
     @_serialized
-    def stop(self) -> dict[str, Any]:
+    def stop(self, *, shutdown_timeout: float = 10) -> dict[str, Any]:
         state = self.inspect()
         if state["state"] != "RUNNING":
             return {**state, "already_stopped": True}
@@ -381,7 +381,7 @@ class RuntimeServiceController:
             # classifying a lost response; never issue a second shutdown here.
             response_error = exc
         pid = int(receipt["pid"])
-        if not self._wait_for_exit(pid, 10):
+        if not self._wait_for_exit(pid, shutdown_timeout):
             if response_error is not None:
                 try:
                     after = self.inspect()

@@ -23,6 +23,19 @@ function Write-Event([string]$Name, [string]$Detail = '') {
 }
 
 function Invoke-Ensure {
+    # Installed separately from Core; a broken bct import cannot break recovery.
+    $independentConfig = Join-Path (Split-Path $RuntimeDir -Parent) 'maintenance\supervisor.json'
+    if (Test-Path -LiteralPath $independentConfig -PathType Leaf) {
+        $entry = Get-Content -LiteralPath $independentConfig -Raw | ConvertFrom-Json
+        $launcher = [string]$entry.launcher
+        if ((Get-FileHash -LiteralPath $launcher -Algorithm SHA256).Hash.ToLowerInvariant() -ne [string]$entry.sha256) {
+            throw 'BCT_MAINTENANCE_LAUNCHER_HASH_MISMATCH'
+        }
+        $output = & $PythonPath $launcher --supervisor --runtime-root $RuntimeDir --profile $Profile 2>&1
+        if ($LASTEXITCODE -ne 0) { throw ('BCT_CORE_ENSURE_FAILED ' + ($output -join ' ')) }
+        Write-Event 'BCT_CORE_READY_INDEPENDENT' ($output -join ' ')
+        return
+    }
     $currentPath = Join-Path $RuntimeDir 'current.json'
     $current = Get-Content -LiteralPath $currentPath -Raw -ErrorAction Stop | ConvertFrom-Json
     $releaseRoot = [IO.Path]::GetFullPath([string]$current.release_path)

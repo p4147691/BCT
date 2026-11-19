@@ -14,6 +14,7 @@ import time
 from types import SimpleNamespace
 import psutil
 
+from .admission import admission_fence, assert_quiescent
 from .engine import DeploymentEngine
 from .errors import PreconditionError, UnknownEffectError
 from .locking import maintenance_lock
@@ -120,8 +121,8 @@ class Maintenance:
 
     def quiescent(self):
         state = state_snapshot(self.root)
-        if state["running_operations"] or state["unresolved_claims"]:
-            raise PreconditionError("MAINTENANCE_ACTIVE_OR_UNRESOLVED_WORK")
+        with closing(sqlite3.connect((self.root / "state/state.sqlite").as_uri() + "?mode=ro", uri=True)) as db:
+            state.update(assert_quiescent(db, self.config.get("retained_history_sha256")))
         return state
 
     def backup(self, destination):
@@ -170,20 +171,20 @@ class Maintenance:
             raise PreconditionError("MAINTENANCE_PROCESS_NOT_UNRESPONSIVE")
         return process, identity, receipt
 
-    def run(self, action, *, operation_id, expected_current, target=None, expected_fingerprint=None, resolves=None):
+    def run(self, action, *, operation_id, expected_current, target=None, expected_fingerprint=None, resolves=None, source_worktree=None):
         if self.config.get("enabled") is not True or action not in self.config.get("allowed_actions", []):
             raise PreconditionError("MAINTENANCE_ACTION_NOT_AUTHORIZED")
-        if action not in {"start", "stop", "stop-unresponsive", "recover", "activate", "backup"}:
+        if action not in {"pause", "resume", "start", "stop", "bootstrap-stop", "stop-unresponsive", "recover", "activate", "backup"}:
             raise PreconditionError("MAINTENANCE_ACTION_INVALID")
-        if not (self.root / "BCT_CORE_SUPERVISOR.STOP").is_file():
+        if action != "pause" and not (self.root / "BCT_CORE_SUPERVISOR.STOP").is_file():
             raise PreconditionError("MAINTENANCE_SUPERVISOR_NOT_PAUSED")
-        if not (self.root / "BCT_MAINTENANCE.PAUSE").is_file():
+        if action != "pause" and not (self.root / "BCT_MAINTENANCE.PAUSE").is_file():
             raise PreconditionError("MAINTENANCE_ADMISSION_NOT_PAUSED")
         path = self.receipt_path(operation_id)
         request = {"action": action, "operation_id": operation_id,
                    "expected_current": expected_current, "target": target,
                    "expected_fingerprint": expected_fingerprint,
-                   "resolves": resolves,
+                   "resolves": resolves, "source_worktree": source_worktree,
                    "config_sha256": digest(self.config_path)}
         with maintenance_lock(self.root):
             old = read_json(path)
@@ -215,7 +216,7 @@ class Maintenance:
                 raise PreconditionError("MAINTENANCE_STALE_CURRENT")
             state = self.quiescent()
             _validate_profile_start_allowed(self.profiles, self.profile)
-            if action in {"stop", "stop-unresponsive"} and expected_current not in self.config.get("admission_releases", []):
+            if action in {"stop", "bootstrap-stop", "stop-unresponsive"} and expected_current not in self.config.get("admission_releases", []):
                 raise PreconditionError("MAINTENANCE_ADMISSION_RELEASE_NOT_VERIFIED")
             release = None
             if action in {"start", "recover"}:
@@ -224,10 +225,10 @@ class Maintenance:
                 self.compatible(target, state)
             if action == "activate":
                 # Same source / local-main / manifest checks as BCT deployment.
-                profile = _target_profile(self.profile, target or "")
+                profile = _target_profile(self.profile, target or "", Path(source_worktree) if source_worktree else None)
                 if profile.protected_activation_required:
                     raise PreconditionError("MAINTENANCE_CUTOVER_REQUIRES_EXISTING_APPROVAL_ROUTE")
-                source = _validate_source(profile, target)
+                source = _validate_source(profile, target, Path(source_worktree) if source_worktree else None)
                 pin = self.config.get("verified_releases", {}).get(target, {})
                 if source["manifest_sha256"] != pin.get("manifest_sha256"):
                     raise PreconditionError("MAINTENANCE_CANDIDATE_NOT_VERIFIED")
@@ -240,12 +241,34 @@ class Maintenance:
                 before = unresponsive[2]
             else:
                 before = self.controller.inspect()
+            if action == "bootstrap-stop":
+                # First transition is tied to one reviewed legacy release AND
+                # one live process identity; never a generic pause bypass.
+                pin = self.config.get("bootstrap", {})
+                if (pin.get("release_sha") != expected_current
+                        or not expected_fingerprint
+                        or pin.get("fingerprint") != expected_fingerprint
+                        or before.get("fingerprint") != expected_fingerprint
+                        or before.get("state") != "RUNNING"):
+                    raise PreconditionError("MAINTENANCE_BOOTSTRAP_IDENTITY_MISMATCH")
+                self.pinned_release(expected_current)
             if action == "stop" and before["state"] == "RUNNING":
                 health = before.get("health", {})
                 if health.get("maintenance_contract") != 1 or health.get("maintenance_paused") is not True:
                     raise PreconditionError("MAINTENANCE_ADMISSION_NOT_ACKNOWLEDGED")
             if action in {"start", "recover", "activate"} and before["state"] not in {"STOPPED", "STOPPED_STALE_RECEIPT"}:
                 raise PreconditionError("MAINTENANCE_STOP_CORE_FIRST")
+            flags = [self.root / name for name in ("BCT_CORE_SUPERVISOR.STOP", "BCT_MAINTENANCE.PAUSE")]
+            if action in {"pause", "resume"}:
+                for flag in flags:
+                    if flag.exists() and flag.read_text(encoding="utf-8") != "independent-maintenance\n":
+                        raise PreconditionError("MAINTENANCE_FLAG_OWNED_ELSEWHERE")
+                if action == "resume":
+                    self.pinned_release(expected_current)
+                    if (before.get("state") != "RUNNING"
+                            or before.get("release_sha") != expected_current
+                            or before.get("health", {}).get("maintenance_contract") != 1):
+                        raise PreconditionError("MAINTENANCE_RESUME_HEALTH_UNVERIFIED")
             path.parent.mkdir(parents=True, exist_ok=True)
             receipt = {"schema": 1, "request": request, "state": "STARTED",
                        "previous_current": current, "before": before, "started_at": time.time()}
@@ -255,7 +278,18 @@ class Maintenance:
                 stream.flush()
                 os.fsync(stream.fileno())
             try:
-                if action == "stop-unresponsive":
+                if action in {"pause", "resume"}:
+                    for flag in flags:
+                        if action == "pause":
+                            if not flag.exists():
+                                with flag.open("x", encoding="utf-8", newline="\n") as stream:
+                                    stream.write("independent-maintenance\n")
+                                    stream.flush()
+                                    os.fsync(stream.fileno())
+                        else:
+                            flag.unlink()
+                    result = {"admission_paused": action == "pause"}
+                elif action == "stop-unresponsive":
                     process, identity, before = self.unresponsive_identity(expected_fingerprint)
                     # psutil checks PID reuse; terminate only this exact process, never a tree.
                     process.terminate()
@@ -266,8 +300,18 @@ class Maintenance:
                         raise UnknownEffectError("MAINTENANCE_ENDPOINT_STILL_PRESENT")
                     result = {**before, "state": "STOPPED", "stopped_at": time.time()}
                     atomic_json(self.root / "service.json", result)
-                elif action == "stop":
-                    result = self.controller.stop()
+                elif action in {"stop", "bootstrap-stop"}:
+                    with admission_fence(self.root) as db:
+                        receipt["admission"] = assert_quiescent(db, self.config.get("retained_history_sha256"))
+                        atomic_json(path, receipt)
+                        live = self.controller.inspect()
+                        if (live.get("fingerprint") != before.get("fingerprint")
+                                or self.current_pointer().get("source_head") != expected_current):
+                            raise PreconditionError("MAINTENANCE_PROCESS_CHANGED")
+                        result = self.controller.stop(shutdown_timeout=45)
+                    with RuntimeWriterLock(self.root / "state/core-writer.lock"):
+                        receipt["after_admission"] = self.quiescent()
+                        receipt["backup"] = self.backup(path.with_suffix(".sqlite"))
                 else:
                     # Prove the Core DB writer is absent before snapshot/pointer effects.
                     with RuntimeWriterLock(self.root / "state" / "core-writer.lock"):
@@ -281,7 +325,7 @@ class Maintenance:
                     elif action == "activate":
                         request_object = SimpleNamespace(arguments={
                             "expected_source_head": target, "expected_current_source_head": expected_current,
-                            "restart": True})
+                            "restart": True, "source_worktree": source_worktree})
                         result = DeploymentEngine(self.profiles).apply(request_object, profile)
                     else:
                         result = receipt["backup"]
@@ -297,12 +341,13 @@ class Maintenance:
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", required=True, type=Path)
-    parser.add_argument("action", choices=("status", "verify", "reconcile", "start", "stop", "stop-unresponsive", "recover", "activate", "backup"))
+    parser.add_argument("action", choices=("status", "verify", "reconcile", "pause", "resume", "start", "stop", "bootstrap-stop", "stop-unresponsive", "recover", "activate", "backup"))
     parser.add_argument("--operation-id")
     parser.add_argument("--expected-current")
     parser.add_argument("--target")
     parser.add_argument("--expected-fingerprint")
     parser.add_argument("--resolves")
+    parser.add_argument("--source-worktree")
     args = parser.parse_args(argv)
     try:
         tool = Maintenance(args.config)
@@ -315,7 +360,8 @@ def main(argv=None):
         else:
             result = tool.run(args.action, operation_id=args.operation_id or "",
                               expected_current=args.expected_current, target=args.target,
-                              expected_fingerprint=args.expected_fingerprint, resolves=args.resolves)
+                              expected_fingerprint=args.expected_fingerprint, resolves=args.resolves,
+                              source_worktree=args.source_worktree)
         print(json.dumps(result, ensure_ascii=False, default=str))
         return 0
     except Exception as exc:

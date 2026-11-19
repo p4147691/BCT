@@ -19,7 +19,14 @@ for name, expected in manifest["files"].items():
     if hashlib.sha256(path.read_bytes()).hexdigest() != expected:
         raise SystemExit("MAINTENANCE_BUNDLE_HASH_MISMATCH:" + name)
 sys.path.insert(0, str(root / "src"))
-from bct_maintenance.cli import main
+if len(sys.argv) > 1 and sys.argv[1] == "--supervisor":
+    sys.argv.pop(1)
+    from bct_maintenance.supervisor import main
+elif len(sys.argv) > 1 and sys.argv[1] == "--operator":
+    sys.argv.pop(1)
+    from bct_maintenance.operator import main
+else:
+    from bct_maintenance.cli import main
 raise SystemExit(main())
 '''
 

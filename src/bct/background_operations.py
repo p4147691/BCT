@@ -112,6 +112,8 @@ def recover_orphaned_orchestration_operations(bct: Any) -> list[dict[str, Any]]:
     evidence only after the recorded process fingerprint is proven absent.
     """
     runtime_root = _runtime_root(bct)
+    if (runtime_root / "BCT_MAINTENANCE.PAUSE").is_file():
+        return []
     jobs = runtime_root / "background-operations"
     jobs.mkdir(parents=True, exist_ok=True)
     durable_operation_ids: set[str] = set()

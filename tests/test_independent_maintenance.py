@@ -212,6 +212,46 @@ class IndependentMaintenanceTests(unittest.TestCase):
                 child.terminate()
             child.wait(timeout=5)
 
+    def test_bootstrap_stops_legacy_core_with_exact_identity_and_backup(self):
+        from unittest.mock import patch
+        legacy = SERVER.replace("'maintenance_contract':1", "'maintenance_contract':0")
+        with patch(__name__ + ".SERVER", legacy):
+            self.good = self.make_release("c" * 40)
+        self.settings["verified_releases"][self.good["source_head"]] = {"manifest_sha256": self.good["manifest_sha256"], "compatible_schema_sha256": [self.schema]}
+        self.settings["admission_releases"].append(self.good["source_head"])
+        self.settings["allowed_actions"].append("bootstrap-stop")
+        self.save_config()
+        self.tool = Maintenance(self.config)
+        _write_current(self.tool.profile, self.good)
+        self.run_action("start", "legacy-start")
+        identity = self.tool.controller.inspect()["fingerprint"]
+        with self.assertRaisesRegex(PreconditionError, "NOT_ACKNOWLEDGED"):
+            self.run_action("stop", "normal-stop")
+        with self.assertRaisesRegex(PreconditionError, "BOOTSTRAP_IDENTITY"):
+            self.run_action("bootstrap-stop", "bad-bootstrap", expected_fingerprint=identity)
+        self.settings["bootstrap"] = {"release_sha": self.good["source_head"], "fingerprint": identity}
+        self.save_config()
+        self.tool = Maintenance(self.config)
+        result = self.run_action("bootstrap-stop", "bootstrap", expected_fingerprint=identity)
+        self.assertEqual(result["state"], "COMPLETED")
+        self.assertTrue(Path(result["backup"]["path"]).is_file())
+        self.assertIn(self.tool.controller.inspect()["state"], {"STOPPED", "STOPPED_STALE_RECEIPT"})
+
+    def test_pause_resume_preserves_foreign_flags_and_requires_healthy_release(self):
+        self.settings["allowed_actions"] += ["pause", "resume"]
+        self.save_config()
+        self.tool = Maintenance(self.config)
+        with self.assertRaisesRegex(PreconditionError, "OWNED_ELSEWHERE"):
+            self.run_action("pause", "foreign")
+        for name in ("BCT_CORE_SUPERVISOR.STOP", "BCT_MAINTENANCE.PAUSE"):
+            (self.root / name).unlink()
+        self.run_action("pause", "pause")
+        with self.assertRaisesRegex(PreconditionError, "RESUME_HEALTH"):
+            self.run_action("resume", "premature-resume")
+        self.run_action("start", "start-paused")
+        self.run_action("resume", "resume")
+        self.assertFalse((self.root / "BCT_MAINTENANCE.PAUSE").exists())
+
     def test_new_id_cannot_bypass_unknown(self):
         self.tool.receipt_path("prior").parent.mkdir()
         atomic_json(self.tool.receipt_path("prior"), {"state": "UNKNOWN", "request": {}})
@@ -233,12 +273,16 @@ class IndependentMaintenanceTests(unittest.TestCase):
         git("add", ".")
         git("commit", "-m", "isolated candidate")
         sha = git("rev-parse", "HEAD")
-        candidate = _validate_source(self.tool.profile, sha)
+        linked = self.base / "linked-source"
+        git("worktree", "add", "--detach", str(linked), sha)
+        (source / "ongoing-user-work.txt").write_text("preserve", encoding="utf-8")
+        candidate = _validate_source(self.tool.profile, sha, linked)
         self.settings["verified_releases"][sha] = {
             "manifest_sha256": candidate["manifest_sha256"], "compatible_schema_sha256": [self.schema]}
         self.save_config()
         tool = Maintenance(self.config)
-        result = tool.run("activate", operation_id="activate", expected_current=self.good["source_head"], target=sha)
+        result = tool.run("activate", operation_id="activate", expected_current=self.good["source_head"], target=sha, source_worktree=str(linked))
+        self.assertEqual((source / "ongoing-user-work.txt").read_text(encoding="utf-8"), "preserve")
         self.assertEqual(result["result"]["source_head"], sha)
         self.assertEqual(tool.controller.inspect()["release_sha"], sha)
         self.assertTrue(Path(result["backup"]["path"]).is_file())
@@ -264,6 +308,16 @@ class IndependentMaintenanceTests(unittest.TestCase):
         pause.unlink()
         created, _ = store.begin_operation(operation_id="new", **values)
         self.assertTrue(created)
+
+    def test_operator_restart_uses_external_receipts_and_resumes(self):
+        from bct_maintenance.operator import main
+        self.settings["allowed_actions"] += ["pause", "resume"]
+        self.save_config()
+        for name in ("BCT_CORE_SUPERVISOR.STOP", "BCT_MAINTENANCE.PAUSE"):
+            (self.root / name).unlink()
+        self.assertEqual(main(["--config", str(self.config), "restart"]), 0)
+        self.assertEqual(self.tool.controller.inspect()["state"], "RUNNING")
+        self.assertFalse((self.root / "BCT_MAINTENANCE.PAUSE").exists())
 
     def test_frozen_bundle_runs_without_checkout_imports(self):
         import importlib.util

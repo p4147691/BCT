@@ -147,6 +147,8 @@ files = [
   "src/bct/service_runtime.py",
   "src/bct_maintenance/locking.py",
   "src/bct_maintenance/cli.py",
+  "src/bct_maintenance/admission.py",
+  "src/bct_maintenance/operator.py",
   "src/bct_maintenance/__init__.py",
   "src/bct_maintenance/engine.py",
   "src/bct_maintenance/errors.py",

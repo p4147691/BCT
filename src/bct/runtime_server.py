@@ -354,7 +354,8 @@ def main() -> int:
     )
     from .send_delayed_message import SendDelayedMessageService
     from .background_operations import recover_orphaned_orchestration_operations
-    orphan_recoveries = recover_orphaned_orchestration_operations(bct)
+    orphan_recoveries = ([] if (runtime_root / "BCT_MAINTENANCE.PAUSE").is_file()
+                         else recover_orphaned_orchestration_operations(bct))
     monitor_principal = ensure_monitor_work(bct, runtime_root=runtime_root)
     label_principal = ensure_notification_work(bct, runtime_root)
     node_label_notifier = NodeLabelNotifier(bct, label_principal)
@@ -416,6 +417,17 @@ def main() -> int:
     }
 
     recovery_stop = threading.Event()
+    startup_recovery_thread = None
+    if (runtime_root / "BCT_MAINTENANCE.PAUSE").is_file():
+        def deferred_startup_recovery():
+            while (runtime_root / "BCT_MAINTENANCE.PAUSE").is_file():
+                if recovery_stop.wait(0.25):
+                    return
+            if not recovery_stop.is_set():
+                state["orphan_recoveries"] = recover_orphaned_orchestration_operations(bct)
+        startup_recovery_thread = threading.Thread(
+            target=deferred_startup_recovery, name="bct-deferred-startup-recovery", daemon=True)
+        startup_recovery_thread.start()
     node_label_notifier.start()
 
     def manager_decision_recovery_loop() -> None:
@@ -1044,6 +1056,8 @@ def main() -> int:
     finally:
         recovery_stop.set()
         node_label_notifier.stop()
+        if startup_recovery_thread is not None:
+            startup_recovery_thread.join(timeout=3.0)
         if recovery_thread is not None:
             recovery_thread.join(timeout=3.0)
         if dispatch_thread is not None:

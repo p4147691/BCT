@@ -6,6 +6,7 @@ No timer, CDP watcher, new MCP, synthetic reassign/unregister or page text.
 from __future__ import annotations
 
 import queue
+from pathlib import Path
 import re
 import threading
 from typing import Any
@@ -85,6 +86,9 @@ class NodeLabelNotifier:
 
     def _run(self) -> None:
         while not self.stop_flag.is_set():
+            if (Path(self.bct.store.path).resolve().parent.parent / "BCT_MAINTENANCE.PAUSE").is_file():
+                self.stop_flag.wait(0.25)
+                continue
             try:
                 event_id = self.pending.get(timeout=0.25)
             except queue.Empty:
