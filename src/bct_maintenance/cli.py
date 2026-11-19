@@ -171,6 +171,25 @@ class Maintenance:
             raise PreconditionError("MAINTENANCE_PROCESS_NOT_UNRESPONSIVE")
         return process, identity, receipt
 
+    def check_pending_effects(self, action, resolves=None):
+        unresolved = []
+        journal = self.root / "maintenance"
+        for item in journal.glob("*.json"):
+            entry = read_json(item)
+            if entry is None:
+                raise PreconditionError("MAINTENANCE_JOURNAL_INVALID")
+            if entry.get("state") in {"STARTED", "UNKNOWN"}:
+                # A completed recovery references, but never rewrites, the old receipt.
+                covered = any((read_json(other) or {}).get("state") == "COMPLETED"
+                              and (read_json(other) or {}).get("request", {}).get("resolves") == item.stem
+                              for other in journal.glob("*.json"))
+                if not covered:
+                    unresolved.append(item.stem)
+        if unresolved and not (action == "recover" and unresolved == [resolves]):
+            raise PreconditionError("MAINTENANCE_PRIOR_EFFECT_UNRESOLVED")
+        if resolves and resolves not in unresolved:
+            raise PreconditionError("MAINTENANCE_RESOLUTION_TARGET_INVALID")
+
     def run(self, action, *, operation_id, expected_current, target=None, expected_fingerprint=None, resolves=None, source_worktree=None):
         if self.config.get("enabled") is not True or action not in self.config.get("allowed_actions", []):
             raise PreconditionError("MAINTENANCE_ACTION_NOT_AUTHORIZED")
@@ -194,23 +213,7 @@ class Maintenance:
                 if old.get("state") == "COMPLETED":
                     return {**old, "replayed": False, "observed": self.status()}
                 raise PreconditionError("MAINTENANCE_RECONCILE_REQUIRED")
-            unresolved = []
-            journal = self.root / "maintenance"
-            for item in journal.glob("*.json"):
-                entry = read_json(item)
-                if entry is None:
-                    raise PreconditionError("MAINTENANCE_JOURNAL_INVALID")
-                if entry.get("state") in {"STARTED", "UNKNOWN"}:
-                    # A completed recovery references, but never rewrites, the old receipt.
-                    covered = any((read_json(other) or {}).get("state") == "COMPLETED"
-                                  and (read_json(other) or {}).get("request", {}).get("resolves") == item.stem
-                                  for other in journal.glob("*.json"))
-                    if not covered:
-                        unresolved.append(item.stem)
-            if unresolved and not (action == "recover" and unresolved == [resolves]):
-                raise PreconditionError("MAINTENANCE_PRIOR_EFFECT_UNRESOLVED")
-            if resolves and resolves not in unresolved:
-                raise PreconditionError("MAINTENANCE_RESOLUTION_TARGET_INVALID")
+            self.check_pending_effects(action, resolves)
             current = self.current_pointer()
             if current is None or current.get("source_head") != expected_current:
                 raise PreconditionError("MAINTENANCE_STALE_CURRENT")

@@ -319,7 +319,107 @@ class IndependentMaintenanceTests(unittest.TestCase):
         self.assertEqual(self.tool.controller.inspect()["state"], "RUNNING")
         self.assertFalse((self.root / "BCT_MAINTENANCE.PAUSE").exists())
 
+    def prepare_operator_start(self, running=True, paused=False):
+        if running:
+            self.run_action("start", "seed-start")
+        self.settings["allowed_actions"] += ["pause", "resume"]
+        self.save_config()
+        self.tool = Maintenance(self.config)
+        for name in ("BCT_CORE_SUPERVISOR.STOP", "BCT_MAINTENANCE.PAUSE"):
+            flag = self.root / name
+            if paused:
+                flag.write_text("independent-maintenance\n", encoding="utf-8")
+            else:
+                flag.unlink()
+
+    def test_operator_start_running_is_read_only_even_with_active_work(self):
+        from bct_maintenance.operator import main
+        self.prepare_operator_start()
+        with closing(sqlite3.connect(self.root / "state/state.sqlite")) as db:
+            db.execute("INSERT INTO operations VALUES('active','RUNNING')")
+            db.execute("INSERT INTO resource_claims VALUES('unknown',1)")
+            db.commit()
+        protected = [self.root / "state/state.sqlite", self.root / "service.json", self.root / "current.json"]
+        before = {p: p.read_bytes() for p in protected}
+        receipts = {p: p.read_bytes() for p in (self.root / "maintenance").glob("*")}
+        pid = self.tool.controller.inspect()["pid"]
+        for _ in range(2):
+            self.assertEqual(main(["--config", str(self.config), "start"]), 0)
+        self.assertEqual(self.tool.controller.inspect()["pid"], pid)
+        self.assertEqual({p: p.read_bytes() for p in protected}, before)
+        self.assertEqual({p: p.read_bytes() for p in (self.root / "maintenance").glob("*")}, receipts)
+        self.assertFalse((self.root / "BCT_MAINTENANCE.PAUSE").exists())
+        self.assertFalse((self.root / "BCT_CORE_SUPERVISOR.STOP").exists())
+
+    def test_operator_start_running_paused_only_resumes(self):
+        from bct_maintenance.operator import start
+        self.prepare_operator_start(paused=True)
+        pid = self.tool.controller.inspect()["pid"]
+        result = start(self.tool, "paused-running")
+        self.assertEqual(result["effect"], "RESUMED")
+        self.assertEqual(self.tool.controller.inspect()["pid"], pid)
+        self.assertFalse((self.root / "BCT_MAINTENANCE.PAUSE").exists())
+        self.assertFalse(self.tool.receipt_path("paused-running-start").exists())
+        self.assertEqual(json.loads(self.tool.receipt_path("paused-running-resume").read_text())["state"], "COMPLETED")
+
+    def test_operator_start_stopped_still_starts_and_resumes(self):
+        from bct_maintenance.operator import start
+        self.prepare_operator_start(running=False)
+        result = start(self.tool, "stopped")
+        self.assertEqual(result["effect"], "STARTED_AND_RESUMED")
+        self.assertEqual(self.tool.controller.inspect()["state"], "RUNNING")
+        self.assertFalse((self.root / "BCT_MAINTENANCE.PAUSE").exists())
+        self.assertTrue(self.tool.receipt_path("stopped-start").exists())
+
+    def test_operator_start_preserves_partial_and_foreign_flags(self):
+        from bct_maintenance.operator import start
+        self.prepare_operator_start()
+        pause = self.root / "BCT_MAINTENANCE.PAUSE"
+        stop = self.root / "BCT_CORE_SUPERVISOR.STOP"
+        pause.write_text("independent-maintenance\n", encoding="utf-8")
+        with self.assertRaisesRegex(PreconditionError, "FLAGS_INCONSISTENT"):
+            start(self.tool, "partial")
+        self.assertFalse(stop.exists())
+        stop.write_text("foreign owner", encoding="utf-8")
+        with self.assertRaisesRegex(PreconditionError, "OWNED_ELSEWHERE"):
+            start(self.tool, "foreign")
+        self.assertEqual(stop.read_text(), "foreign owner")
+        self.assertTrue(pause.exists())
+
+    def test_operator_start_rejects_running_other_release_without_pausing(self):
+        from bct_maintenance.operator import start
+        self.prepare_operator_start()
+        _write_current(self.tool.profile, self.bad)
+        with self.assertRaisesRegex(PreconditionError, "RUNNING_RELEASE_MISMATCH"):
+            start(self.tool, "mismatch")
+        self.assertFalse((self.root / "BCT_MAINTENANCE.PAUSE").exists())
+
+    def test_operator_start_preserves_unknown_journal_and_disabled_authorization(self):
+        from bct_maintenance.operator import start
+        self.prepare_operator_start()
+        old = self.tool.receipt_path("unknown")
+        atomic_json(old, {"state": "UNKNOWN", "request": {}})
+        original = old.read_bytes()
+        with self.assertRaisesRegex(PreconditionError, "PRIOR_EFFECT_UNRESOLVED"):
+            start(self.tool, "blocked")
+        self.assertEqual(old.read_bytes(), original)
+        self.assertFalse((self.root / "BCT_MAINTENANCE.PAUSE").exists())
+        self.settings["enabled"] = False
+        self.save_config()
+        with self.assertRaisesRegex(PreconditionError, "NOT_AUTHORIZED"):
+            start(Maintenance(self.config), "disabled")
+
+    def test_operator_start_unverified_health_does_not_create_pause(self):
+        from unittest.mock import patch
+        from bct_maintenance.operator import start
+        self.prepare_operator_start()
+        with patch.object(self.tool.controller, "inspect", side_effect=PreconditionError("SERVICE_PROCESS_RUNNING_WITHOUT_HEALTH")):
+            with self.assertRaisesRegex(PreconditionError, "WITHOUT_HEALTH"):
+                start(self.tool, "no-health")
+        self.assertFalse((self.root / "BCT_MAINTENANCE.PAUSE").exists())
+
     def test_frozen_bundle_runs_without_checkout_imports(self):
+        self.prepare_operator_start()
         import importlib.util
         path = Path(__file__).resolve().parents[1] / "scripts/build_maintenance_bundle.py"
         spec = importlib.util.spec_from_file_location("bundle_builder", path)
@@ -337,6 +437,11 @@ class IndependentMaintenanceTests(unittest.TestCase):
             result = subprocess.run([sys.executable, str(detached / "run.py"), "--config", str(self.config), "status"],
                                     cwd=self.base, env=env, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=10)
             self.assertEqual(result.returncode, 0, result.stderr)
+            noop = subprocess.run([sys.executable, "-I", str(detached / "run.py"), "--operator", "--config", str(self.config), "start"],
+                                  cwd=self.base, env=env, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=10)
+            self.assertEqual(noop.returncode, 0, noop.stderr)
+            self.assertEqual(json.loads(noop.stdout)["effect"], "NONE_READ_ONLY")
+            self.assertFalse((self.root / "BCT_MAINTENANCE.PAUSE").exists())
             (detached / "src/bct_maintenance/cli.py").write_text("tamper", encoding="utf-8")
             tampered = subprocess.run([sys.executable, str(detached / "run.py"), "--help"],
                                      env=env, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=10)

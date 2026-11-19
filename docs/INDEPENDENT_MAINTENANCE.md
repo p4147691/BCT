@@ -44,6 +44,17 @@ BCT 본체와 정비 도구는 별도로 보관한다. 정비 도구는 `bct`를
 완료한 동일 요청은 영수증만 반환한다. STARTED/UNKNOWN을 새 ID로 우회할 수 없다.
 정지 상태가 확인된 후 recover --resolves 기존ID로 원본과 연결한 복구만 가능하다.
 
+## 간편 start의 상태별 동작
+
+`maintenance.cmd start`는 현재 포인터·승인된 릴리스·실제 프로세스/health 신원이 모두
+일치하고 이미 정상 실행 중이면 **pause, 재기동, 백업, 영수증 추가 없이** 성공한다.
+진행 중인 BCT 작업도 그대로 둔다. 두 정비 표식이 이 도구 소유로 존재하면 기존 resume
+검사를 거쳐 접수만 재개한다. 실제로 정지되어 있을 때만 pause → start → resume을 수행한다.
+표식이 하나만 있거나 다른 소유자 것인 경우, 신원이 불확실한 경우, 정비 UNKNOWN이 남은
+경우는 표식을 건드리지 않고 거부한다. 원시 CLI의 start는 정지 상태 전제 계약을 유지한다.
+구현은 `src/bct_maintenance/operator.py::start`, 공통 미확정 정비 기록 검사는
+`src/bct_maintenance/cli.py::Maintenance.check_pending_effects`를 사용한다.
+
 ## 최초 전환에서 보존하는 것
 
 구형 Core는 pause 계약을 모르므로 파일만 만든 것으로 안전을 주장하지 않는다.

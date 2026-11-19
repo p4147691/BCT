@@ -1081,6 +1081,10 @@
           "symbol": "admission_fence"
         },
         {
+          "path": "src/bct_maintenance/operator.py",
+          "symbol": "start"
+        },
+        {
           "path": "src/bct_maintenance/engine.py",
           "symbol": "DeploymentEngine"
         },
@@ -1109,7 +1113,7 @@
           "symbol": "build"
         }
       ],
-      "contract": "External CLI and BCT adapters share release verification, activation and exact process control without importing the BCT application. Explicit pinned configuration, exact SHA, operation journal and read-only work inspection. First transition uses a rollback-only SQLite fence and exact pinned history; no replay or history cleanup. LIVE installation is recorded separately.",
+      "contract": "External CLI and BCT adapters share release verification, activation and exact process control without importing the BCT application. Explicit pinned configuration, exact SHA, operation journal and read-only work inspection. Operator start is a verified no-op for an already running unpaused Core; owned paused instances use guarded resume. First transition uses a rollback-only SQLite fence and exact pinned history; no replay or history cleanup. LIVE installation is recorded separately.",
       "effects": [
         "runtime-release-and-pointer",
         "exact-core-process",
