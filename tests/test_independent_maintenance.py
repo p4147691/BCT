@@ -371,6 +371,21 @@ class IndependentMaintenanceTests(unittest.TestCase):
         self.assertFalse((self.root / "BCT_MAINTENANCE.PAUSE").exists())
         self.assertTrue(self.tool.receipt_path("stopped-start").exists())
 
+    def test_operator_start_stopped_paused_starts_and_resumes(self):
+        from bct_maintenance.operator import start
+        self.prepare_operator_start(running=False, paused=True)
+        result = start(self.tool, "stopped-paused")
+        self.assertEqual(result["effect"], "STARTED_AND_RESUMED")
+        self.assertEqual(self.tool.controller.inspect()["state"], "RUNNING")
+        for name in ("BCT_CORE_SUPERVISOR.STOP", "BCT_MAINTENANCE.PAUSE"):
+            self.assertFalse((self.root / name).exists())
+        self.assertFalse(self.tool.receipt_path("stopped-paused-pause").exists())
+        for action in ("start", "resume"):
+            receipt = json.loads(self.tool.receipt_path("stopped-paused-" + action).read_text())
+            self.assertEqual(receipt["state"], "COMPLETED")
+        with closing(sqlite3.connect(self.root / "state/state.sqlite")) as db:
+            self.assertEqual(db.execute("SELECT value FROM preserved").fetchone()[0], "keep")
+
     def test_operator_start_preserves_partial_and_foreign_flags(self):
         from bct_maintenance.operator import start
         self.prepare_operator_start()

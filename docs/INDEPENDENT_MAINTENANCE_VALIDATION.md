@@ -68,7 +68,11 @@ Operation, Claim 전체 행과 보존용 데이터를 비교해 유지됨을 확
 별도 격리 폴더 `D:/BCT/worktrees/maintenance-start-20261120`에는 정지+pause에서
 start 후 재개하는 회귀 테스트 추가분을 보존했다. 기준 `5ead877`과 해당 미커밋 추가분에서
 독립 정비 24개·접수 5개 테스트, compileall, diff 검사를 통과했다.
-이 추가분이 운영 묶음이나 위 CI에 포함됐다고 주장하지 않는다.
+이 추가분은 당시 운영 묶음이나 위 CI에 포함되지 않았다.
+후속 정본 반영(2026-11-20): 같은 테스트를
+`tests/test_independent_maintenance.py::IndependentMaintenanceTests.test_operator_start_stopped_paused_starts_and_resumes`
+에 편입한다. 원래 격리 폴더의 변경과 운영 검증 기록은 보존한다.
+이 반영은 테스트와 문서만 변경하며 운영 묶음·Core에는 적용하지 않는다.
 
 이번 운영 확인은 실행 중인 Core의 start 및 읽기 요청 한 건의 실제 접수·완료 범위다.
 정지+pause의 start는 위 격리 증거와 구분한다. 쓰기·외부 메시지·브라우저 조작·장시간 작업,
