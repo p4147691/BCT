@@ -17,9 +17,9 @@ class RccSourceBaselineTests(unittest.TestCase):
 
     def test_current_candidate_critical_payload_hashes_match_recorded_baseline(self):
         release = json.loads((
-            self.root / "modules" / "rcc" / "release" / "rcc_v2_rc.json"
+            self.root / "modules" / "rcc" / "release" / "rcc_loop_focus_20261111.json"
         ).read_text(encoding="utf-8-sig"))
-        self.assertEqual("RCC_COMPOSER_REBIND_20261110", release["candidate"])
+        self.assertEqual("RCC_LOOP_FOCUS_SETTLE_20261111", release["candidate"])
         self.assertEqual(
             "ec256e89fdaf8ebd6bae5f6892ae3f108d660c1b235e9aa74a0fb371dbbe3ada",
             release["rollbackBaseline"]["aggregateSha256"],

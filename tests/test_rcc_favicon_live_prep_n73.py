@@ -18,7 +18,7 @@ ROLLBACK_EXTRA = {
 class RccFaviconLivePreparationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.payload = json.loads((RELEASE / "rcc_v2_rc.json").read_text(encoding="utf-8"))
+        cls.payload = json.loads((RELEASE / "rcc_loop_focus_20261111.json").read_text(encoding="utf-8"))
         cls.rollback = {entry["path"]: entry for entry in cls.payload["rollbackBaseline"]["files"]}
         cls.candidate = {entry["path"]: entry for entry in cls.payload["candidateInventory"]["files"]}
 
