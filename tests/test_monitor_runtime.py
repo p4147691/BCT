@@ -145,6 +145,14 @@ class MonitorRuntimeTests(unittest.TestCase):
             self.assertGreaterEqual(timings["total_ms"] + 0.01, sum(
                 timings[key] for key in ("store_snapshot_ms", "process_sessions_ms", "rcc_discovery_ms", "rcc_state_ms")
             ))
+            tail = state["observability"]["provider_timings"]
+            self.assertEqual(
+                {"manager_projection_ms", "label_registry_ms", "label_notification_wake_ms",
+                 "conversation_projection_ms", "claim_diagnostics_ms",
+                 "identity_payload_projection_ms", "provider_total_ms"},
+                set(tail),
+            )
+            self.assertGreaterEqual(tail["provider_total_ms"], timings["total_ms"])
             self.assertEqual(1, state["counts"]["works"])
             self.assertEqual(0, state["counts"]["unresolved_claims_shared"])
             self.assertEqual(0, state["counts"]["unresolved_claims_exact"])

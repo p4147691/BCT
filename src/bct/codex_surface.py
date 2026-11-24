@@ -18,7 +18,7 @@ def local_codex_reference(url):
 def codex_directory(store):
     if not callable(getattr(store,"transaction",None)):
         return {}
-    with store.transaction() as db:
+    with store.read_transaction() as db:
         if not db.execute("SELECT 1 FROM sqlite_master WHERE name='codex_surface_nodes' AND type='table'").fetchone():
             return {}
         return {r["reference"]: {"identity_kind":"CODEX_LOCAL_DRAFT","reference":r["reference"],

@@ -106,6 +106,17 @@ class Store:
             if changed:
                 notify()
 
+    @contextmanager
+    def read_transaction(self) -> Iterator[sqlite3.Connection]:
+        """Read one consistent WAL snapshot without reserving the writer."""
+        with self._readonly() as db:
+            db.execute("PRAGMA query_only = ON")
+            db.execute("BEGIN")
+            try:
+                yield db
+            finally:
+                db.rollback()
+
     def _initialize(self) -> None:
         Path(self.path).parent.mkdir(parents=True, exist_ok=True)
         with self.transaction() as db:
@@ -759,7 +770,7 @@ class Store:
                                          conversation_keys=None) -> list[dict]:
         limit = max(1, min(int(limit), 2048))
         keys = list(dict.fromkeys(str(key).lower() for key in (conversation_keys or [])))
-        with self.transaction() as db:
+        with self.read_transaction() as db:
             if conversation_keys is not None:
                 if not keys:
                     return []
@@ -1272,6 +1283,16 @@ class Store:
         db = self._connect()
         try:
             rows = db.execute(
+                "WITH latest_claim_events AS ("
+                "SELECT ev.subject_id,MAX(ev.event_id) AS event_id FROM events ev "
+                "WHERE ev.subject_id IN (SELECT op.operation_id FROM resource_claims cl "
+                "JOIN operations op ON op.operation_id=cl.operation_id "
+                "AND op.work_id=cl.work_id AND op.assignment_epoch=cl.assignment_epoch "
+                "WHERE cl.unresolved=1) AND ev.kind IN ("
+                "'OPERATION_STARTED','OPERATION_FINISHED','OPERATION_RECONCILED',"
+                "'OPERATION_STEPS_INITIALIZED','OPERATION_STEP_STARTED',"
+                "'OPERATION_STEP_FINISHED','OPERATION_STEP_SKIPPED') "
+                "GROUP BY ev.subject_id) "
                 "SELECT c.resource_key,c.operation_id,c.work_id,c.assignment_epoch,"
                 "o.capability,o.target,o.state AS operation_state,o.outcome,"
                 "o.created_at,o.updated_at,o.error,"
@@ -1284,13 +1305,8 @@ class Store:
                 "AND o.work_id=c.work_id "
                 "AND o.assignment_epoch=c.assignment_epoch "
                 "LEFT JOIN background_job_executors x ON x.operation_id=o.operation_id "
-                "LEFT JOIN events e ON e.event_id=("
-                "SELECT MAX(ev.event_id) FROM events ev "
-                "WHERE ev.subject_id=o.operation_id "
-                "AND ev.kind IN ("
-                "'OPERATION_STARTED','OPERATION_FINISHED','OPERATION_RECONCILED',"
-                "'OPERATION_STEPS_INITIALIZED','OPERATION_STEP_STARTED',"
-                "'OPERATION_STEP_FINISHED','OPERATION_STEP_SKIPPED')) "
+                "LEFT JOIN latest_claim_events ce ON ce.subject_id=o.operation_id "
+                "LEFT JOIN events e ON e.event_id=ce.event_id "
                 "LEFT JOIN operation_effect_stages j ON j.sequence=("
                 "SELECT MAX(js.sequence) FROM operation_effect_stages js "
                 "WHERE js.operation_id=o.operation_id) AND j.operation_id=o.operation_id "

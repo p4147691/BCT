@@ -414,7 +414,7 @@ def _conversation_network_manager_statuses(
         for value in observed_conversation_keys
         if str(value or "").strip()
     }
-    with store.transaction() as db:
+    with store.read_transaction() as db:
         projects = [dict(row) for row in db.execute(
             "SELECT project_id,display_name FROM conversation_network_projects "
             "WHERE active=1 ORDER BY display_name COLLATE NOCASE,project_id"
@@ -479,7 +479,9 @@ def build_monitor_state(
         store,
         observed_conversation_keys=[key for key, _title in observed_conversations],
     )
+    after_managers = time.perf_counter()
     labels = ensure_observed_node_labels(store, conversations=observed_conversations)
+    after_labels = time.perf_counter()
     # Existing Monitor GET is a legitimate observation wake, not a new poller.
     # Requeue only never-dispatched PENDING committed label events.
     store.wake_node_label_notifications(
@@ -492,6 +494,7 @@ def build_monitor_state(
             if isinstance(tab, dict)
         ],
     )
+    after_wake = time.perf_counter()
     scopes = conversation_scope_directory(
         store,
         conversation_keys=[key for key, _title in observed_conversations],
@@ -513,6 +516,7 @@ def build_monitor_state(
                 scope["display_order"] = display_orders[key]
             if scope:
                 tab["conversation_scope"] = scope
+    after_conversations = time.perf_counter()
     # Passive timing of the existing read-only monitor stages. Do not persist,
     # probe additional endpoints, or expose operation payloads and credentials.
     timings = {
@@ -523,11 +527,29 @@ def build_monitor_state(
         "total_ms": round((after_rcc - started) * 1000, 3),
     }
     claim_diagnostics = store.claim_diagnostics()
+    after_claims = time.perf_counter()
+    current_nodes = classify_current_nodes(rcc, observed_at=time.time())
+    dot_nodes = dot_directory(store)
+    codex_surfaces = codex_directory(store)
+    codex_nodes = observed_codex_nodes(store, rcc)
+    rcc_payload = _rcc_payload_status(
+        source_path=rcc_source_path, live_path=rcc_live_path, instances=rcc,
+    )
+    after_projection = time.perf_counter()
+    provider_timings = {
+        "manager_projection_ms": round((after_managers - after_rcc) * 1000, 3),
+        "label_registry_ms": round((after_labels - after_managers) * 1000, 3),
+        "label_notification_wake_ms": round((after_wake - after_labels) * 1000, 3),
+        "conversation_projection_ms": round((after_conversations - after_wake) * 1000, 3),
+        "claim_diagnostics_ms": round((after_claims - after_conversations) * 1000, 3),
+        "identity_payload_projection_ms": round((after_projection - after_claims) * 1000, 3),
+        "provider_total_ms": round((after_projection - started) * 1000, 3),
+    }
     shared_claims = sum(
         1 for item in claim_diagnostics if item["scope"] == "SHARED_RESOURCE"
     )
     return {
-        "observability": {"schema": 1, "read_only": False, "registry_sync": "DISPLAY_LABELS_ONLY", "timings": timings, "mcp_recent": recent_stages()},
+        "observability": {"schema": 1, "read_only": False, "registry_sync": "DISPLAY_LABELS_ONLY", "timings": timings, "provider_timings": provider_timings, "mcp_recent": recent_stages()},
         "schema": 1,
         "generated_at": time.time(),
         "service": dict(service_state),
@@ -545,18 +567,12 @@ def build_monitor_state(
             "orchestration_assignments": len(snapshot["orchestration_assignments"]),
             "github_inbox": len(snapshot.get("github_run_inbox", [])),
         },
-        "current_nodes": classify_current_nodes(rcc, observed_at=time.time()),
+        "current_nodes": current_nodes,
         "conversation_network_managers": manager_statuses,
-        "dot_node_info": dot_directory(store),
-        "codex_surface_directory": codex_directory(store),
-        "codex_nodes": observed_codex_nodes(store, rcc),
-        "rcc": {
-            "instances": rcc,
-            "payload": _rcc_payload_status(
-                source_path=rcc_source_path, live_path=rcc_live_path,
-                instances=rcc,
-            ),
-        },
+        "dot_node_info": dot_nodes,
+        "codex_surface_directory": codex_surfaces,
+        "codex_nodes": codex_nodes,
+        "rcc": {"instances": rcc, "payload": rcc_payload},
         "process_sessions": sessions,
         "claim_diagnostics": claim_diagnostics,
         **snapshot,

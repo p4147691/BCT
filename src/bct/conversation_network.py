@@ -245,16 +245,24 @@ def upsert_conversation(store: Store, *, conversation_key: str, display_name: st
     return {"conversation_key": key, "display_name": name, "node_label": _node_label(next_number)}
 
 
-def node_labels_for_conversations(store: Store, *, conversation_keys: list[str] | tuple[str, ...]) -> dict[str, str]:
+def node_labels_for_conversations(
+    store: Store, *, conversation_keys: list[str] | tuple[str, ...],
+    _require_registered_conversation: bool = False,
+) -> dict[str, str]:
     """Read existing BCT display labels without allocating or changing state."""
     keys = sorted({str(value or "").strip().lower() for value in conversation_keys if _UUID.fullmatch(str(value or "").strip())})
     if not keys:
         return {}
     placeholders = ",".join("?" for _ in keys)
-    with store.transaction() as db:
+    registered_filter = (
+        " AND EXISTS (SELECT 1 FROM conversation_network_conversations c "
+        "WHERE c.conversation_key=n.conversation_key)"
+        if _require_registered_conversation else ""
+    )
+    with store.read_transaction() as db:
         rows = list(db.execute(
-            "SELECT conversation_key,node_number FROM conversation_network_node_labels "
-            f"WHERE conversation_key IN ({placeholders})", keys,
+            "SELECT n.conversation_key,n.node_number FROM conversation_network_node_labels n "
+            f"WHERE n.conversation_key IN ({placeholders}){registered_filter}", keys,
         ))
     return {str(row["conversation_key"]): _node_label(int(row["node_number"])) for row in rows}
 
@@ -270,6 +278,13 @@ def ensure_observed_node_labels(store: Store, *, conversations: list[tuple[str, 
         titles.setdefault(key, title)
     if not titles:
         return {}
+    existing = node_labels_for_conversations(
+        store, conversation_keys=list(titles), _require_registered_conversation=True,
+    )
+    if len(existing) == len(titles):
+        return existing
+    # Assign missing labels in the original serialized writer transaction;
+    # every missing row is rechecked there before recording its durable event.
     new_label_events = []
     with store.transaction() as db:
         next_number = _next_node_number(db)
@@ -805,7 +820,7 @@ def conversation_scope_directory(
     if not keys:
         return {}
     placeholders = ",".join("?" for _ in keys)
-    with store.transaction() as db:
+    with store.read_transaction() as db:
         rows = [dict(row) for row in db.execute(
             "SELECT m.conversation_key,m.project_id,p.display_name AS scope_name,m.updated_at "
             "FROM conversation_network_memberships m "
@@ -1074,7 +1089,7 @@ def conversation_display_order_directory(
     if not keys:
         return {}
     placeholders = ",".join("?" for _ in keys)
-    with store.transaction() as db:
+    with store.read_transaction() as db:
         rows = db.execute(
             "SELECT conversation_key,display_order FROM conversation_network_conversations "
             f"WHERE conversation_key IN ({placeholders})",
