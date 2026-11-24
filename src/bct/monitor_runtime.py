@@ -526,7 +526,8 @@ def build_monitor_state(
         "rcc_state_ms": round((after_rcc - after_discovery) * 1000, 3),
         "total_ms": round((after_rcc - started) * 1000, 3),
     }
-    claim_diagnostics = store.claim_diagnostics()
+    claim_timings: dict[str, float | int] = {}
+    claim_diagnostics = store.claim_diagnostics(timings=claim_timings)
     after_claims = time.perf_counter()
     current_nodes = classify_current_nodes(rcc, observed_at=time.time())
     dot_nodes = dot_directory(store)
@@ -549,7 +550,8 @@ def build_monitor_state(
         1 for item in claim_diagnostics if item["scope"] == "SHARED_RESOURCE"
     )
     return {
-        "observability": {"schema": 1, "read_only": False, "registry_sync": "DISPLAY_LABELS_ONLY", "timings": timings, "provider_timings": provider_timings, "mcp_recent": recent_stages()},
+        "observability": {"schema": 1, "read_only": False, "registry_sync": "DISPLAY_LABELS_ONLY", "timings": timings, "provider_timings": provider_timings,
+                          "claim_diagnostics_timings": claim_timings, "mcp_recent": recent_stages()},
         "schema": 1,
         "generated_at": time.time(),
         "service": dict(service_state),

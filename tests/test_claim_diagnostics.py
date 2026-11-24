@@ -2,6 +2,8 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 from bct.core.store import Store
 from bct.core.models import ConflictError, Principal, Work, Outcome
 
@@ -82,6 +84,54 @@ class ClaimDiagnosticsTests(unittest.TestCase):
         self.assertIsNone(row["executor"])
         self.assertEqual("INSUFFICIENT_EVIDENCE", row["diagnosis"])
         self.assertFalse(row["can_auto_release"])
+
+    def test_same_pid_uses_single_observation_but_distinct_fingerprints(self):
+        records = [
+            ("old", 101, "old-fingerprint"),
+            ("current", 101, "new-fingerprint"),
+            ("no-fingerprint", 101, ""),
+            ("unobservable", 102, "recorded"),
+            ("also-unobservable", 102, "recorded"),
+        ]
+        for name, _, _ in records:
+            self.claim(name)
+            self.store.finish_operation(
+                operation_id=name, outcome=Outcome.UNKNOWN, evidence={},
+                error="uncertain", release_claims=False,
+            )
+        with self.store.transaction() as db:
+            for name, pid, fingerprint in records:
+                db.execute("INSERT INTO background_jobs VALUES(?,?,?)", (name, "{}", 1.0))
+                db.execute("INSERT INTO background_job_executors(operation_id,pid,fingerprint,claimed_at) "
+                           "VALUES(?,?,?,?)", (name, pid, fingerprint, 2.0))
+        probe_results = {101: SimpleNamespace(fingerprint="new-fingerprint"), 102: None}
+
+        def observe(pid):
+            if pid == 102:
+                raise OSError("private diagnostic text")
+            return probe_results[pid]
+
+        with patch("bct.service_runtime.process_identity", side_effect=observe) as probe:
+            timings = {}
+            rows = {row["operation_id"]: row for row in self.store.claim_diagnostics(timings=timings)}
+            self.assertEqual(2, probe.call_count)
+            self.assertEqual(2, timings["process_probes"])
+            self.assertEqual(5, timings["claim_rows"])
+            self.assertEqual("PID_IDENTITY_MISMATCH", rows["old"]["executor"]["identity_status"])
+            self.assertTrue(rows["current"]["executor"]["identity_verified"])
+            self.assertEqual("FINGERPRINT_MISSING", rows["no-fingerprint"]["executor"]["identity_status"])
+            self.assertEqual("NOT_OBSERVABLE", rows["unobservable"]["executor"]["identity_status"])
+            self.assertEqual("NOT_OBSERVABLE", rows["also-unobservable"]["executor"]["identity_status"])
+            self.assertNotIn("private diagnostic text", str(timings))
+            for row in rows.values():
+                self.assertEqual("UNKNOWN_EFFECT", row["diagnosis"])
+                self.assertFalse(row["can_auto_release"])
+                self.assertFalse(row["replay_allowed"])
+            probe_results[101] = SimpleNamespace(fingerprint="old-fingerprint")
+            next_rows = {row["operation_id"]: row for row in self.store.claim_diagnostics()}
+            self.assertEqual(4, probe.call_count)
+            self.assertTrue(next_rows["old"]["executor"]["identity_verified"])
+            self.assertEqual("PID_IDENTITY_MISMATCH", next_rows["current"]["executor"]["identity_status"])
 
     def test_running_without_executor_not_claimed_as_executing(self):
         self.claim("running")
