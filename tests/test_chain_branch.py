@@ -180,16 +180,16 @@ class ChainBranchPublicTests(unittest.IsolatedAsyncioTestCase):
                                           task_id="task-b", operation_id="op-b")
             mcp = build_mcp(SimpleNamespace(operations=Operations(), store=store),
                             compact_catalogue=True, status_provider=lambda: {"monitor": {}})
-            _, requested = await mcp.call_tool("bct_chain_branch", {
+            requested = (await mcp.call_tool("bct_chain_branch", {
                 "action": "request", "work_id": work.work_id, "request_id": "request-ba",
                 "parent_direction_id": "direction-b", "parent_step_id": "CAPTURE_OBSERVATION",
                 "parent_task_id": "task-b", "parent_generation": 1, "kind": "DIAGNOSIS",
                 "reason": "Capture observation needs diagnosis.",
-            })
+            })).structured_content
             self.assertEqual("WAITING_INPUT", requested["status"])
             self.assertIn("create_child_direction", requested["does_not"])
-            _, tree = await mcp.call_tool("bct_chain_branch", {"action": "tree", "work_id": work.work_id})
+            tree = (await mcp.call_tool("bct_chain_branch", {"action": "tree", "work_id": work.work_id})).structured_content
             self.assertEqual("NONE_READ_ONLY", tree["effects"])
             self.assertEqual("request-ba", tree["chain_tree"]["manager_attention"][0]["request_id"])
-            _, status = await mcp.call_tool("bct_status", {"scope": "bct"})
+            status = (await mcp.call_tool("bct_status", {"scope": "bct"})).structured_content
             self.assertEqual("request-ba", status["chain_branch_attention"][0]["request_id"])

@@ -8,8 +8,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
 
-from mcp.server.fastmcp.exceptions import ToolError
-from mcp.shared.memory import create_connected_server_and_client_session
+from mcp import Client
+from mcp.server.mcpserver.exceptions import ToolError
 from bct.mcp_server import build_mcp
 from bct.features.browser_extension_manage import BrowserExtensionManageFeature
 from bct.core.models import PreconditionError, Work
@@ -70,7 +70,7 @@ class CatalogueSettingsTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_client_tools_list_sees_runtime_config_refresh(self):
         # Real MCP protocol over memory streams, no HTTP or browser side effects.
-        async with create_connected_server_and_client_session(self.server) as client:
+        async with Client(self.server, cache=None) as client:
             before = {t.name for t in (await client.list_tools()).tools}
             self.assertIn("bct_browser_extension_manage", before)
             self.path.write_text(
@@ -107,13 +107,13 @@ class CatalogueSettingsTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("UNREGISTERED_TOOL", self.server.catalogue_settings.last_error)
 
     async def test_description_change_keeps_same_argument_schema(self):
-        initial = (await self.names())["bct_browser_extension_manage"].inputSchema
+        initial = (await self.names())["bct_browser_extension_manage"].input_schema
         self.path.write_text(
             '[tools.bct_browser_extension_manage]\n'
             'description = "Configured title"\n', encoding="utf-8",
         )
         changed = (await self.names())["bct_browser_extension_manage"]
-        self.assertEqual(initial, changed.inputSchema)
+        self.assertEqual(initial, changed.input_schema)
         self.assertEqual("Configured title", changed.description)
 
 

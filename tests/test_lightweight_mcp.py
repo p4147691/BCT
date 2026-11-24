@@ -116,7 +116,7 @@ class LightweightAuthTests(unittest.IsolatedAsyncioTestCase):
 class CompactRuntimeHTTPTests(unittest.TestCase):
     def test_real_isolated_runtime_and_receipt(self):
         import os
-        import httpx
+        import httpx2 as httpx
         from unittest.mock import patch
         from mcp import ClientSession
         from mcp.client.streamable_http import streamable_http_client
@@ -134,7 +134,7 @@ class CompactRuntimeHTTPTests(unittest.TestCase):
                         headers={"Authorization": "Bearer " + fixture.controller.mcp_secret()},
                         timeout=15,
                     ) as http:
-                        async with streamable_http_client(url, http_client=http) as (read, write, _):
+                        async with streamable_http_client(url, http_client=http) as (read, write):
                             async with ClientSession(read, write) as client:
                                 await client.initialize()
                                 names = {t.name for t in (await client.list_tools()).tools}
@@ -144,25 +144,25 @@ class CompactRuntimeHTTPTests(unittest.TestCase):
                                     "work_id": "compact-test-work", "request_summary": "read only test",
                                     "roots": [str(fixture.project)], "actions": ["read"],
                                 })
-                                self.assertFalse(created.isError)
+                                self.assertFalse(created.is_error)
                                 params = {"capability": "read", "work_id": "compact-test-work",
                                           "operation_id": "compact-read-1",
                                           "arguments": {"path": str(fixture.project / "hello.txt")}}
                                 result = await client.call_tool("bct_dispatch", params)
-                                self.assertEqual("APPLIED", result.structuredContent["outcome"])
+                                self.assertEqual("APPLIED", result.structured_content["outcome"])
                                 replay = await client.call_tool("bct_dispatch", params)
-                                self.assertTrue(replay.structuredContent["duplicate"])
+                                self.assertTrue(replay.structured_content["duplicate"])
                                 receipt = await client.call_tool("bct_operation_get", {
                                     "work_id": "compact-test-work", "operation_id": "compact-read-1",
                                 })
-                                self.assertEqual("APPLIED", receipt.structuredContent["outcome"])
+                                self.assertEqual("APPLIED", receipt.structured_content["outcome"])
                                 # A read-only Work must reject writes.
                                 unauthorized = await client.call_tool("bct_dispatch", {
                                     "capability": "write", "work_id": "compact-test-work",
                                     "operation_id": "compact-denied-write-1",
                                     "arguments": {"path": str(fixture.project / "hello.txt"), "content": "NO"},
                                 })
-                                self.assertTrue(unauthorized.isError or (unauthorized.structuredContent or {}).get("outcome") != "APPLIED")
+                                self.assertTrue(unauthorized.is_error or (unauthorized.structured_content or {}).get("outcome") != "APPLIED")
                                 self.assertEqual(
                                     "hello from MCP\n",
                                     (fixture.project / "hello.txt").read_text(encoding="utf-8"),
@@ -173,7 +173,7 @@ class CompactRuntimeHTTPTests(unittest.TestCase):
                                     "operation_id": "compact-read-1",
                                     "arguments": {"path": str(fixture.project / "missing.txt")},
                                 })
-                                self.assertTrue(reused.isError or (reused.structuredContent or {}).get("outcome") != "APPLIED")
+                                self.assertTrue(reused.is_error or (reused.structured_content or {}).get("outcome") != "APPLIED")
                 asyncio.run(probe())
             finally:
                 fixture.tearDown()
@@ -228,7 +228,7 @@ class CompactClaimContractTests(unittest.TestCase):
 class CompactUnknownHTTPTests(unittest.TestCase):
     def test_unknown_claim_conflict_and_recovery_rejection_over_http(self):
         import os
-        import httpx
+        import httpx2 as httpx
         from pathlib import Path
         from unittest.mock import patch
         from mcp import ClientSession
@@ -247,7 +247,7 @@ class CompactUnknownHTTPTests(unittest.TestCase):
                         headers={"Authorization": "Bearer " + fixture.controller.mcp_secret()},
                         timeout=15,
                     ) as http:
-                        async with streamable_http_client(url, http_client=http) as (read, write, _):
+                        async with streamable_http_client(url, http_client=http) as (read, write):
                             async with ClientSession(read, write) as client:
                                 await client.initialize()
                                 created = await client.call_tool("bct_work_create", {
@@ -256,7 +256,7 @@ class CompactUnknownHTTPTests(unittest.TestCase):
                                     "roots": [str(fixture.project)],
                                     "actions": ["read", "claim_reconcile"],
                                 })
-                                self.assertFalse(created.isError)
+                                self.assertFalse(created.is_error)
                                 store = Store(fixture.runtime / "state" / "state.sqlite")
                                 work = store.get_work("unknown-http-work")
                                 target = str(fixture.project / "hello.txt")
@@ -293,12 +293,12 @@ class CompactUnknownHTTPTests(unittest.TestCase):
                                     "operation_id": "blocked-read",
                                     "arguments": {"path": target},
                                 })
-                                self.assertFalse(blocked.isError)
-                                self.assertEqual("APPLIED", blocked.structuredContent["outcome"])
+                                self.assertFalse(blocked.is_error)
+                                self.assertEqual("APPLIED", blocked.structured_content["outcome"])
                                 original = await client.call_tool("bct_operation_get", {
                                     "work_id": "unknown-http-work", "operation_id": "original-unknown",
                                 })
-                                self.assertEqual("UNKNOWN", original.structuredContent["outcome"])
+                                self.assertEqual("UNKNOWN", original.structured_content["outcome"])
                                 self.assertTrue(any(
                                     row["operation_id"] == "original-unknown"
                                     for row in store.claim_diagnostics()
@@ -316,8 +316,8 @@ class CompactUnknownHTTPTests(unittest.TestCase):
                                     "operation_id": "blocked-read",
                                     "arguments": {"path": target},
                                 })
-                                self.assertFalse(retry.isError)
-                                self.assertEqual("APPLIED", retry.structuredContent["outcome"])
+                                self.assertFalse(retry.is_error)
+                                self.assertEqual("APPLIED", retry.structured_content["outcome"])
                                 self.assertEqual("UNKNOWN", store.get_operation_for(
                                     operation_id="original-unknown",
                                     work_id="unknown-http-work",
@@ -347,8 +347,8 @@ class CompactUnknownHTTPTests(unittest.TestCase):
                                         "reason": "unproven test",
                                     },
                                 })
-                                self.assertTrue(refused.isError or
-                                                (refused.structuredContent or {}).get("outcome") != "APPLIED")
+                                self.assertTrue(refused.is_error or
+                                                (refused.structured_content or {}).get("outcome") != "APPLIED")
                                 self.assertEqual("UNKNOWN", store.get_operation_for(
                                     operation_id="unknown-write",
                                     work_id="unknown-http-work",
@@ -363,7 +363,7 @@ class CompactUnknownHTTPTests(unittest.TestCase):
 class HybridRuntimeHTTPTests(unittest.TestCase):
     def test_direct_read_and_dispatch_same_receipt_boundary(self):
         import os
-        import httpx
+        import httpx2 as httpx
         from unittest.mock import patch
         from mcp import ClientSession
         from mcp.client.streamable_http import streamable_http_client
@@ -378,7 +378,7 @@ class HybridRuntimeHTTPTests(unittest.TestCase):
                         headers={"Authorization": "Bearer " + fixture.controller.mcp_secret()},
                         timeout=15,
                     ) as http:
-                        async with streamable_http_client(url, http_client=http) as (read, write, _):
+                        async with streamable_http_client(url, http_client=http) as (read, write):
                             async with ClientSession(read, write) as client:
                                 await client.initialize()
                                 names = {t.name for t in (await client.list_tools()).tools}
@@ -390,19 +390,19 @@ class HybridRuntimeHTTPTests(unittest.TestCase):
                                     "work_id": "hybrid-work", "request_summary": "fixture",
                                     "roots": [str(fixture.project)], "actions": ["read"],
                                 })
-                                self.assertFalse(created.isError)
+                                self.assertFalse(created.is_error)
                                 original = {"work_id": "hybrid-work", "operation_id": "hybrid-read",
                                             "arguments": {"path": str(fixture.project / "hello.txt")}}
                                 a = await client.call_tool("bct_read", original)
-                                self.assertEqual("APPLIED", a.structuredContent["outcome"])
+                                self.assertEqual("APPLIED", a.structured_content["outcome"])
                                 b = await client.call_tool("bct_dispatch", {"capability": "read", **original})
-                                self.assertTrue(b.structuredContent["duplicate"])
+                                self.assertTrue(b.structured_content["duplicate"])
                                 refused = await client.call_tool("bct_execute", {
                                     "work_id": "hybrid-work", "operation_id": "hybrid-denied",
                                     "arguments": {"argv": ["does-not-run"]},
                                 })
-                                self.assertTrue(refused.isError or
-                                                (refused.structuredContent or {}).get("outcome") != "APPLIED")
+                                self.assertTrue(refused.is_error or
+                                                (refused.structured_content or {}).get("outcome") != "APPLIED")
                                 self.assertEqual("hello from MCP\n",
                                                  (fixture.project / "hello.txt").read_text(encoding="utf-8"))
                 asyncio.run(probe())

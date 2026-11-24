@@ -64,7 +64,7 @@ class TaskMessageTests(unittest.IsolatedAsyncioTestCase):
             )
             names = {tool.name for tool in await mcp.list_tools()}
             self.assertIn("bct_task_message", names)
-            _, result = await mcp.call_tool("bct_task_message", {
+            result = (await mcp.call_tool("bct_task_message", {
                 "work_id": "task-message-work", "task_id": "bounded-task",
                 "operation_id": "bounded-operation", "action": "preflight",
                 "instance_id": "instance", "session_id": "a" * 32,
@@ -74,7 +74,7 @@ class TaskMessageTests(unittest.IsolatedAsyncioTestCase):
                 "instruction": "Implement one focused repair.",
                 "acceptance": "The focused regression test passes.",
                 "max_rounds": 4,
-            })
+            })).structured_content
             self.assertEqual("READY", result["status"])
             self.assertEqual("Task Message", result["recipe"])
             self.assertEqual(4, result["max_rounds"])
@@ -106,7 +106,7 @@ class TaskMessageTests(unittest.IsolatedAsyncioTestCase):
                 SimpleNamespace(store=store, operations=effects),
                 compact_catalogue=True,
             )
-            _, result = await mcp.call_tool("bct_task_message", {
+            result = (await mcp.call_tool("bct_task_message", {
                 "work_id": "task-message-default", "task_id": "progress-task",
                 "operation_id": "progress-operation", "action": "preflight",
                 "instance_id": "instance", "session_id": "a" * 32,
@@ -115,7 +115,7 @@ class TaskMessageTests(unittest.IsolatedAsyncioTestCase):
                 "origin_conversation_key": MANAGER,
                 "instruction": "Implement one focused repair.",
                 "acceptance": "The focused regression test passes.",
-            })
+            })).structured_content
             self.assertEqual("READY", result["status"])
             self.assertEqual(0, result["max_rounds"])
 

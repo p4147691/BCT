@@ -115,7 +115,7 @@ class ChainRecipeRuntimeTests(unittest.IsolatedAsyncioTestCase):
                 server = build_mcp(SimpleNamespace(operations=NoEffects()),
                                    compact_catalogue=mode == "compact",
                                    hybrid_catalogue=mode == "hybrid")
-                metadata = sorted((tool.model_dump(mode="json", exclude_none=True)
+                metadata = sorted((tool.model_dump(mode="json", by_alias=True, exclude_none=True)
                                    for tool in await server.list_tools()), key=lambda item: item["name"])
                 chain = next(tool for tool in metadata if tool["name"] == "bct_chain_recipe")
                 self.assertEqual(digest(chain), BASELINE_CHAIN, "Chain public metadata changed")
@@ -137,9 +137,9 @@ class ChainRecipeRuntimeTests(unittest.IsolatedAsyncioTestCase):
                                          status_provider=provider, compact_catalogue=True))
             # Interleave after both servers exist: catches last-instance global capture.
             for index in (0, 1, 0):
-                _, result = await servers[index].call_tool("bct_chain_recipe", {
+                result = (await servers[index].call_tool("bct_chain_recipe", {
                     "work_id": "same-work", "source_text": "Inspect without effects.",
-                })
+                })).structured_content
                 self.assertEqual(result["status"], "RECIPE_READY", result)
                 self.assertEqual(result["input"]["work"]["request_summary"], f"work-{index}")
                 stored = json.dumps(result["state"]["stored_networks"])

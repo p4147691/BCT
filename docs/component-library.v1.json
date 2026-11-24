@@ -255,6 +255,20 @@
       "used_by": ["bct.component_library"]
     },
     {
+      "id": "bct.mcp_transport",
+      "kind": "module",
+      "maturity": "isolated",
+      "implementation": [
+        {"path": "src/bct/mcp_server.py", "symbol": "build_mcp / LocalBearerMiddleware"},
+        {"path": "src/bct/mcp_catalogue_config.py", "symbol": "CatalogueSettings"},
+        {"path": "src/bct/runtime_server.py", "symbol": "main"}
+      ],
+      "contract": "Publish the same BCT tools through authenticated Streamable HTTP for modern discovery and legacy initialization. Retain wire metadata, catalogue reload, exact scope and existing operation receipts. Discovery has no tool execution effect.",
+      "effects": ["http-tool-dispatch"],
+      "safety": ["bearer-auth-required", "existing-authority-boundary", "legacy-wire-compatibility", "source-not-live-proof"],
+      "tests": ["tests/test_mcp_integration.py", "tests/test_mcp_catalogue_config.py", "tests/test_chain_recipe_extraction.py"]
+    },
+    {
       "id": "bct.status_queries",
       "kind": "module",
       "maturity": "isolated",

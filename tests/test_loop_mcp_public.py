@@ -39,7 +39,7 @@ class LoopMcpContractTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("LOOP", loops[0].title)
         self.assertIn("official BCT single persistent Loop Recipe", loops[0].description)
 
-        _, outline = await self.server.call_tool("bct_loop_recipe", {"action": "outline"})
+        outline = (await self.server.call_tool("bct_loop_recipe", {"action": "outline"})).structured_content
         self.assertEqual("OK", outline["status"])
         self.assertEqual("NONE_READ_ONLY", outline["effects"])
 
@@ -49,7 +49,7 @@ class LoopMcpContractTests(unittest.IsolatedAsyncioTestCase):
             task_id="historical-task", owner="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
             plan_text="historical plan",
         )
-        _, outline = await self.server.call_tool("bct_loop_recipe", {"action": "outline"})
+        outline = (await self.server.call_tool("bct_loop_recipe", {"action": "outline"})).structured_content
         self.assertEqual("OK", outline["status"])
         self.assertEqual(historical, LoopStore(self.store).get("loop-mcp-work"))
 
@@ -59,7 +59,7 @@ class LoopMcpContractTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("bct_persistent_loop_recipe", names)
         official = next(tool for tool in await self.server.list_tools()
                         if tool.name == "bct_loop_recipe")
-        self.assertNotIn("owner", official.inputSchema["properties"])
+        self.assertNotIn("owner", official.input_schema["properties"])
 
 
 if __name__ == "__main__":

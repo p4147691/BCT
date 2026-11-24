@@ -955,11 +955,11 @@ class ChainWorkerProvisionPublicTests(unittest.IsolatedAsyncioTestCase):
                     "state": "OPEN", "cached": False, "tabs": tabs,
                 }]}}}
             mcp = build_mcp(bct, compact_catalogue=True, status_provider=status_provider)
-            _, result = await mcp.call_tool("bct_chain_recipe", {
+            result = (await mcp.call_tool("bct_chain_recipe", {
                 "action": "provision_worker", "work_id": work.work_id,
                 "direction_id": "public-parent", "task_id": "public-child-task",
                 "worker_preparation_id": "public-child",
-            })
+            })).structured_content
             self.assertEqual("STARTED", result["status"], result)
             self.assertEqual(SUCCESSOR, result["conversation_key"])
             self.assertEqual(1, rcc.create_count)

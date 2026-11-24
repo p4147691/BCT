@@ -10,7 +10,7 @@ import textwrap
 import unittest
 from pathlib import Path
 
-import httpx
+import httpx2 as httpx
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 
@@ -146,11 +146,36 @@ class MCPIntegrationTests(unittest.TestCase):
         )
         self.assertNotEqual(401, tunnel_probe.status_code)
         headers = {"Authorization": "Bearer " + self.controller.mcp_secret()}
+        protocol = "2026-07-28"
+        async with httpx.AsyncClient(headers=headers, timeout=10) as modern:
+            async def call_modern(method, *, name=None, arguments=None):
+                request_headers = {
+                    "Accept": "application/json, text/event-stream",
+                    "MCP-Protocol-Version": protocol,
+                    "Mcp-Method": method,
+                }
+                params = {"_meta": {"io.modelcontextprotocol/protocolVersion": protocol,
+                                    "io.modelcontextprotocol/clientCapabilities": {}}}
+                if name is not None:
+                    request_headers["Mcp-Name"] = name
+                    params.update(name=name, arguments=arguments or {})
+                response = await modern.post(url, headers=request_headers, json={
+                    "jsonrpc": "2.0", "id": 1, "method": method, "params": params,
+                })
+                self.assertEqual(200, response.status_code, response.text)
+                self.assertNotIn("Mcp-Session-Id", response.headers)
+                return response.json()["result"]
+
+            await call_modern("server/discover")
+            modern_status = await call_modern("tools/call", name="bct_status",
+                                              arguments={"compact": True, "scope": "bct"})
+            self.assertFalse(modern_status.get("isError", False))
+            self.assertEqual(self.release_sha, modern_status["structuredContent"]["runtime"]["release_sha"])
         async with httpx.AsyncClient(headers=headers, timeout=10) as http_client:
-            async with streamable_http_client(url, http_client=http_client) as (read, write, _):
+            async with streamable_http_client(url, http_client=http_client) as (read, write):
                 async with ClientSession(read, write) as session:
                     initialized = await session.initialize()
-                    self.assertEqual("BCT", initialized.serverInfo.name)
+                    self.assertEqual("BCT", initialized.server_info.name)
                     catalogue = await session.list_tools()
                     names = {tool.name for tool in catalogue.tools}
                     relay_description = next(tool.description for tool in catalogue.tools
@@ -201,21 +226,21 @@ class MCPIntegrationTests(unittest.TestCase):
                     library = await session.call_tool("bct_capabilities", {
                         "query": "코드 블럭", "tool_name": "scan_code_blocks", "include_manual": True,
                     })
-                    self.assertFalse(library.isError)
-                    self.assertEqual("AVAILABLE", library.structuredContent["library_status"])
-                    self.assertTrue(library.structuredContent["read_only"])
+                    self.assertFalse(library.is_error)
+                    self.assertEqual("AVAILABLE", library.structured_content["library_status"])
+                    self.assertTrue(library.structured_content["read_only"])
                     scan_tool = next(t for t in catalogue.tools if t.name == "scan_code_blocks")
-                    self.assertEqual(scan_tool.inputSchema, library.structuredContent["tool"]["inputSchema"])
-                    manual = library.structuredContent["manual"]
+                    self.assertEqual(scan_tool.input_schema, library.structured_content["tool"]["inputSchema"])
+                    manual = library.structured_content["manual"]
                     self.assertIn("Chain Recipe 공통 설명서", manual["text"])
                     self.assertEqual(hashlib.sha256(manual["text"].encode("utf-8")).hexdigest(), manual["sha256"])
-                    self.assertFalse(capabilities.isError)
-                    live_relay_usage = capabilities.structuredContent["browser_usage"]
+                    self.assertFalse(capabilities.is_error)
+                    live_relay_usage = capabilities.structured_content["browser_usage"]
                     self.assertIn("bct_rcc_command_catalog", live_relay_usage)
                     self.assertIn("arguments.command", live_relay_usage)
-                    self.assertIn("rcc_send_message_to_tab", capabilities.structuredContent["browser_public_commands"])
-                    self.assertIn("rcc_create_chat_and_send_message", capabilities.structuredContent["browser_public_commands"])
-                    self.assertIn("rcc_bind_conversation_to_node", capabilities.structuredContent["browser_public_commands"])
+                    self.assertIn("rcc_send_message_to_tab", capabilities.structured_content["browser_public_commands"])
+                    self.assertIn("rcc_create_chat_and_send_message", capabilities.structured_content["browser_public_commands"])
+                    self.assertIn("rcc_bind_conversation_to_node", capabilities.structured_content["browser_public_commands"])
                     self.assertEqual(
                         expected_capability_tools | {
                             "bct_capabilities", "bct_status", "queue_message", "bct_get_conversation_network", "bct_check_conversation_network", "scan_code_blocks", "organize_code_blocks", "bct_run_plan", "bct_set_conversation_network",
@@ -224,65 +249,65 @@ class MCPIntegrationTests(unittest.TestCase):
                             "bct_github_inbox_get", "bct_send_message", "bct_set_project_plan", "bct_plan_run", "bct_run_task", "bct_context", "bct_cancel_delayed_send",
                             "bct_create_work", "bct_operation", "bct_github_inbox", "bct_inbox", "bct_move_tab", "bct_close_tab", "bct_rcc_command_catalog", "bct_rcc_recipe_catalog",
                         },
-                        set(capabilities.structuredContent["tools"]),
+                        set(capabilities.structured_content["tools"]),
                     )
                     status = await session.call_tool("bct_status", {})
-                    self.assertFalse(status.isError)
-                    self.assertTrue(status.structuredContent["core"]["ready"])
+                    self.assertFalse(status.is_error)
+                    self.assertTrue(status.structured_content["core"]["ready"])
                     self.assertEqual(live_relay_usage,
-                                     status.structuredContent["browser_usage"])
-                    self.assertRegex(status.structuredContent["mcp_trace_id"], r"^[0-9a-f]{32}$")
-                    self.assertEqual(self.release_sha, status.structuredContent["runtime"]["release_sha"])
-                    self.assertIn("rcc", status.structuredContent["monitor"])
+                                     status.structured_content["browser_usage"])
+                    self.assertRegex(status.structured_content["mcp_trace_id"], r"^[0-9a-f]{32}$")
+                    self.assertEqual(self.release_sha, status.structured_content["runtime"]["release_sha"])
+                    self.assertIn("rcc", status.structured_content["monitor"])
                     conversation_network = await session.call_tool(
                         "bct_get_conversation_network", {"project": "BCT RCC"}
                     )
-                    self.assertFalse(conversation_network.isError, conversation_network)
-                    self.assertEqual("OK", conversation_network.structuredContent["status"])
-                    member = conversation_network.structuredContent["members"][0]
+                    self.assertFalse(conversation_network.is_error, conversation_network)
+                    self.assertEqual("OK", conversation_network.structured_content["status"])
+                    member = conversation_network.structured_content["members"][0]
                     self.assertEqual("D1-3", member["monitor"]["node_label"])
-                    self.assertNotIn(self.manager, json.dumps(conversation_network.structuredContent))
+                    self.assertNotIn(self.manager, json.dumps(conversation_network.structured_content))
                     network_alias = await session.call_tool(
                         "bct_get_conversation_network", {"project": "BCT RCC"}
                     )
-                    self.assertFalse(network_alias.isError)
-                    self.assertEqual(conversation_network.structuredContent,
-                                     network_alias.structuredContent)
+                    self.assertFalse(network_alias.is_error)
+                    self.assertEqual(conversation_network.structured_content,
+                                     network_alias.structured_content)
                     network_check = await session.call_tool(
                         "bct_check_conversation_network", {"project": "BCT RCC"}
                     )
-                    self.assertFalse(network_check.isError)
-                    self.assertEqual("OK", network_check.structuredContent["status"])
-                    self.assertTrue(network_check.structuredContent["read_only"])
-                    self.assertTrue(network_check.structuredContent["context_requires_work"])
+                    self.assertFalse(network_check.is_error)
+                    self.assertEqual("OK", network_check.structured_content["status"])
+                    self.assertTrue(network_check.structured_content["read_only"])
+                    self.assertTrue(network_check.structured_content["context_requires_work"])
                     self.assertEqual("AUTH_CONTEXT_REQUIRED",
-                                     network_check.structuredContent["context_status"])
+                                     network_check.structured_content["context_status"])
                     self.assertEqual("CURRENT_CONFIRMED_NODES_ONLY",
-                                     network_check.structuredContent["candidates_scope"])
+                                     network_check.structured_content["candidates_scope"])
                     self.assertEqual("NOT_REQUESTED",
-                                     network_check.structuredContent["historical_contexts_status"])
-                    self.assertIn(network_check.structuredContent["supervisor"]["status"],
+                                     network_check.structured_content["historical_contexts_status"])
+                    self.assertIn(network_check.structured_content["supervisor"]["status"],
                                   {"MISSING", "PRESENT", "MULTIPLE"})
                     self.assertEqual("supervisor",
-                                     network_check.structuredContent["supervisor"]["role_tag"])
+                                     network_check.structured_content["supervisor"]["role_tag"])
                     self.assertEqual("CURRENT_CONFIRMED_NODES_ONLY",
-                                     network_check.structuredContent["supervisor"]["scope"])
-                    scopes = network_check.structuredContent["scope_directory"]
+                                     network_check.structured_content["supervisor"]["scope"])
+                    scopes = network_check.structured_content["scope_directory"]
                     self.assertTrue(any(item["scope_name"] == "BCT RCC" and item["state"] == "ACTIVE"
                                         for item in scopes))
                     blank_network_check = await session.call_tool("bct_check_conversation_network", {})
-                    self.assertFalse(blank_network_check.isError)
-                    self.assertEqual("OK", blank_network_check.structuredContent["status"])
-                    self.assertEqual("NOT_REQUESTED", blank_network_check.structuredContent["context_status"])
-                    self.assertIsNone(blank_network_check.structuredContent["project_context"])
+                    self.assertFalse(blank_network_check.is_error)
+                    self.assertEqual("OK", blank_network_check.structured_content["status"])
+                    self.assertEqual("NOT_REQUESTED", blank_network_check.structured_content["context_status"])
+                    self.assertIsNone(blank_network_check.structured_content["project_context"])
 
-                    self.assertEqual("OK", network_check.structuredContent["network"]["status"])
-                    checked_member = network_check.structuredContent["network"]["members"][0]
+                    self.assertEqual("OK", network_check.structured_content["network"]["status"])
+                    checked_member = network_check.structured_content["network"]["members"][0]
                     self.assertEqual("NOT_OPEN", checked_member["current_node_presence"])
                     self.assertIsNone(checked_member["current_node"])
                     self.assertNotIn("_conversation_key", checked_member)
-                    self.assertIn("nodes", network_check.structuredContent)
-                    self.assertIn("rcc", network_check.structuredContent)
+                    self.assertIn("nodes", network_check.structured_content)
+                    self.assertIn("rcc", network_check.structured_content)
 
                     work_arguments = {
                         "work_id": "mcp-read-work",
@@ -292,17 +317,17 @@ class MCPIntegrationTests(unittest.TestCase):
                     }
                     created = await session.call_tool("bct_work_create", work_arguments)
                     repeated = await session.call_tool("bct_work_create", work_arguments)
-                    self.assertFalse(created.isError)
+                    self.assertFalse(created.is_error)
                     scanned = await session.call_tool("scan_code_blocks", {
                         "work_id": "mcp-read-work", "max_files": 20, "max_blocks": 100,
                     })
-                    self.assertFalse(scanned.isError, scanned)
-                    self.assertEqual("bct.code-block-scan.v1", scanned.structuredContent["schema"])
-                    self.assertTrue(scanned.structuredContent["read_only"])
-                    self.assertIn("block_map", scanned.structuredContent)
-                    self.assertIn("block_cards", scanned.structuredContent)
+                    self.assertFalse(scanned.is_error, scanned)
+                    self.assertEqual("bct.code-block-scan.v1", scanned.structured_content["schema"])
+                    self.assertTrue(scanned.structured_content["read_only"])
+                    self.assertIn("block_map", scanned.structured_content)
+                    self.assertIn("block_cards", scanned.structured_content)
                     block = next(
-                        item for item in scanned.structuredContent["block_cards"]
+                        item for item in scanned.structured_content["block_cards"]
                         if item["path"] == "blocks.py" and item["name"] == "change"
                     )
                     planned_block = await session.call_tool("organize_code_blocks", {
@@ -312,8 +337,8 @@ class MCPIntegrationTests(unittest.TestCase):
                         "expected_file_sha256": block["file_sha256"],
                         "expected_block_sha256": block["source_sha256"],
                     })
-                    self.assertFalse(planned_block.isError, planned_block)
-                    plan = planned_block.structuredContent
+                    self.assertFalse(planned_block.is_error, planned_block)
+                    plan = planned_block.structured_content
                     self.assertTrue(plan["read_only"])
                     self.assertIn("return value * 2", plan["diff"])
                     write_work = await session.call_tool("bct_work_create", {
@@ -321,7 +346,7 @@ class MCPIntegrationTests(unittest.TestCase):
                         "request_summary": "apply one exact scanned block",
                         "roots": [str(self.project)], "actions": ["read", "write"],
                     })
-                    self.assertFalse(write_work.isError, write_work)
+                    self.assertFalse(write_work.is_error, write_work)
                     apply_args = {
                         "work_id": "mcp-block-write-work", "action": "apply",
                         "operation_id": "mcp-block-apply-1",
@@ -334,23 +359,23 @@ class MCPIntegrationTests(unittest.TestCase):
                     }
                     applied_block = await session.call_tool("organize_code_blocks", apply_args)
                     replayed_block = await session.call_tool("organize_code_blocks", apply_args)
-                    self.assertFalse(applied_block.isError, applied_block)
-                    self.assertEqual("APPLIED", applied_block.structuredContent["outcome"])
-                    self.assertTrue(replayed_block.structuredContent["duplicate"])
+                    self.assertFalse(applied_block.is_error, applied_block)
+                    self.assertEqual("APPLIED", applied_block.structured_content["outcome"])
+                    self.assertTrue(replayed_block.structured_content["duplicate"])
                     updated = (self.project / "blocks.py").read_text(encoding="utf-8")
                     self.assertIn("return 'keep'", updated)
                     self.assertIn("return value * 2", updated)
                     self.assertNotIn("return value + 1", updated)
-                    self.assertFalse(created.structuredContent["duplicate"])
-                    self.assertTrue(repeated.structuredContent["duplicate"])
+                    self.assertFalse(created.structured_content["duplicate"])
+                    self.assertTrue(repeated.structured_content["duplicate"])
                     denied_context = await session.call_tool("bct_check_conversation_network", {
                         "project": "missingproject",
                         "work_id": "mcp-read-work",
                         "operation_id": "mcp-context-denied-1",
                     })
-                    self.assertFalse(denied_context.isError)
+                    self.assertFalse(denied_context.is_error)
                     self.assertEqual("ACCESS_DENIED",
-                                     denied_context.structuredContent["context_status"])
+                                     denied_context.structured_content["context_status"])
                     call_arguments = {
                         "work_id": "mcp-read-work",
                         "operation_id": "mcp-read-1",
@@ -361,11 +386,11 @@ class MCPIntegrationTests(unittest.TestCase):
                     receipt = await session.call_tool("bct_operation_get", {
                         "work_id": "mcp-read-work", "operation_id": "mcp-read-1",
                     })
-                    self.assertFalse(read_result.isError)
-                    self.assertEqual("APPLIED", read_result.structuredContent["outcome"])
-                    self.assertEqual("hello from MCP\n", read_result.structuredContent["output"]["text"])
-                    self.assertTrue(duplicate.structuredContent["duplicate"])
-                    self.assertEqual("APPLIED", receipt.structuredContent["outcome"])
+                    self.assertFalse(read_result.is_error)
+                    self.assertEqual("APPLIED", read_result.structured_content["outcome"])
+                    self.assertEqual("hello from MCP\n", read_result.structured_content["output"]["text"])
+                    self.assertTrue(duplicate.structured_content["duplicate"])
+                    self.assertEqual("APPLIED", receipt.structured_content["outcome"])
                     batch_result = await session.call_tool("bct_read", {
                         "work_id": "mcp-read-work",
                         "operation_id": "mcp-read-batch-1",
@@ -378,16 +403,16 @@ class MCPIntegrationTests(unittest.TestCase):
                             ],
                         },
                     })
-                    self.assertFalse(batch_result.isError, batch_result)
-                    self.assertEqual("APPLIED", batch_result.structuredContent["outcome"])
-                    self.assertEqual("COMPLETE", batch_result.structuredContent["output"]["status"])
+                    self.assertFalse(batch_result.is_error, batch_result)
+                    self.assertEqual("APPLIED", batch_result.structured_content["outcome"])
+                    self.assertEqual("COMPLETE", batch_result.structured_content["output"]["status"])
                     self.assertEqual(
                         ["hello", "tree"],
-                        [item["id"] for item in batch_result.structuredContent["output"]["items"]],
+                        [item["id"] for item in batch_result.structured_content["output"]["items"]],
                     )
                     self.assertEqual(
                         "hello from MCP\n",
-                        batch_result.structuredContent["output"]["items"][0]["output"]["text"],
+                        batch_result.structured_content["output"]["items"][0]["output"]["text"],
                     )
                     continued = await session.call_tool("bct_work_create", {
                         **work_arguments,
@@ -395,16 +420,16 @@ class MCPIntegrationTests(unittest.TestCase):
                         "roots": [str(self.root)],
                         "actions": ["read", "write"],
                     })
-                    self.assertFalse(continued.isError, continued)
-                    self.assertTrue(continued.structuredContent["updated"])
-                    self.assertFalse(continued.structuredContent["duplicate"])
+                    self.assertFalse(continued.is_error, continued)
+                    self.assertTrue(continued.structured_content["updated"])
+                    self.assertFalse(continued.structured_content["duplicate"])
                     self.assertEqual(
                         {"read", "write"},
-                        set(continued.structuredContent["work"]["actions"]),
+                        set(continued.structured_content["work"]["actions"]),
                     )
                     self.assertEqual(
                         [str(self.project.resolve()), str(self.root.resolve())],
-                        continued.structuredContent["work"]["roots"],
+                        continued.structured_content["work"]["roots"],
                     )
 
                     execute_work = {
@@ -430,8 +455,8 @@ class MCPIntegrationTests(unittest.TestCase):
                     self.assertEqual(200, health.status_code)
                     self.assertTrue(health.json()["ready"])
                     completed = await pending
-                    self.assertFalse(completed.isError, completed)
-                    self.assertEqual("APPLIED", completed.structuredContent["outcome"])
+                    self.assertFalse(completed.is_error, completed)
+                    self.assertEqual("APPLIED", completed.structured_content["outcome"])
 
                     await session.call_tool("bct_work_create", {
                         "work_id": "verification", "request_summary": "bounded verification",
@@ -446,46 +471,46 @@ class MCPIntegrationTests(unittest.TestCase):
                         ]},
                     }
                     accepted = await session.call_tool("bct_verify", verification)
-                    self.assertFalse(accepted.isError, accepted)
+                    self.assertFalse(accepted.is_error, accepted)
                     duplicate = await session.call_tool("bct_verify", verification)
-                    self.assertTrue(duplicate.structuredContent["duplicate"])
+                    self.assertTrue(duplicate.structured_content["duplicate"])
                     cached = await session.call_tool("bct_test", {
                         **verification, "arguments": {**verification["arguments"], "operation": "verify"},
                     })
-                    self.assertFalse(cached.isError, cached)
-                    self.assertTrue(cached.structuredContent["duplicate"])
+                    self.assertFalse(cached.is_error, cached)
+                    self.assertTrue(cached.structured_content["duplicate"])
                     continued_verification = await session.call_tool("bct_test", {
                         **verification, "work_id": "mcp-read-work",
                         "operation_id": "continued-work-recipe",
                         "arguments": {**verification["arguments"], "operation": "verify"},
                     })
-                    self.assertFalse(continued_verification.isError, continued_verification)
+                    self.assertFalse(continued_verification.is_error, continued_verification)
                     continued_done = await session.call_tool("bct_operation_get", {
                         "work_id": "mcp-read-work",
                         "operation_id": "continued-work-recipe",
                         "wait_seconds": 25,
                     })
-                    self.assertFalse(continued_done.isError, continued_done)
-                    self.assertEqual("APPLIED", continued_done.structuredContent["outcome"])
+                    self.assertFalse(continued_done.is_error, continued_done)
+                    self.assertEqual("APPLIED", continued_done.structured_content["outcome"])
 
         # Disconnect before waiting: the one-shot worker must complete independently.
         async with httpx.AsyncClient(headers=headers, timeout=30) as http_client:
-            async with streamable_http_client(url, http_client=http_client) as (read, write, _):
+            async with streamable_http_client(url, http_client=http_client) as (read, write):
                 async with ClientSession(read, write) as session:
                     await session.initialize()
                     completed = await session.call_tool("bct_operation_get", {
                         "work_id": "verification", "operation_id": "verification-1", "wait_seconds": 25,
                     })
-                    self.assertFalse(completed.isError, completed)
-                    self.assertEqual("APPLIED", completed.structuredContent["outcome"])
-                    self.assertEqual("PASS", completed.structuredContent["evidence"]["status"])
-                    self.assertEqual(2, len(completed.structuredContent["evidence"]["steps"]))
-                    self.assertEqual(2, len(completed.structuredContent["step_journal"]))
+                    self.assertFalse(completed.is_error, completed)
+                    self.assertEqual("APPLIED", completed.structured_content["outcome"])
+                    self.assertEqual("PASS", completed.structured_content["evidence"]["status"])
+                    self.assertEqual(2, len(completed.structured_content["evidence"]["steps"]))
+                    self.assertEqual(2, len(completed.structured_content["step_journal"]))
                     self.assertTrue(all(
                         step["state"] == "FINISHED"
-                        for step in completed.structuredContent["step_journal"]
+                        for step in completed.structured_content["step_journal"]
                     ))
-                    self.assertNotIn("output", completed.structuredContent)
+                    self.assertNotIn("output", completed.structured_content)
 
         monitor = httpx.get(f"http://127.0.0.1:{self.port}/monitor/state", timeout=3)
         self.assertEqual(200, monitor.status_code)

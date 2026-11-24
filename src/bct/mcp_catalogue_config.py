@@ -33,7 +33,7 @@ class CatalogueSettings:
         return self._revision
 
     def attach(self, server: Any) -> None:
-        """Attach to FastMCP's registered catalogue after tool creation.
+        """Attach to MCPServer's registered catalogue after tool creation.
 
         Exact pinned MCP package API is covered by contract tests. We preserve
         compiled Tool metadata, including argument schemas, rather than
@@ -49,16 +49,13 @@ class CatalogueSettings:
             self.refresh(server)
             return await original_list()
 
-        async def configured_call_tool(name, arguments, **kwargs):
+        async def configured_call_tool(name, arguments, context=None):
             self.refresh(server)
-            return await original_call(name, arguments, **kwargs)
+            return await original_call(name, arguments, context)
 
         server.list_tools = configured_list_tools
         server.call_tool = configured_call_tool
-        # FastMCP binds its protocol handlers during __init__; replacing only
-        # the public methods is insufficient for actual MCP tools/list calls.
-        server._mcp_server.list_tools()(configured_list_tools)
-        server._mcp_server.call_tool(validate_input=False)(configured_call_tool)
+        # MCPServer protocol handlers call these methods at request time.
 
     def _parse(self, raw: bytes) -> dict[str, dict[str, Any]]:
         if len(raw) > _MAX_BYTES:

@@ -72,7 +72,7 @@ class PersistentLoopPublicTests(unittest.IsolatedAsyncioTestCase):
                        return_value={**observed, "latestUserTextOccurrenceCount": 2}), patch.object(
                            PersistentLoopCoordinator, "configure_topology", autospec=True
                        ) as topology:
-                _, rejected = await server.call_tool("bct_loop_recipe", arguments)
+                rejected = (await server.call_tool("bct_loop_recipe", arguments)).structured_content
                 self.assertEqual(rejected["reason"], "LOOP_START_SOURCE_NOT_UNIQUE")
                 topology.assert_not_awaited()
             with patch("bct.send_delayed_message.SendDelayedMessageService.latest",
@@ -80,11 +80,11 @@ class PersistentLoopPublicTests(unittest.IsolatedAsyncioTestCase):
                            PersistentLoopCoordinator, "configure_topology", autospec=True,
                            side_effect=configure,
                        ) as topology:
-                _, prepared = await server.call_tool("bct_loop_recipe", {
+                prepared = (await server.call_tool("bct_loop_recipe", {
                     "action": "prepare", "work_id": arguments["work_id"],
                     "instruction_text": ("[$bct-control](app://asdk_app_6ac3a06ea58c819195b90feb131b6da5) "
                                          + prompt),
-                })
+                })).structured_content
                 self.assertEqual(prepared.get("status"), "PREPARED", prepared)
                 self.assertEqual(prepared["effects"], "NONE_READ_ONLY")
                 self.assertEqual(prepared["manager"]["conversation_key"], MANAGER)
@@ -93,12 +93,12 @@ class PersistentLoopPublicTests(unittest.IsolatedAsyncioTestCase):
                          "instruction_text": prepared["instruction_text"]}
                 with patch("bct.send_delayed_message.SendDelayedMessageService.latest",
                            return_value={**observed, "latestUserTurnKey": "another-turn"}):
-                    _, stale = await server.call_tool("bct_loop_recipe", start)
+                    stale = (await server.call_tool("bct_loop_recipe", start)).structured_content
                 self.assertEqual(stale["reason"], "LOOP_PREPARED_SOURCE_CHANGED")
                 topology.assert_not_awaited()
                 with patch.object(LoopTurnRunner, "register_initial_watch",
                                   return_value="WATCH_RECEIPT_PENDING_OR_HELD") as register:
-                    _, started = await server.call_tool("bct_loop_recipe", start)
+                    started = (await server.call_tool("bct_loop_recipe", start)).structured_content
                     register.assert_called_once()
                 self.assertEqual(started.get("status"), "FIRST_WATCH_UNCONFIRMED", started)
                 self.assertEqual(started["objective"]["manager_conversation_key"], MANAGER)
@@ -108,7 +108,7 @@ class PersistentLoopPublicTests(unittest.IsolatedAsyncioTestCase):
                 self.assertIsNone(started["turn"]["send_operation_id"])
                 with patch.object(LoopTurnRunner, "register_initial_watch",
                                   return_value="WATCH_RECEIPT_PENDING_OR_HELD"):
-                    _, retry = await server.call_tool("bct_loop_recipe", start)
+                    retry = (await server.call_tool("bct_loop_recipe", start)).structured_content
                 self.assertEqual(retry["turn"]["watch_operation_id"],
                                  started["turn"]["watch_operation_id"])
                 topology.assert_awaited_once()
@@ -136,12 +136,12 @@ class PersistentLoopPublicTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn("bct_persistent_loop_recipe", {tool.name for tool in tools})
             self.assertEqual(public.title, "LOOP")
             self.assertIn("supervisor_create_operation_id",
-                          public.inputSchema["properties"])
+                          public.input_schema["properties"])
             self.assertIn("prepare_supervisor", public.description)
             self.assertIn("official BCT single persistent Loop Recipe", public.description)
-            _, outline = await server.call_tool("bct_loop_recipe", {"action": "outline"})
+            outline = (await server.call_tool("bct_loop_recipe", {"action": "outline"})).structured_content
             self.assertEqual(outline["status"], "OK")
-            _, started = await server.call_tool("bct_loop_recipe", {
+            started = (await server.call_tool("bct_loop_recipe", {
                 "action": "start", "work_id": "loop-public-work", "loop_id": "loop-public-1",
                 "instruction_text": "Finish this goal.",
                 "direction_text": "Continue until completion evidence is verified.",
@@ -151,19 +151,19 @@ class PersistentLoopPublicTests(unittest.IsolatedAsyncioTestCase):
                 "task_id": "loop-public-task",
                 "overall_plan": "Execute and verify.",
                 "completion_conditions": {"result": "Result independently verified."},
-            })
+            })).structured_content
             self.assertEqual(started["status"], "OK")
             self.assertEqual(started["objective"]["supervisor_conversation_key"], SUPERVISOR)
-            _, status = await server.call_tool("bct_loop_recipe", {
+            status = (await server.call_tool("bct_loop_recipe", {
                 "action": "status", "loop_id": "loop-public-1",
-            })
+            })).structured_content
             self.assertEqual(status["run"]["current_block_id"], "topology")
             self.assertEqual(status["context"]["network_project_id"], "loop-public-network-1")
             self.assertEqual(status["objective"]["overall_plan"], "Execute and verify.")
-            _, rejected = await server.call_tool("bct_loop_recipe", {
+            rejected = (await server.call_tool("bct_loop_recipe", {
                 "action": "transition", "loop_id": "loop-public-1",
                 "block_id": "assess", "link": "complete",
-            })
+            })).structured_content
             self.assertEqual(rejected["reason"], "LOOP_USE_ARM_SAVE_PLAN_AND_DECIDE")
 
     def test_mcp_entry_is_only_a_forwarder(self):

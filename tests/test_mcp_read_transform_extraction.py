@@ -287,8 +287,8 @@ class QueryContractTests(unittest.IsolatedAsyncioTestCase):
                 return {"marker": index}
             servers.append(build_mcp(SimpleNamespace(store=store, operations=NoEffects()), status_provider=provider))
         for index in (0, 1, 0):
-            _, status = await servers[index].call_tool("bct_status", {})
-            _, network = await servers[index].call_tool("bct_get_conversation_network", {"project": "same-project"})
+            status = (await servers[index].call_tool("bct_status", {})).structured_content
+            network = (await servers[index].call_tool("bct_get_conversation_network", {"project": "same-project"})).structured_content
             self.assertEqual(status["marker"], index)
             self.assertEqual(network["project"]["display_name"], f"Network {index}")
         self.assertEqual(counters, [2, 1])
@@ -329,7 +329,7 @@ class QueryContractTests(unittest.IsolatedAsyncioTestCase):
         request = {**valid_plan(), "operation_id": "exact-plan-operation", "approval_ref": "existing-approval"}
         expected = prepare_project_plan(**valid_plan())["arguments"]
         for name in ("bct_run_plan", "bct_set_project_plan", "bct_plan_run"):
-            _, value = await server.call_tool(name, request)
+            value = (await server.call_tool(name, request)).structured_content
             self.assertEqual(value, {"state": "FINISHED", "outcome": "APPLIED"})
         self.assertEqual(len(calls), 3)
         for call in calls:
@@ -338,7 +338,7 @@ class QueryContractTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(call["operation_id"], "exact-plan-operation")
             self.assertEqual(call["approval_ref"], "existing-approval")
             self.assertEqual(call["principal"].principal_id, "bct-mcp-local")
-        _, value = await server.call_tool("bct_run_plan", {**request, "plan_id": "bad plan"})
+        value = (await server.call_tool("bct_run_plan", {**request, "plan_id": "bad plan"})).structured_content
         self.assertEqual(value, {"status": "INVALID_REQUEST", "reason": "RUN_PLAN_ID_INVALID"})
         self.assertEqual(len(calls), 3)
 
@@ -348,8 +348,8 @@ class QueryContractTests(unittest.IsolatedAsyncioTestCase):
         tools = await server.list_tools()
         loop = next(tool for tool in tools if tool.name == "bct_loop_recipe")
         self.assertEqual(loop.title, "LOOP")
-        self.assertIn("loop_id", loop.inputSchema["properties"])
-        self.assertNotIn("owner", loop.inputSchema["properties"])
+        self.assertIn("loop_id", loop.input_schema["properties"])
+        self.assertNotIn("owner", loop.input_schema["properties"])
         provider.assert_not_called()
 
 

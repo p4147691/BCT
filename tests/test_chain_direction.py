@@ -35,12 +35,12 @@ async def save_direction_via_recipe(mcp, arguments):
             "source_generation", "project", "report_target_conversation_key",
         ) if key in arguments
     }
-    _, prepared = await mcp.call_tool("bct_chain_recipe", {"action": "prepare", **prepare_arguments})
+    prepared = (await mcp.call_tool("bct_chain_recipe", {"action": "prepare", **prepare_arguments})).structured_content
     if prepared["status"] != "RECIPE_READY":
         raise AssertionError(prepared)
-    _, saved = await mcp.call_tool("bct_chain_recipe", {
+    saved = (await mcp.call_tool("bct_chain_recipe", {
         "action": "save", "entry_context_id": prepared["entry_context_id"], **arguments,
-    })
+    })).structured_content
     return saved
 
 
@@ -248,7 +248,7 @@ class ChainDirectionPublicTests(unittest.IsolatedAsyncioTestCase):
                 SimpleNamespace(operations=Operations(), store=store),
                 compact_catalogue=True, status_provider=lambda: {"monitor": {}},
             )
-            _, status = await mcp.call_tool("bct_status", {"scope": "bct"})
+            status = (await mcp.call_tool("bct_status", {"scope": "bct"})).structured_content
             self.assertEqual([], status["execute_plan_checks"])
             self.assertEqual([], status["pending_chain_starts"])
             with store._readonly() as db:
@@ -270,7 +270,7 @@ class ChainDirectionPublicTests(unittest.IsolatedAsyncioTestCase):
                 SimpleNamespace(operations=Operations(), store=store),
                 compact_catalogue=True, status_provider=lambda: {"monitor": {}},
             )
-            _, status = await mcp.call_tool("bct_status", {"scope": "bct"})
+            status = (await mcp.call_tool("bct_status", {"scope": "bct"})).structured_content
             self.assertEqual(["pending-direction"], [
                 item["direction_id"] for item in status["pending_chain_starts"]
             ])
@@ -330,9 +330,9 @@ class ChainDirectionPublicTests(unittest.IsolatedAsyncioTestCase):
             })
             self.assertEqual("OK", saved["status"])
             self.assertEqual("c" * 64, saved["chain_direction"]["source_result_sha256"])
-            _, read = await mcp.call_tool("bct_get_direction", {
+            read = (await mcp.call_tool("bct_get_direction", {
                 "work_id": "work-1", "direction_id": "direction-return-1",
-            })
+            })).structured_content
             self.assertEqual("NEW_TASK", read["chain_direction"]["decision"])
 
     async def test_ababa_is_two_linked_chains_then_a_complete_direction(self):
@@ -430,10 +430,10 @@ class ChainDirectionPublicTests(unittest.IsolatedAsyncioTestCase):
 
             # A2 → B2 is an ordinary declared Recipe target.  The fake executor
             # records the internal prearm/send pair in place of browser delivery.
-            _, started = await mcp.call_tool("bct_chain_recipe", {
+            started = (await mcp.call_tool("bct_chain_recipe", {
                 "action": "send", "work_id": work.work_id, "direction_id": "direction-two",
                 "task_id": "task-two", "operation_id": "chain-two",
-            })
+            })).structured_content
             self.assertEqual("STARTED", started["status"], started)
             self.assertEqual("CHAIN_STARTED", started["targets"][0]["chain_direction"]["chain_state"])
             self.assertEqual(["chain-two-1-arm", "chain-two-1-send"], [call["operation_id"] for call in ops.calls])
@@ -450,19 +450,19 @@ class ChainDirectionPublicTests(unittest.IsolatedAsyncioTestCase):
                 "Progress 1/2. Inspect the current evidence, perform the bounded "
                 "change reversibly, verify E2E, and return exact artifacts to A."
             )
-            _, b_plan = await mcp.call_tool("bct_set_execute_plan", {
+            b_plan = (await mcp.call_tool("bct_set_execute_plan", {
                 "work_id": work.work_id, "direction_id": started["targets"][0]["direction_id"],
                 "task_id": "task-two-1", "generation": 1,
                 "plan_id": "b-plan-two", "plan_text": b_plan_text,
-            })
+            })).structured_content
             self.assertEqual("OK", b_plan["status"])
             self.assertNotEqual(
                 direction["chain_direction"]["direction_text"],
                 b_plan["chain_execution_plan"]["plan_text"],
             )
-            _, read_plan = await mcp.call_tool("bct_get_execute_plan", {
+            read_plan = (await mcp.call_tool("bct_get_execute_plan", {
                 "work_id": work.work_id, "plan_id": "b-plan-two",
-            })
+            })).structured_content
             self.assertEqual(b_plan_text, read_plan["chain_execution_plan"]["plan_text"])
 
             # B2 → A3: the final BA return; A3 closes instead of creating B3.

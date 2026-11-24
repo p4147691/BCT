@@ -105,7 +105,7 @@ class LibraryMCPTests(unittest.IsolatedAsyncioTestCase):
                          compact_catalogue=mode == "compact", hybrid_catalogue=mode == "hybrid")
 
     async def call(self, server, **args):
-        _, data = await server.call_tool("bct_capabilities", args)
+        data = (await server.call_tool("bct_capabilities", args)).structured_content
         return data
 
     async def test_existing_default_contract_and_small_discovery_hint(self):
@@ -124,7 +124,7 @@ class LibraryMCPTests(unittest.IsolatedAsyncioTestCase):
             server = self.server(mode)
             actual = {t.name: t for t in await server.list_tools()}
             result = await self.call(server, tool_name="bct_set_direction")
-            self.assertEqual(actual["bct_set_direction"].inputSchema, result["tool"]["inputSchema"])
+            self.assertEqual(actual["bct_set_direction"].input_schema, result["tool"]["inputSchema"])
             read = await self.call(server, tool_name="bct_read")
             self.assertEqual("NOT_FOUND" if mode == "compact" else "OK", read["status"])
 

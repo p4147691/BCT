@@ -1001,7 +1001,10 @@ def main() -> int:
         request_server_shutdown(holder["server"])
         return JSONResponse({"accepted": True})
 
-    app = LocalBearerMiddleware(mcp.streamable_http_app(), mcp_token)
+    app = LocalBearerMiddleware(
+        mcp.streamable_http_app(stateless_http=True, json_response=True, streamable_http_path="/mcp"),
+        mcp_token,
+    )
     config = build_server_config(app, port=arguments.port)
     server = uvicorn.Server(config)
     holder["server"] = server

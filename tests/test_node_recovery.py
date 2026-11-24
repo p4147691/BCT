@@ -360,23 +360,23 @@ class NodeRecoveryPublicTests(unittest.IsolatedAsyncioTestCase):
                 SimpleNamespace(store=store, operations=ops),
                 status_provider=lambda: snapshot, compact_catalogue=True,
             )
-            _, checked = await mcp.call_tool("bct_check_node", {
+            checked = (await mcp.call_tool("bct_check_node", {
                 "work_id": "work", "conversation_key": OLD,
                 "task_id": "task-1", "case_id": "case-public",
-            })
+            })).structured_content
             self.assertEqual("OK", checked["status"])
-            _, paused = await mcp.call_tool("bct_pause_node", {
+            paused = (await mcp.call_tool("bct_pause_node", {
                 "work_id": "work", "case_id": "case-public", "reason": "stalled",
-            })
+            })).structured_content
             self.assertEqual("PAUSED", paused["pause_node"]["state"])
-            _, chain = await mcp.call_tool("bct_task_message", {
+            chain = (await mcp.call_tool("bct_task_message", {
                 "work_id": "work", "task_id": "task-2", "operation_id": "chain-2",
                 "action": "start", "instance_id": "instance", "session_id": "a" * 32,
                 "target_tab_id": 13, "target_window_id": 12,
                 "target_conversation_key": OLD, "origin_conversation_key": NEW,
                 "origin_instance_id": "instance", "instruction": "continue",
                 "acceptance": "Return the observed result to the Manager.",
-            })
+            })).structured_content
             self.assertEqual("PAUSED", chain["status"], chain)
             self.assertEqual([], ops.calls)
 

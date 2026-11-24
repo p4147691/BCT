@@ -8,7 +8,8 @@ import uuid
 from pathlib import Path
 from typing import Any, Callable, Coroutine
 
-from mcp.server.fastmcp import FastMCP, Image
+from mcp.server import MCPServer
+from mcp.server.mcpserver import Image
 from starlette.responses import JSONResponse
 
 from .background_operations import BACKGROUND_CAPABILITIES, launch_background_operation
@@ -121,14 +122,14 @@ def build_mcp(
     status_provider: Callable[[], dict[str, Any]] | None = None,
     compact_catalogue: bool = False,
     hybrid_catalogue: bool = False,
-) -> FastMCP:
+) -> MCPServer:
     """Build the public MCP catalogue from the registered BCT capabilities."""
     if compact_catalogue and hybrid_catalogue:
         raise ValueError("MCP_CATALOGUE_MODES_MUTUALLY_EXCLUSIVE")
     compact_catalogue = compact_catalogue or hybrid_catalogue
     capabilities = tuple(bct.operations.capabilities)
     principal = Principal(MCP_PRINCIPAL_ID, "local-bearer", frozenset(capabilities))
-    server = FastMCP(
+    server = MCPServer(
         "BCT",
         instructions=(
             "For ordinary assigned work, begin with bct_chain_recipe(instruction=the request) "
@@ -142,9 +143,6 @@ def build_mcp(
             "tool_name=bct_chain_recipe also returns the full shared manual. Discovery never executes tools. "
             "Reuse operation_id only for the exact same request."
         ),
-        stateless_http=True,
-        json_response=True,
-        streamable_http_path="/mcp",
     )
 
 
@@ -158,7 +156,7 @@ def build_mcp(
     async def bct_capabilities(query: str = "", tool_name: str = "", component_id: str = "",
                                include_manual: bool = False, limit: int = 8, offset: int = 0) -> dict[str, Any]:
         started_ns = time.perf_counter_ns()
-        tool_metadata = [tool.model_dump(mode="json", exclude_none=True) for tool in await server.list_tools()]
+        tool_metadata = [tool.model_dump(mode="json", by_alias=True, exclude_none=True) for tool in await server.list_tools()]
         settings = getattr(server, "catalogue_settings", None)
         value = capability_view(
             tool_metadata=tool_metadata, capabilities=capabilities, usage=_CAPABILITY_USAGE,

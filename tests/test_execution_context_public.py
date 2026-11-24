@@ -46,16 +46,16 @@ class ExecutionContextPublicTests(unittest.IsolatedAsyncioTestCase):
                 send_message=lambda *_: "send-receipt",
             ).poll_once(watch, manager_conversation_key="manager-uuid")
             mcp = build_mcp(SimpleNamespace(operations=Operations(), store=store), compact_catalogue=True)
-            _, result = await mcp.call_tool("bct_execution_context", {
+            result = (await mcp.call_tool("bct_execution_context", {
                 "work_id": "work-1", "task_id": "task-1",
-            })
+            })).structured_content
             self.assertEqual("OK", result["status"])
             execution = result["execution"]
             self.assertEqual("SELF", execution["decision"]["route"])
             self.assertEqual("Continue verification.", execution["decision"]["payload"])
             self.assertEqual("Worked.\nNEXT TASK — SELF\nContinue verification.",
                              execution["prior_turn"]["response_text"])
-            _, missing = await mcp.call_tool("bct_execution_context", {
+            missing = (await mcp.call_tool("bct_execution_context", {
                 "work_id": "other-work", "task_id": "task-1",
-            })
+            })).structured_content
             self.assertEqual("NOT_FOUND", missing["status"])

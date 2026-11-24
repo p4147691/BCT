@@ -8,7 +8,7 @@ import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-import httpx
+import httpx2 as httpx
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 
@@ -20,16 +20,16 @@ async def run(args):
     @asynccontextmanager
     async def connect():
         async with httpx.AsyncClient(headers=headers, timeout=40) as client:
-            async with streamable_http_client(args.url, http_client=client) as (reader, writer, _):
+            async with streamable_http_client(args.url, http_client=client) as (reader, writer):
                 async with ClientSession(reader, writer) as session:
                     await session.initialize()
                     yield session
 
     async def call(session, name, arguments):
         result = await session.call_tool(name, arguments)
-        if result.isError:
+        if result.is_error:
             raise RuntimeError(f"{name} failed: {result.content}")
-        return result.structuredContent
+        return result.structured_content
 
     paths = ["pyproject.toml", "AGENTS.md", "src/bct/service.py", "src/bct/core/models.py",
              "src/bct/features/verification.py", "src/bct/features/github.py"]

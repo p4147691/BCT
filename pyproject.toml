@@ -9,7 +9,7 @@ description = "An independent user-directed development and desktop control pack
 requires-python = ">=3.11"
 license = { text = "Proprietary" }
 dependencies = [
-  "mcp>=1.26,<2",
+  "mcp==2.3.0",
   "psutil>=7,<8",
   "cryptography>=42,<48",
   "uvicorn>=0.41,<1",

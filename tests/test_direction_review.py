@@ -117,7 +117,7 @@ class DirectionReviewTests(unittest.IsolatedAsyncioTestCase):
         self.addCleanup(guard.stop)
 
     async def call(self, tool, **args):
-        _, result = await self.mcp.call_tool(tool, args)
+        result = (await self.mcp.call_tool(tool, args)).structured_content
         return result
 
     async def save(self, value=None, **overrides):
