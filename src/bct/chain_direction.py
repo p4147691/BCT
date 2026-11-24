@@ -879,25 +879,59 @@ class ChainBranchRequestLedger:
         """Read one root's durable tree without changing a receipt or a watch."""
         try:
             with store._readonly() as db:
-                directions = [dict(row) for row in db.execute(
-                    "SELECT * FROM chain_directions WHERE root_work_id=? OR (root_work_id='' AND work_id=?) ORDER BY created_at,direction_id",
-                    (root_work_id, root_work_id),
-                ).fetchall()]
-                requests = [dict(row) for row in db.execute(
-                    "SELECT * FROM chain_branch_requests WHERE root_work_id=? ORDER BY created_at,request_id",
-                    (root_work_id,),
-                ).fetchall()]
-                try:
-                    watches = [dict(row) for row in db.execute(
-                        "SELECT task_id,generation,state,context_json FROM delayed_send_watches ORDER BY generation DESC"
-                    ).fetchall()]
-                except sqlite3.OperationalError:
-                    watches = []
+                return cls._read_tree(db, root_work_id, cls._latest_tree_watches(db))
         except sqlite3.OperationalError:
             return {"root_work_id": root_work_id, "nodes": [], "branch_requests": [], "manager_attention": []}
+
+    @classmethod
+    def list_manager_attention(cls, *, store, principal_id: str, limit: int) -> list[dict]:
+        """Read the owned roots in status order using one shared Watch lookup."""
+        if limit <= 0:
+            return []
+        attention = []
+        try:
+            with store._readonly() as db:
+                roots = [str(row[0]) for row in db.execute(
+                    "SELECT w.work_id FROM works w WHERE w.owner_principal_id=? AND ("
+                    "w.work_id IN (SELECT br.root_work_id FROM chain_branch_requests br) "
+                    "OR w.work_id IN (SELECT CASE WHEN d.root_work_id='' THEN d.work_id "
+                    "ELSE d.root_work_id END FROM chain_directions d)) ORDER BY w.rowid",
+                    (principal_id,),
+                )]
+                latest_watches = cls._latest_tree_watches(db) if roots else {}
+                for root in roots:
+                    try:
+                        tree = cls._read_tree(db, root, latest_watches)
+                    except sqlite3.OperationalError:
+                        continue
+                    remaining = limit - len(attention)
+                    attention.extend({"root_work_id": root, **item}
+                                     for item in tree["manager_attention"][:remaining])
+        except (sqlite3.OperationalError, AttributeError):
+            return []
+        return attention
+
+    @staticmethod
+    def _latest_tree_watches(db) -> dict:
         latest_watches = {}
-        for watch in watches:
-            latest_watches.setdefault(str(watch["task_id"]), watch)
+        try:
+            watches = db.execute("SELECT task_id,state FROM delayed_send_watches ORDER BY generation DESC")
+            for watch in watches:
+                latest_watches.setdefault(str(watch["task_id"]), watch)
+        except sqlite3.OperationalError:
+            return {}
+        return latest_watches
+
+    @staticmethod
+    def _read_tree(db, root_work_id: str, latest_watches: dict) -> dict:
+        directions = [dict(row) for row in db.execute(
+            "SELECT * FROM chain_directions WHERE root_work_id=? OR (root_work_id='' AND work_id=?) ORDER BY created_at,direction_id",
+            (root_work_id, root_work_id),
+        )]
+        requests = [dict(row) for row in db.execute(
+            "SELECT * FROM chain_branch_requests WHERE root_work_id=? ORDER BY created_at,request_id",
+            (root_work_id,),
+        )]
         nodes = []
         for direction in directions:
             state = str(direction.get("recipe_state") or "LEGACY_UNCLASSIFIED")

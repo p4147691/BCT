@@ -68,17 +68,28 @@ class StatusReadContentionTests(unittest.TestCase):
             with self.store.transaction() as db:
                 db.execute("UPDATE chain_directions SET root_work_id=?,recipe_state=? WHERE direction_id=?",
                            ("" if "legacy" in root else root, state, f"dir-{root}"))
+        with self.store.transaction() as db:
+            db.execute("CREATE TABLE delayed_send_watches(task_id TEXT,generation INTEGER,"
+                       "state TEXT,context_json TEXT)")
+            db.execute("UPDATE chain_directions SET chain_task_id='exact-task' WHERE work_id='z-root'")
+            db.execute("INSERT INTO delayed_send_watches VALUES"
+                       "('exact-task',1,'WATCHING','{}'),"
+                       "('exact-task',2,'RETURNED_TO_MANAGER','{}')")
         expected = []
         for root in ("z-root", "empty", "a-legacy-root"):
             expected.extend({"root_work_id": root, **row} for row in
                             ChainBranchRequestLedger.tree(store=self.store, root_work_id=root)["manager_attention"])
-        with patch.object(ChainBranchRequestLedger, "tree", wraps=ChainBranchRequestLedger.tree) as tree:
+        with patch.object(ChainBranchRequestLedger, "_latest_tree_watches",
+                          wraps=ChainBranchRequestLedger._latest_tree_watches) as watches:
             result = asyncio.run(read_status(
                 SimpleNamespace(store=self.store), principal_id="owner",
                 status_provider=lambda: {"monitor": {}}, browser_usage="fixture"))
         self.assertEqual(expected, result["chain_branch_attention"])
+        watches.assert_called_once()
         self.assertEqual(["z-root", "a-legacy-root"],
-                         [call.kwargs["root_work_id"] for call in tree.call_args_list])
+                         [row["root_work_id"] for row in result["chain_branch_attention"]])
+        self.assertEqual("WAITING_INPUT", result["chain_branch_attention"][0]["state"])
+        self.assertEqual("RETURNED_TO_MANAGER", result["chain_branch_attention"][0]["watch_state"])
         self.assertIn("DO_NOT_RESEND_OR_CREATE_A_REPLACEMENT_OPERATION",
                       result["chain_branch_attention"][1]["prohibited_actions"])
 

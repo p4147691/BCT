@@ -267,7 +267,7 @@ class QueryContractTests(unittest.IsolatedAsyncioTestCase):
             ledger.save(direction_id=f"direction-{work_id}", work_id=work_id,
                         source_kind="USER", decision="NEW_TASK", direction_text="Read fixture")
         attention = [{"request_id": str(i)} for i in range(22)]
-        with patch("bct.chain_direction.ChainBranchRequestLedger.tree", return_value={"manager_attention": attention}) as tree, \
+        with patch("bct.chain_direction.ChainBranchRequestLedger._read_tree", return_value={"manager_attention": attention}) as tree, \
              patch("bct.chain_execution_plan.ChainExecutionPlanLedger.list_latest_execute_plan_checks", return_value=[]) as checks, \
              patch("bct.chain_direction.ChainDirectionLedger.list_pending_chain_starts", return_value=[]) as pending:
             for compact, limit in ((True, 5), (False, 20)):
@@ -277,7 +277,7 @@ class QueryContractTests(unittest.IsolatedAsyncioTestCase):
                                  [{"root_work_id": "mine", **item} for item in attention[:limit]])
                 checks.assert_called_with(store=self.store, limit=limit)
                 pending.assert_called_with(store=self.store, principal_id="owner", limit=limit)
-            self.assertEqual([call.kwargs["root_work_id"] for call in tree.call_args_list], ["mine", "mine"])
+            self.assertEqual([call.args[1] for call in tree.call_args_list], ["mine", "mine"])
 
     async def test_network_error_mapping_and_real_query_are_read_only(self):
         upsert_project(self.store, project_id="project-one", display_name="Project One")

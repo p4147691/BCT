@@ -6,7 +6,6 @@ creates an alternate execution or delivery path.
 from __future__ import annotations
 
 import asyncio
-import sqlite3
 import time
 from typing import Any, Callable
 
@@ -60,24 +59,10 @@ async def read_status(
     # the exact root-tree read. It is observation only and does not create
     # a branch, Direction, Work, Operation, or delivery.
     from bct.chain_direction import ChainBranchRequestLedger
-    chain_branch_attention = []
-    try:
-        with bct.store._readonly() as db:
-            roots = [str(row[0]) for row in db.execute(
-                "SELECT w.work_id FROM works w WHERE w.owner_principal_id=? AND ("
-                "w.work_id IN (SELECT br.root_work_id FROM chain_branch_requests br) "
-                "OR w.work_id IN (SELECT CASE WHEN d.root_work_id='' THEN d.work_id "
-                "ELSE d.root_work_id END FROM chain_directions d)) ORDER BY w.rowid",
-                (principal_id,),
-            ).fetchall()]
-        for root in roots:
-            tree = await asyncio.to_thread(ChainBranchRequestLedger.tree, store=bct.store, root_work_id=root)
-            chain_branch_attention.extend({"root_work_id": root, **item}
-                                          for item in tree["manager_attention"])
-    except (sqlite3.OperationalError, AttributeError):
-        # Status is a read-only summary even for legacy stores that do not
-        # yet have the additive chain tables.
-        chain_branch_attention = []
+    chain_branch_attention = await asyncio.to_thread(
+        ChainBranchRequestLedger.list_manager_attention,
+        store=bct.store, principal_id=principal_id, limit=5 if compact else 20,
+    )
     snapshot = {
         **snapshot,
         "execute_plan_checks": execute_plan_checks,
@@ -85,7 +70,7 @@ async def read_status(
         # the normal Manager status view so it cannot disappear between
         # Set Direction and the exact start/send boundary.
         "pending_chain_starts": pending_chain_starts,
-        "chain_branch_attention": chain_branch_attention[:5 if compact else 20],
+        "chain_branch_attention": chain_branch_attention,
     }
     if compact and isinstance(snapshot.get("monitor"), dict):
         monitor = dict(snapshot["monitor"])
