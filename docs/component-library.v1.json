@@ -1077,6 +1077,10 @@
           "symbol": "Maintenance"
         },
         {
+          "path": "src/bct_maintenance/registration.py",
+          "symbol": "registration_plan"
+        },
+        {
           "path": "src/bct_maintenance/admission.py",
           "symbol": "admission_fence"
         },

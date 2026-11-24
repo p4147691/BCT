@@ -1,9 +1,9 @@
 {
   "schema": "bct.component-library.bundle.v1",
-  "source_fingerprint": "9b719d04a1449ba590119d74352c573e0e4bdd66347c03d5d197dff795b120ca",
+  "source_fingerprint": "58e4383b575a6013a104db2d54f77230d333333ad64704f11a1be8550dced5a9",
   "source_hashes": {
     "docs/CHAIN_MESSAGE_RECIPE_V2.md": "1484b088885a3fcb540217fab6f787ea248305477c8a40e1e22633d9a91f24eb",
-    "docs/component-library.v1.json": "c96816ba7228612a41307d80b30bc1be70825fc9080bb72b1760099f3fab8b19",
+    "docs/component-library.v1.json": "8662dfe8bcd1cdd636acb75cc84077982e0be7992318284de1e73b9f8427211e",
     "modules/browser-bridge/extension/background.js": "b058aeb8fa8f37b8a21ae8b70be21d003e976a97e9e5ca884d7a98f5dced4472",
     "modules/browser-bridge/extension/chat_tools.js": "cc91898a0c30c58f5bee4e6b7fea991282ce5a21f100cfaeb220cc300e4ee85b",
     "modules/browser-bridge/extension/tool_protocol.js": "05e244e856af58705de1c1fc50a9a8d5e63b9ca2e8ba8674cabe8d9ea9a8563a",
@@ -70,11 +70,12 @@
     "src/bct/status_queries.py": "329914fa4c22c25ba0dab70481bb8551688b5f59e32abf45b769358e51d7612a",
     "src/bct/task_message.py": "c2dec08eb945f546ac548b8ce7d8da1ef39bdd774cd0ade25e046a53c58014ad",
     "src/bct_maintenance/admission.py": "39c38ac39849e2ab832e716414fb4cf8d3ddb2ef19d0b176bb0c71c8fee72897",
-    "src/bct_maintenance/cli.py": "14e8f38921c636fa192ea4d4df4be09ad491e4545d3f6a59ec6598eee87f1b9b",
+    "src/bct_maintenance/cli.py": "1d08eb72e504a147181c1a6c22bf32736010c3f671c69bb4c050f97b7fa0eec7",
     "src/bct_maintenance/engine.py": "da9dbbbe57b16b664c9718eb81dfd57955c2aea9acc8d013cb86b40a38c46a39",
     "src/bct_maintenance/errors.py": "8a453f795aeb56134a957cbc6bca9bd28e352cdee8c60ed481238bd83ad741ac",
     "src/bct_maintenance/locking.py": "71f1439c3392f4d554229ff801d1d28fc526931e0d6a0034d9c80b324743bd42",
     "src/bct_maintenance/operator.py": "d71627b3d395cd309d1bd65a9c39c92b327e017d513142d134b269ddefda3426",
+    "src/bct_maintenance/registration.py": "604d18cd4d99680f2d77b95ef7e7471277f0178a7c0d79c87eb84ac6da0dc02f",
     "src/bct_maintenance/releases.py": "29c22655e1ba9f1224ff4e95836d16244d15cc25db3f3db8e380a28931eb4e1b",
     "src/bct_maintenance/service_runtime.py": "5e9b24af2c64b80455130b9de5a05eeb3dcb30e08c2b80786a808ce364eb4634",
     "src/bct_maintenance/supervisor.py": "21425c69c7a149a35a47f270038bd2c73223e689fa0a3e660e45e426700bd7f1"
@@ -1533,6 +1534,10 @@
           {
             "path": "src/bct_maintenance/cli.py",
             "symbol": "Maintenance"
+          },
+          {
+            "path": "src/bct_maintenance/registration.py",
+            "symbol": "registration_plan"
           },
           {
             "path": "src/bct_maintenance/admission.py",

@@ -86,6 +86,46 @@ class IndependentMaintenanceTests(unittest.TestCase):
         (self.root / "BCT_MAINTENANCE.PAUSE").touch()
         self.tool.controller.readiness_timeout = 1
 
+    def test_registration_plan_checks_review_and_preserves_installed_config(self):
+        from unittest.mock import patch
+        from bct_maintenance.registration import registration_plan
+
+        before = self.config.read_bytes()
+        candidate = "c" * 40
+        candidate_hash = "d" * 64
+        review = {
+            "config_sha256": digest(self.config),
+            "candidate": candidate,
+            "candidate_manifest_sha256": candidate_hash,
+            "rollback": self.good["source_head"],
+            "rollback_manifest_sha256": self.good["manifest_sha256"],
+            "schema_sha256": self.schema,
+            "admission_releases": [candidate],
+        }
+        with patch("bct_maintenance.registration._target_profile", return_value=self.tool.profile), patch(
+            "bct_maintenance.registration._validate_source",
+            return_value={"manifest_sha256": candidate_hash},
+        ):
+            plan = registration_plan(self.tool, review, self.base)
+            self.assertEqual(plan["effect"], "NONE_READ_ONLY")
+            settings = plan["settings"]
+            self.assertTrue(set(self.settings["verified_releases"]) <= set(settings["verified_releases"]))
+            self.assertEqual(settings["verified_releases"][candidate], {
+                "manifest_sha256": candidate_hash,
+                "compatible_schema_sha256": [self.schema],
+            })
+            self.assertIn(candidate, settings["admission_releases"])
+            for override, error in (
+                ({"config_sha256": "0" * 64}, "MAINTENANCE_CONFIG_CHANGED"),
+                ({"candidate_manifest_sha256": "0" * 64}, "MAINTENANCE_CANDIDATE_NOT_VERIFIED"),
+                ({"rollback_manifest_sha256": "0" * 64}, "MAINTENANCE_RELEASE_PIN_MISMATCH"),
+                ({"schema_sha256": "0" * 64}, "MAINTENANCE_DB_COMPATIBILITY_NOT_VERIFIED"),
+                ({"admission_releases": ["e" * 40]}, "MAINTENANCE_ADMISSION_RELEASE_NOT_VERIFIED"),
+            ):
+                with self.subTest(error=error), self.assertRaisesRegex(PreconditionError, error):
+                    registration_plan(self.tool, {**review, **override}, self.base)
+        self.assertEqual(self.config.read_bytes(), before)
+
     def save_config(self):
         atomic_json(self.config, self.settings)
 
@@ -277,10 +317,23 @@ class IndependentMaintenanceTests(unittest.TestCase):
         git("worktree", "add", "--detach", str(linked), sha)
         (source / "ongoing-user-work.txt").write_text("preserve", encoding="utf-8")
         candidate = _validate_source(self.tool.profile, sha, linked)
-        self.settings["verified_releases"][sha] = {
-            "manifest_sha256": candidate["manifest_sha256"], "compatible_schema_sha256": [self.schema]}
-        self.save_config()
+        from bct_maintenance.registration import registration_plan
+
+        plan = registration_plan(self.tool, {
+            "config_sha256": digest(self.config), "candidate": sha,
+            "rollback": self.good["source_head"], "schema_sha256": self.schema,
+            "candidate_manifest_sha256": candidate["manifest_sha256"],
+            "rollback_manifest_sha256": self.good["manifest_sha256"],
+        }, linked)
+        with self.assertRaisesRegex(PreconditionError, "MAINTENANCE_CANDIDATE_NOT_VERIFIED"):
+            self.tool.verify_source(sha, linked)
+        atomic_json(self.config, plan["settings"])
         tool = Maintenance(self.config)
+        self.assertEqual(tool.verify(self.good["source_head"])["effect"], "NONE_READ_ONLY")
+        checked = tool.verify_source(sha, linked)
+        self.assertEqual(checked["effect"], "NONE_READ_ONLY")
+        self.assertEqual(checked["manifest_sha256"], candidate["manifest_sha256"])
+        self.assertFalse((self.root / "releases" / sha).exists())
         result = tool.run("activate", operation_id="activate", expected_current=self.good["source_head"], target=sha, source_worktree=str(linked))
         self.assertEqual((source / "ongoing-user-work.txt").read_text(encoding="utf-8"), "preserve")
         self.assertEqual(result["result"]["source_head"], sha)

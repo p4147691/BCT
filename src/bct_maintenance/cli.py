@@ -114,6 +114,24 @@ class Maintenance:
         return {"release_sha": sha, "manifest_sha256": release["manifest_sha256"],
                 "database": state, "effect": "NONE_READ_ONLY"}
 
+    def verified_candidate(self, sha, source_worktree, state):
+        profile = _target_profile(self.profile, sha, Path(source_worktree) if source_worktree else None)
+        if profile.protected_activation_required:
+            raise PreconditionError("MAINTENANCE_CUTOVER_REQUIRES_EXISTING_APPROVAL_ROUTE")
+        source = _validate_source(profile, sha, Path(source_worktree) if source_worktree else None)
+        pin = self.config.get("verified_releases", {}).get(sha, {})
+        if source["manifest_sha256"] != pin.get("manifest_sha256"):
+            raise PreconditionError("MAINTENANCE_CANDIDATE_NOT_VERIFIED")
+        self.compatible(sha, state)
+        return profile, source
+
+    def verify_source(self, sha, source_worktree):
+        _validate_profile_start_allowed(self.profiles, self.profile)
+        state = state_snapshot(self.root)
+        _, source = self.verified_candidate(sha, source_worktree, state)
+        return {"release_sha": sha, "manifest_sha256": source["manifest_sha256"],
+                "database": state, "effect": "NONE_READ_ONLY"}
+
     def compatible(self, sha, state):
         pin = self.config.get("verified_releases", {}).get(sha, {})
         if state["schema_sha256"] not in pin.get("compatible_schema_sha256", []):
@@ -227,15 +245,7 @@ class Maintenance:
                 release = self.pinned_release(target or "")
                 self.compatible(target, state)
             if action == "activate":
-                # Same source / local-main / manifest checks as BCT deployment.
-                profile = _target_profile(self.profile, target or "", Path(source_worktree) if source_worktree else None)
-                if profile.protected_activation_required:
-                    raise PreconditionError("MAINTENANCE_CUTOVER_REQUIRES_EXISTING_APPROVAL_ROUTE")
-                source = _validate_source(profile, target, Path(source_worktree) if source_worktree else None)
-                pin = self.config.get("verified_releases", {}).get(target, {})
-                if source["manifest_sha256"] != pin.get("manifest_sha256"):
-                    raise PreconditionError("MAINTENANCE_CANDIDATE_NOT_VERIFIED")
-                self.compatible(target, state)
+                profile, _ = self.verified_candidate(target, source_worktree, state)
                 self.pinned_release(expected_current)
                 self.compatible(expected_current, state)
             unresponsive = None
@@ -357,7 +367,8 @@ def main(argv=None):
         if args.action == "status":
             result = tool.status()
         elif args.action == "verify":
-            result = tool.verify(args.target or "")
+            result = (tool.verify_source(args.target or "", args.source_worktree)
+                      if args.source_worktree else tool.verify(args.target or ""))
         elif args.action == "reconcile":
             result = tool.reconcile(args.operation_id or "")
         else:

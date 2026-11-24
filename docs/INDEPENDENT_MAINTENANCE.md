@@ -103,3 +103,29 @@ RUNNING이라는 표시는 실제 프로세스 생존의 증거가 아니다. �
 
 배포 순서는 격리 테스트 → 정확한 후보 CI → 정본 main 통합 → 운영 전환 → 실제 외부 정비
 확인 → 접수 재개 → 원격 main 게시·CI 확인이다. 운영 결과는 별도의 설치 영수증으로 남긴다.
+
+## Review a new release registration
+
+Use the read-only planner from a reviewed source checkout with its src directory
+on PYTHONPATH:
+
+    python scripts/plan_maintenance_release_registration.py --config CONFIG --review REVIEW.json --source-worktree CLEAN_RELEASE_WORKTREE
+
+The administrator's review record includes the existing config_sha256, candidate
+and rollback commit SHAs, candidate_manifest_sha256, rollback_manifest_sha256,
+and schema_sha256 from a backup verified with both releases. Record the exact
+candidate CI and backup/restore evidence in the review before preparing the JSON.
+Include admission_releases only for members of this pair whose maintenance
+admission contract was independently verified. The planner checks the submitted
+pins against current files and state and emits proposed settings for review.
+It does not obtain evidence of CI or database restore success.
+
+Before installing proposed settings through the administrator-controlled
+maintenance configuration, recheck the prior config hash, current release,
+review evidence, and affected admission pins. Preserve an exact copy of the
+prior config for rollback. Treat installation as a separate protected effect.
+Require both releases to pass the installed launcher's gates before stopping
+Core. Use verify --target SHA --source-worktree CLEAN_RELEASE_WORKTREE for the
+candidate and verify --target SHA for the retained release. After activation,
+verify the installed candidate without --source-worktree. Recover from
+the retained release using the regular maintenance receipts and gates.
