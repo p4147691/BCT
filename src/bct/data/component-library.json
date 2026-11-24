@@ -1,6 +1,6 @@
 {
   "schema": "bct.component-library.bundle.v1",
-  "source_fingerprint": "5f3ae1abba436d489e53210f54b19c46310cbddd66479149bad2de5cf2345910",
+  "source_fingerprint": "39d724d615e62f3ce3d548b24ac7c8b511bb18fad7717297f3db25809d62ba5b",
   "source_hashes": {
     "docs/CHAIN_MESSAGE_RECIPE_V2.md": "1484b088885a3fcb540217fab6f787ea248305477c8a40e1e22633d9a91f24eb",
     "docs/component-library.v1.json": "366fc1e86cbd31015bc6821eaa37b277f526eb5953b2fa927edce685c38d9205",
@@ -49,7 +49,7 @@
     "src/bct/loop_supervisor_handoff.py": "10337fe0b64b47a93e12bea9c354c0fdb40887d715c311fea019b700f6dfe220",
     "src/bct/loop_turns.py": "95a33e77f62c57eac6f631123632da88bb875c3a154557af9d5afc74116ed5ba",
     "src/bct/mcp_catalogue_config.py": "82663cf12c66b6da9a7a47e4442c7ceed6612c4c438c9dbe8db71846784bfed7",
-    "src/bct/mcp_server.py": "b5b57b5f1bab0729ec60f5aca067705651848f31396e8be5736ba4e8de5a8b9c",
+    "src/bct/mcp_server.py": "4ad131e1d418297019d9e9068d979941ac3fe5f6d5533b6f1cd77c607ba42b71",
     "src/bct/monitor_events.py": "c0ccbd09016280d477cbdbe736d00ca502213a5a12896007b91b89a66b3edaad",
     "src/bct/node_recovery.py": "1c84150ae1af8cc285432565097ac071a2af6c4b2534f1d19ac7f75d7bec2438",
     "src/bct/persistent_loop_recovery.py": "4508fdeeab8a960c16c4ca131476afc896ad46449298652fa7a24224e173c8bf",

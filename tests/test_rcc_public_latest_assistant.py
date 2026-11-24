@@ -1,7 +1,6 @@
 ﻿from __future__ import annotations
 
 import unittest
-import json
 from types import SimpleNamespace
 
 from bct.mcp_server import build_mcp
@@ -88,7 +87,7 @@ class PublicReadLatestAssistantTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_generic_browser_exposes_rcc_catalogue_without_bypassing_validation(self):
         catalogue = await self.server.call_tool("bct_rcc_command_catalog", {})
-        catalogue_value = json.loads(catalogue[0][0].text)
+        catalogue_value = catalogue.structured_content
         by_command = {row["command"]: row for row in catalogue_value["commands"]}
         self.assertEqual("send", by_command["rcc_send_message"]["legacy_alias"])
         self.assertEqual("rcc_send", by_command["rcc_send_message"]["compatibility_alias"])
@@ -112,7 +111,7 @@ class PublicReadLatestAssistantTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_recipe_catalog_names_direct_browser_steps(self):
         recipes = await self.server.call_tool("bct_rcc_recipe_catalog", {})
-        value = json.loads(recipes[0][0].text)
+        value = recipes.structured_content
         by_name = {item["recipe"]: item for item in value["recipes"]}
         self.assertEqual(
             by_name["read-latest-assistant"]["steps"],

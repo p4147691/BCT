@@ -10,6 +10,7 @@ from typing import Any, Callable, Coroutine
 
 from mcp.server import MCPServer
 from mcp.server.mcpserver import Image
+from mcp.server.mcpserver.exceptions import ToolError
 from starlette.responses import JSONResponse
 
 from .background_operations import BACKGROUND_CAPABILITIES, launch_background_operation
@@ -293,14 +294,20 @@ def build_mcp(
         hold_kind: str = "UNKNOWN",
         limit: int = 30,
     ) -> dict[str, Any]:
-        return await queue_message_command(
-            bct.store, work_id=work_id,
-            target_conversation_key=target_conversation_key, action=action,
-            message_id=message_id, instruction=instruction,
-            origin_conversation_key=origin_conversation_key, claim_id=claim_id,
-            result_sha256=result_sha256, reason=reason, hold_kind=hold_kind,
-            limit=limit,
-        )
+        try:
+            return await queue_message_command(
+                bct.store, work_id=work_id,
+                target_conversation_key=target_conversation_key, action=action,
+                message_id=message_id, instruction=instruction,
+                origin_conversation_key=origin_conversation_key, claim_id=claim_id,
+                result_sha256=result_sha256, reason=reason, hold_kind=hold_kind,
+                limit=limit,
+            )
+        except ValueError as exc:
+            reason = str(exc)
+            if reason.startswith("CHAT_QUEUE_") and reason.isidentifier():
+                raise ToolError(reason) from exc
+            raise
 
     @server.tool(
         description=(

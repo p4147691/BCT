@@ -32,7 +32,7 @@ class TaskRunOfficialTests(unittest.IsolatedAsyncioTestCase):
                              "manager_epoch":1,"worker_node_id":"B","attachment_id":"ATT",
                              "acceptance":"complete"}
             })
-        self.assertIsInstance(response,tuple)
+        self.assertEqual(response.structured_content["outcome"], "APPLIED")
         self.assertEqual(launch.call_count,1)
         kwargs=launch.call_args.kwargs
         self.assertEqual(kwargs["capability"],"orchestrate")
@@ -45,5 +45,5 @@ class TaskRunOfficialTests(unittest.IsolatedAsyncioTestCase):
                 "work_id":"W","operation_id":"O",
                 "arguments":{"operation":op}
             })
-            self.assertIsInstance(result,tuple)
+            self.assertEqual(result.structured_content["reason"], "TASK_RUN_OPERATION_MISMATCH")
         self.assertEqual([],self.operations.calls)

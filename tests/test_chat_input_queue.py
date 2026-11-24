@@ -251,8 +251,11 @@ class ChatInputQueueMCPTests(unittest.TestCase):
             isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant)
             and isinstance(node.value.value, str))]
         self.assertEqual(1, len(body))
-        self.assertIsInstance(body[0], ast.Return)
-        value = body[0].value
+        self.assertIsInstance(body[0], ast.Try)
+        self.assertEqual(1, len(body[0].body))
+        delegation = body[0].body[0]
+        self.assertIsInstance(delegation, ast.Return)
+        value = delegation.value
         self.assertIsInstance(value, ast.Await)
         self.assertEqual("queue_message_command", ast.unparse(value.value.func))
 
