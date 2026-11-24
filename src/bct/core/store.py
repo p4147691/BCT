@@ -41,19 +41,24 @@ def _claim_unknown_detail(error: str | None, outcome: str | None,
             "evidence": "RECORDED_ERROR_CODE_ONLY"}
 
 
-def _claim_executor_identity(pid: int | None, fingerprint: str | None) -> tuple[str, bool]:
-    if pid is None:
-        return "NOT_RECORDED", False
-    if not fingerprint:
-        return "FINGERPRINT_MISSING", False
+def _observe_claim_executor(pid: int):
     try:
         # Uses the existing PID + executable + creation-time fingerprint helper.
         # Failure to observe a process is not proof that the worker is dead.
         from bct.service_runtime import process_identity
-        observed = process_identity(int(pid))
+        return process_identity(int(pid))
     except Exception:
         # A PID probe must never fail the entire read-only Monitor snapshot.
-        observed = None
+        return None
+
+
+def _claim_executor_identity(pid: int | None, fingerprint: str | None,
+                             observe=_observe_claim_executor) -> tuple[str, bool]:
+    if pid is None:
+        return "NOT_RECORDED", False
+    if not fingerprint:
+        return "FINGERPRINT_MISSING", False
+    observed = observe(pid)
     if observed is None:
         return "NOT_OBSERVABLE", False
     if observed.fingerprint != fingerprint:
@@ -1274,13 +1279,18 @@ class Store:
             "github_run_inbox": inbox,
         }
 
-    def claim_diagnostics(self) -> list[dict[str, Any]]:
+    def claim_diagnostics(
+        self, *, timings: dict[str, float | int] | None = None,
+    ) -> list[dict[str, Any]]:
         """Read-only, unbounded-by-recent-operations claim provenance projection.
 
         Never infer process liveness or safe claim release from a stale record.
         Excludes payloads, prompts, credentials, command lines and file contents.
+        Optional timings contain durations and counts only, scoped to this read.
         """
+        started = time.perf_counter()
         db = self._connect()
+        connected = time.perf_counter()
         try:
             rows = db.execute(
                 "WITH latest_claim_events AS ("
@@ -1314,12 +1324,26 @@ class Store:
             ).fetchall()
         finally:
             db.close()
+        queried = time.perf_counter()
+        observed_by_pid = {}
+        probe_seconds = 0.0
+
+        def observe(pid):
+            nonlocal probe_seconds
+            if pid not in observed_by_pid:
+                before_probe = time.perf_counter()
+                observed_by_pid[pid] = _observe_claim_executor(pid)
+                probe_seconds += time.perf_counter() - before_probe
+            return observed_by_pid[pid]
+
         output = []
         for row in rows:
             state, outcome = row["operation_state"], row["outcome"]
             detail = _claim_unknown_detail(row["error"], outcome, row["capability"])
+            # Cache only the observed identity in this snapshot, not a verdict:
+            # a reused PID may occur with different recorded fingerprints.
             identity_status, identity_verified = _claim_executor_identity(
-                row["executor_pid"], row["executor_fingerprint"])
+                row["executor_pid"], row["executor_fingerprint"], observe)
             # Claims are observational metadata. Preserve UNKNOWN as the
             # historical outcome, but never project it as execution ownership.
             if outcome == "UNKNOWN":
@@ -1376,6 +1400,16 @@ class Store:
                 # Kept for compatibility: the diagnostics/read path itself
                 # never mutates claims.
                 "can_auto_release": False,
+            })
+        if timings is not None:
+            projected = time.perf_counter()
+            timings.update({
+                "db_connect_ms": round((connected - started) * 1000, 3),
+                "db_read_ms": round((queried - connected) * 1000, 3),
+                "process_identity_ms": round(probe_seconds * 1000, 3),
+                "row_projection_ms": round(max(0.0, projected - queried - probe_seconds) * 1000, 3),
+                "process_probes": len(observed_by_pid),
+                "claim_rows": len(output),
             })
         return output
 

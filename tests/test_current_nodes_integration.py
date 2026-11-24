@@ -38,7 +38,7 @@ class RccContractTests(unittest.TestCase):
             def monitor_snapshot(self):
                 return {k:[] for k in ("works","operations","unresolved_claims","nodes","connections","orchestration_sessions","orchestration_assignments")}
             def wake_node_label_notifications(self,*a,**kw): return None
-            def claim_diagnostics(self): return []
+            def claim_diagnostics(self, *, timings=None): return []
         with patch("bct.monitor_runtime._session_states",return_value=[]), \
              patch("bct.monitor_runtime.discover_instance_ids",return_value=["rcc"]), \
              patch("bct.monitor_runtime._rcc_states",return_value=[{"instance_id":"rcc","state":"OPEN","tabs":[normalized_tab()]}]), \

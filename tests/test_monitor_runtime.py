@@ -153,6 +153,17 @@ class MonitorRuntimeTests(unittest.TestCase):
                 set(tail),
             )
             self.assertGreaterEqual(tail["provider_total_ms"], timings["total_ms"])
+            claim_tail = state["observability"]["claim_diagnostics_timings"]
+            self.assertEqual(
+                {"db_connect_ms", "db_read_ms", "process_identity_ms",
+                 "row_projection_ms", "process_probes", "claim_rows"}, set(claim_tail),
+            )
+            self.assertTrue(all(value >= 0 for value in claim_tail.values()))
+            self.assertEqual(0, claim_tail["process_probes"])
+            self.assertEqual(0, claim_tail["claim_rows"])
+            self.assertGreaterEqual(tail["claim_diagnostics_ms"] + 0.01, sum(
+                value for key, value in claim_tail.items() if key.endswith("_ms")
+            ))
             self.assertEqual(1, state["counts"]["works"])
             self.assertEqual(0, state["counts"]["unresolved_claims_shared"])
             self.assertEqual(0, state["counts"]["unresolved_claims_exact"])
