@@ -642,14 +642,7 @@ class ChainDirectionLedger:
         direction = {**dict(row), "assessment": json.loads(row["assessment_json"]),
                 "source_evidence": direction_source_evidence(row["source_kind"]),
                 "target_deliveries": [dict(target) for target in targets]}
-        direction["chain_continuation"] = {
-            "state": direction.get("recipe_state") or "LEGACY_UNCLASSIFIED",
-            "reason": direction.get("recipe_reason") or "",
-            "next_safe_step": direction.get("next_safe_step") or "INSPECT_DIRECTION",
-            "chain_state": direction["chain_state"],
-            "work_id": direction["work_id"],
-            "direction_id": direction["direction_id"],
-        }
+        direction["chain_continuation"] = self._chain_continuation(direction)
         direction["chain_branch"] = {
             "root_work_id": direction.get("root_work_id") or direction["work_id"],
             "parent_work_id": direction.get("parent_work_id") or "",
@@ -660,6 +653,17 @@ class ChainDirectionLedger:
             "branch_request_id": direction.get("branch_request_id") or "",
         }
         return direction
+
+    @staticmethod
+    def _chain_continuation(direction: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "state": direction.get("recipe_state") or "LEGACY_UNCLASSIFIED",
+            "reason": direction.get("recipe_reason") or "",
+            "next_safe_step": direction.get("next_safe_step") or "INSPECT_DIRECTION",
+            "chain_state": direction["chain_state"],
+            "work_id": direction["work_id"],
+            "direction_id": direction["direction_id"],
+        }
 
     @classmethod
     def list_pending_chain_starts(cls, *, store, principal_id: str,
@@ -683,12 +687,7 @@ class ChainDirectionLedger:
             # Status remains a read-only observation for stores created before
             # this additive field. A later Direction write performs migration.
             return []
-        result = []
-        for row in rows:
-            direction = cls(store).get(direction_id=str(row["direction_id"]))
-            if direction is not None:
-                result.append(direction["chain_continuation"])
-        return result
+        return [cls._chain_continuation(dict(row)) for row in rows]
 
     def plan_chain(self, *, direction_id: str, work_id: str, task_id: str,
                    operation_id: str, instruction_text: str = "") -> dict[str, Any]:

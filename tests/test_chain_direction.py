@@ -270,7 +270,8 @@ class ChainDirectionPublicTests(unittest.IsolatedAsyncioTestCase):
                 SimpleNamespace(operations=Operations(), store=store),
                 compact_catalogue=True, status_provider=lambda: {"monitor": {}},
             )
-            status = (await mcp.call_tool("bct_status", {"scope": "bct"})).structured_content
+            with patch.object(store, "transaction", side_effect=AssertionError("write requested by status")):
+                status = (await mcp.call_tool("bct_status", {"scope": "bct"})).structured_content
             self.assertEqual(["pending-direction"], [
                 item["direction_id"] for item in status["pending_chain_starts"]
             ])

@@ -274,12 +274,12 @@
       "maturity": "isolated",
       "implementation": [
         {"path": "src/bct/core/store.py", "symbol": "Store.claim_diagnostics (partial operation-event index)"},
-        {"path": "src/bct/chain_direction.py", "symbol": "ChainBranchRequestLedger.list_manager_attention"},
+        {"path": "src/bct/chain_direction.py", "symbol": "ChainBranchRequestLedger.list_manager_attention / ChainDirectionLedger.list_pending_chain_starts"},
         {"path": "src/bct/monitor_runtime.py", "symbol": "_session_states (Monitor status provider)"},
         {"path": "src/bct/status_queries.py", "symbol": "read_status / read_conversation_network"},
         {"path": "src/bct/mcp_server.py", "symbol": "bct_status / bct_get_conversation_network (public adapters)"}
       ],
-      "contract": "Compose status and conversation-network query results with per-call store, principal and snapshot dependencies. The explicit health scope reads Core readiness, maintenance pause and release identity without building the Monitor snapshot. Batch owned-Work branch attention with one Watch lookup per status summary. Use directory-entry metadata for process sessions and keep live process checks. Preserve one provider snapshot read, compact limits, legacy-store handling, trace context and existing query errors without delivery or capability execution.",
+      "contract": "Compose status and conversation-network query results with per-call store, principal and snapshot dependencies. The explicit health scope reads Core readiness, maintenance pause and release identity without building the Monitor snapshot. Batch owned-Work branch attention with one Watch lookup per status summary and project pending starts from their selected rows. Use directory-entry metadata for process sessions and keep live process checks. Preserve one provider snapshot read, compact limits, legacy-store handling, trace context and existing query errors without delivery or capability execution.",
       "effects": [],
       "safety": ["single-snapshot", "owner-scoped-branch-attention", "no-new-ledger-write", "source-snapshot-preserved", "no-cross-server-runtime-state"],
       "tests": ["tests/test_mcp_read_transform_extraction.py", "tests/test_status_views.py", "tests/test_status_read_contention.py"],
