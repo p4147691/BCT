@@ -741,6 +741,28 @@ def main() -> int:
                     "polls":int(state["delayed_send_watch"].get("polls",0))+1,
                 }
 
+    def runtime_identity() -> dict[str, Any]:
+        return {
+            "release_sha": arguments.release_sha,
+            "manifest_sha256": arguments.manifest_sha256,
+            "generation": arguments.generation,
+        }
+
+    def health_snapshot() -> dict[str, Any]:
+        ready = state.get("ready") is True
+        mcp_ready = state.get("mcp_ready") is True
+        return {
+            "schema": 1,
+            "status": "OK" if ready and mcp_ready else "UNAVAILABLE",
+            "scope": "health",
+            "core": {
+                "ready": ready,
+                "mcp_ready": mcp_ready,
+                "maintenance_paused": (runtime_root / "BCT_MAINTENANCE.PAUSE").is_file(),
+            },
+            "runtime": runtime_identity(),
+        }
+
     def status_snapshot() -> dict[str, Any]:
         """Expose one no-argument, read-only operator view for MCP clients."""
         monitor = build_monitor_state(
@@ -753,15 +775,14 @@ def main() -> int:
         return {
             "schema": 1,
             "core": dict(state),
-            "runtime": {
-                "release_sha": arguments.release_sha,
-                "manifest_sha256": arguments.manifest_sha256,
-                "generation": arguments.generation,
-            },
+            "runtime": runtime_identity(),
             "monitor": monitor,
         }
 
-    mcp = build_mcp(bct, status_provider=status_snapshot, compact_catalogue=compact_catalogue, hybrid_catalogue=hybrid_catalogue)
+    mcp = build_mcp(
+        bct, status_provider=status_snapshot, health_provider=health_snapshot,
+        compact_catalogue=compact_catalogue, hybrid_catalogue=hybrid_catalogue,
+    )
     monitor_events = MonitorEvents()
     bct.store.monitor_display_changed = monitor_events.publish
     monitor_snapshot = SnapshotFlight()

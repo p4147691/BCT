@@ -167,6 +167,12 @@ class MCPIntegrationTests(unittest.TestCase):
                 return response.json()["result"]
 
             await call_modern("server/discover")
+            health = (await call_modern("tools/call", name="bct_status",
+                                        arguments={"scope": "health"}))["structuredContent"]
+            self.assertEqual({"schema", "status", "scope", "core", "runtime", "mcp_trace_id"}, set(health))
+            self.assertEqual(health["runtime"]["release_sha"], self.release_sha)
+            self.assertEqual(health["core"], {"ready": True, "mcp_ready": True, "maintenance_paused": False})
+            self.assertLess(len(json.dumps(health)), 1024)
             modern_status = await call_modern("tools/call", name="bct_status",
                                               arguments={"compact": True, "scope": "bct"})
             self.assertFalse(modern_status.get("isError", False))

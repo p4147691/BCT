@@ -121,6 +121,7 @@ def build_mcp(
     bct: Any,
     *,
     status_provider: Callable[[], dict[str, Any]] | None = None,
+    health_provider: Callable[[], dict[str, Any]] | None = None,
     compact_catalogue: bool = False,
     hybrid_catalogue: bool = False,
 ) -> MCPServer:
@@ -243,7 +244,8 @@ def build_mcp(
     async def bct_status(compact: bool = True, scope: str = "bct", sort_by: str = "number") -> dict[str, Any]:
         return await read_status(
             bct, principal_id=principal.principal_id, status_provider=status_provider,
-            browser_usage=_CAPABILITY_USAGE["browser"], compact=compact, scope=scope, sort_by=sort_by,
+            health_provider=health_provider, browser_usage=_CAPABILITY_USAGE["browser"],
+            compact=compact, scope=scope, sort_by=sort_by,
         )
 
     @server.tool(

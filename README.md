@@ -107,3 +107,9 @@ python -m compileall -q src tests
 검증 명령은 해당 작업의 검증 기록에만 적는다. CI가 완료될 때까지
 대기하지 말고 다음 독립 작업을 계속한다. CI 결과는 GitHub Inbox 알림 연결이 완료되기 전까지는
 GitHub의 Checks 화면에서 확인한다.
+
+### Core 상태 빠른 확인
+
+준비 상태, 정비 일시정지 여부, 실행 중인 릴리스만 확인하려면
+`bct_status(scope="health")`를 사용한다. Monitor, RCC, 프로세스, Claim 등의
+상세 정보는 기존 상태 조회에서 확인한다.

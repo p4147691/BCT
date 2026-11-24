@@ -19,8 +19,20 @@ async def read_status(
     bct: Any, *, principal_id: str,
     status_provider: Callable[[], dict[str, Any]] | None,
     browser_usage: str, compact: bool = True, scope: str = "bct", sort_by: str = "number",
+    health_provider: Callable[[], dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     started_ns = time.perf_counter_ns()
+    if scope == "health":
+        if health_provider is None:
+            return {"status": "UNAVAILABLE", "scope": "health", "reason": "HEALTH_PROVIDER_NOT_CONFIGURED"}
+        result = await asyncio.to_thread(health_provider)
+        trace_id = _MCP_TRACE_ID.get()
+        if trace_id is not None:
+            result = {**result, "mcp_trace_id": trace_id}
+        handler_ms = (time.perf_counter_ns() - started_ns) / 1e6
+        _trace_stage("handler_done", tool_kind="status_health", handler_ms=handler_ms,
+                     wait_ms=0.0, execution_ms=handler_ms)
+        return result
     if status_provider is None:
         return {"status": "UNAVAILABLE", "reason": "STATUS_PROVIDER_NOT_CONFIGURED"}
     if scope not in STATUS_SCOPES:

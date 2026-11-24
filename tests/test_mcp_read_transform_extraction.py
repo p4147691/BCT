@@ -224,6 +224,21 @@ class QueryContractTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(snapshot, original)
         self.assertEqual(database_dump(self.store), before)
 
+    async def test_health_scope_reads_only_the_injected_health_provider(self):
+        expected = {"status": "OK", "scope": "health", "runtime": {"release_sha": "fixture"}}
+        health = Mock(return_value=expected)
+        full = Mock(side_effect=AssertionError("Unexpected full snapshot"))
+        server = build_mcp(self.bct, status_provider=full, health_provider=health)
+        token = TRACE_ID.set("health-fixture-trace")
+        try:
+            result = await server.call_tool("bct_status", {"scope": "health"})
+        finally:
+            TRACE_ID.reset(token)
+        self.assertEqual(result.structured_content, {**expected, "mcp_trace_id": "health-fixture-trace"})
+        self.assertNotIn("mcp_trace_id", expected)
+        health.assert_called_once_with()
+        full.assert_not_called()
+
     async def test_status_rejects_invalid_requests_before_observation_or_store_access(self):
         provider = Mock(side_effect=AssertionError("Unexpected observation"))
         self.assertEqual(await read_status(object(), principal_id="owner", status_provider=None,
