@@ -98,3 +98,30 @@ class StatusReadContentionTests(unittest.TestCase):
                 status_provider=lambda: {"monitor": {}}, browser_usage="fixture", compact=compact,
             ))
             self.assertEqual(expected, [row["root_work_id"] for row in result["chain_branch_attention"]])
+
+
+    def test_request_only_root_is_visible_but_orphan_watch_is_not_attention(self):
+        ChainDirectionLedger(self.store)
+        for root in ("request-only", "orphan-watch"):
+            self.store.create_work(Work(root, "fixture", (self.tmp.name,), frozenset({"read"}), "owner"))
+        with self.store.transaction() as db:
+            db.execute("INSERT INTO chain_branch_requests VALUES("
+                       "'req','request-only','former-work','former-direction','step',"
+                       "'gone-task',1,'DIAGNOSIS','fixture','{}',1,'WAITING_INPUT',"
+                       "'needs review','MANAGER_REVIEW_BRANCH_REQUEST','{}','',1,1)")
+            db.execute("CREATE TABLE delayed_send_watches(task_id TEXT,generation INTEGER,"
+                       "state TEXT,context_json TEXT)")
+            db.execute("INSERT INTO delayed_send_watches VALUES('stray-task',1,'UNKNOWN','{}')")
+        expected = ChainBranchRequestLedger.tree(
+            store=self.store, root_work_id="request-only",
+        )["manager_attention"]
+        self.assertEqual(["req"], [item["request_id"] for item in expected])
+        self.assertEqual([], ChainBranchRequestLedger.tree(
+            store=self.store, root_work_id="orphan-watch",
+        )["manager_attention"])
+        result = asyncio.run(read_status(
+            SimpleNamespace(store=self.store), principal_id="owner",
+            status_provider=lambda: {"monitor": {}}, browser_usage="fixture",
+        ))
+        self.assertEqual([{"root_work_id": "request-only", **item} for item in expected],
+                         result["chain_branch_attention"])
