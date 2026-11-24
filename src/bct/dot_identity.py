@@ -13,7 +13,7 @@ def dot_key(value):
 def dot_directory(store):
     if not callable(getattr(store, "transaction", None)):
         return {}
-    with store.transaction() as db:
+    with store.read_transaction() as db:
         exists = db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='dot_node_info'").fetchone()
         if not exists:
             return {}

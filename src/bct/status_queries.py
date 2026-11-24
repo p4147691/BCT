@@ -52,7 +52,11 @@ async def read_status(
     try:
         with bct.store._readonly() as db:
             roots = [str(row[0]) for row in db.execute(
-                "SELECT work_id FROM works WHERE owner_principal_id=?", (principal_id,)
+                "SELECT w.work_id FROM works w WHERE w.owner_principal_id=? AND ("
+                "w.work_id IN (SELECT br.root_work_id FROM chain_branch_requests br) "
+                "OR w.work_id IN (SELECT CASE WHEN d.root_work_id='' THEN d.work_id "
+                "ELSE d.root_work_id END FROM chain_directions d)) ORDER BY w.rowid",
+                (principal_id,),
             ).fetchall()]
         for root in roots:
             tree = await asyncio.to_thread(ChainBranchRequestLedger.tree, store=bct.store, root_work_id=root)
