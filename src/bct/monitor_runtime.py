@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import time
 from threading import Lock
 from pathlib import Path
@@ -108,17 +109,20 @@ def monitor_roster_revision(store: Any) -> dict[str, Any]:
 def _session_states(root: Path) -> list[dict[str, Any]]:
     if not root.is_dir():
         return []
+    with os.scandir(root) as entries:
+        directories = sorted(
+            (entry.name for entry in entries if entry.is_dir() and not entry.is_symlink()),
+            key=str.casefold,
+        )
     rows: list[dict[str, Any]] = []
-    for directory in sorted(root.iterdir(), key=lambda item: item.name.casefold()):
-        if not directory.is_dir() or directory.is_symlink():
-            continue
-        value = read_json(directory / "session.json")
+    for directory in directories:
+        value = read_json(root / directory / "session.json")
         if not isinstance(value, dict):
             continue
         child = value.get("child") if isinstance(value.get("child"), dict) else {}
         worker = value.get("worker") if isinstance(value.get("worker"), dict) else {}
         rows.append({
-            "session_id": directory.name,
+            "session_id": directory,
             "state": str(value.get("state") or "UNKNOWN"),
             "kind": str(value.get("kind") or ""),
             "work_id": str(value.get("work_id") or ""),

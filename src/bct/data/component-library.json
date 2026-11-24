@@ -1,9 +1,9 @@
 {
   "schema": "bct.component-library.bundle.v1",
-  "source_fingerprint": "ebf0233bba6a785deede7823a6d63d27170cedd343af2a71f44c509785bcd22c",
+  "source_fingerprint": "1b3c1b590a6b7346c41cb1b48ee9c11e5f7e4adf6c98cf32c93203fc59faabb6",
   "source_hashes": {
     "docs/CHAIN_MESSAGE_RECIPE_V2.md": "1484b088885a3fcb540217fab6f787ea248305477c8a40e1e22633d9a91f24eb",
-    "docs/component-library.v1.json": "7090bf7d3b76700770c1d0dfabc0b5464c4b664ce1617bb985e503849a40a5f2",
+    "docs/component-library.v1.json": "a23446e20c2d912dacb2314466cc3e1071e2e53b5ec4e53b80cdf90c04c965e3",
     "modules/browser-bridge/extension/background.js": "b058aeb8fa8f37b8a21ae8b70be21d003e976a97e9e5ca884d7a98f5dced4472",
     "modules/browser-bridge/extension/chat_tools.js": "cc91898a0c30c58f5bee4e6b7fea991282ce5a21f100cfaeb220cc300e4ee85b",
     "modules/browser-bridge/extension/tool_protocol.js": "05e244e856af58705de1c1fc50a9a8d5e63b9ca2e8ba8674cabe8d9ea9a8563a",
@@ -52,6 +52,7 @@
     "src/bct/mcp_catalogue_config.py": "82663cf12c66b6da9a7a47e4442c7ceed6612c4c438c9dbe8db71846784bfed7",
     "src/bct/mcp_server.py": "5a8f309c2df534b76aeae880be52b0a658cbfcc3c4cfede2650ad46339178fd1",
     "src/bct/monitor_events.py": "c0ccbd09016280d477cbdbe736d00ca502213a5a12896007b91b89a66b3edaad",
+    "src/bct/monitor_runtime.py": "f770080d682ee73e75f13f35d8d6f689656d26f4921cf24f0165d503493d3d15",
     "src/bct/node_recovery.py": "1c84150ae1af8cc285432565097ac071a2af6c4b2534f1d19ac7f75d7bec2438",
     "src/bct/persistent_loop_recovery.py": "4508fdeeab8a960c16c4ca131476afc896ad46449298652fa7a24224e173c8bf",
     "src/bct/persistent_loop_runtime.py": "7cb0d4f603544f9da98f62890243ec7ae5f05595c09e5e4132483baa8f4dd9d1",
@@ -479,6 +480,10 @@
             "symbol": "ChainBranchRequestLedger.list_manager_attention"
           },
           {
+            "path": "src/bct/monitor_runtime.py",
+            "symbol": "_session_states (Monitor status provider)"
+          },
+          {
             "path": "src/bct/status_queries.py",
             "symbol": "read_status / read_conversation_network"
           },
@@ -487,7 +492,7 @@
             "symbol": "bct_status / bct_get_conversation_network (public adapters)"
           }
         ],
-        "contract": "Compose status and conversation-network query results with per-call store, principal and snapshot dependencies. The explicit health scope reads Core readiness, maintenance pause and release identity without building the Monitor snapshot. Batch owned-Work branch attention with one Watch lookup per status summary. Preserve one provider snapshot read, compact limits, legacy-store handling, trace context and existing query errors without delivery or capability execution.",
+        "contract": "Compose status and conversation-network query results with per-call store, principal and snapshot dependencies. The explicit health scope reads Core readiness, maintenance pause and release identity without building the Monitor snapshot. Batch owned-Work branch attention with one Watch lookup per status summary. Use directory-entry metadata for process sessions and keep live process checks. Preserve one provider snapshot read, compact limits, legacy-store handling, trace context and existing query errors without delivery or capability execution.",
         "effects": [],
         "safety": [
           "single-snapshot",
