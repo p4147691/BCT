@@ -111,8 +111,9 @@ class Maintenance:
         release = self.pinned_release(sha)
         state = state_snapshot(self.root)
         self.compatible(sha, state)
+        python = self.controller.python_binding(release)
         return {"release_sha": sha, "manifest_sha256": release["manifest_sha256"],
-                "database": state, "effect": "NONE_READ_ONLY"}
+                "database": state, "python_binding": python, "effect": "NONE_READ_ONLY"}
 
     def verified_candidate(self, sha, source_worktree, state):
         profile = _target_profile(self.profile, sha, Path(source_worktree) if source_worktree else None)
@@ -129,8 +130,9 @@ class Maintenance:
         _validate_profile_start_allowed(self.profiles, self.profile)
         state = state_snapshot(self.root)
         _, source = self.verified_candidate(sha, source_worktree, state)
+        python = self.controller.python_binding(source)
         return {"release_sha": sha, "manifest_sha256": source["manifest_sha256"],
-                "database": state, "effect": "NONE_READ_ONLY"}
+                "database": state, "python_binding": python, "effect": "NONE_READ_ONLY"}
 
     def compatible(self, sha, state):
         pin = self.config.get("verified_releases", {}).get(sha, {})
@@ -244,9 +246,11 @@ class Maintenance:
                 target = expected_current if action == "start" else target
                 release = self.pinned_release(target or "")
                 self.compatible(target, state)
+                self.controller.python_binding(release)
             if action == "activate":
-                profile, _ = self.verified_candidate(target, source_worktree, state)
-                self.pinned_release(expected_current)
+                profile, source = self.verified_candidate(target, source_worktree, state)
+                self.controller.python_binding(source)
+                self.controller.python_binding(self.pinned_release(expected_current))
                 self.compatible(expected_current, state)
             unresponsive = None
             if action == "stop-unresponsive":

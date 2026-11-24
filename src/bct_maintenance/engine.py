@@ -55,6 +55,9 @@ class DeploymentEngine:
         if current_head != request.arguments['expected_current_source_head']:
             raise PreconditionError('DEPLOYMENT_CURRENT_SHA_MISMATCH')
         controller = RuntimeServiceController(runtime_root=profile.runtime_root, service_name=profile.service_name, port=profile.port)
+        controller.python_binding(manifest)
+        if current is not None:
+            controller.python_binding(current)
         service_before = controller.inspect()
         if profile.protected_activation_required and service_before.get('state') == 'RUNNING':
             _validate_profile_start_allowed(self.profiles, profile)

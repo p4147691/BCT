@@ -129,3 +129,27 @@ Core. Use verify --target SHA --source-worktree CLEAN_RELEASE_WORKTREE for the
 candidate and verify --target SHA for the retained release. After activation,
 verify the installed candidate without --source-worktree. Recover from
 the retained release using the regular maintenance receipts and gates.
+
+## Pin a separate Core Python environment
+
+For a release that needs different Python packages, the administrator prepares a
+native interpreter under RUNTIME/python-environments/ENVIRONMENT. Use a private
+virtual environment with include-system-site-packages=false. On Windows use
+an interpreter process whose PID owns the listening endpoint. A venv redirector
+that launches a separate child PID does not satisfy the readiness identity check.
+
+Provision all dependencies before hashing the environment with
+bct_maintenance.service_runtime.python_environment_digest. Record the result in
+the local administrator-owned RUNTIME/config/core-python-pins.json. The schema
+is 1 with a releases object keyed by full source SHA. Each entry has
+manifest_sha256, environment (a directory name under python-environments),
+executable (a relative path inside that environment), and environment_sha256.
+After the pin exists, changing a dependency requires a reviewed replacement
+environment and digest. Existing releases without a pin keep the established
+Python. Leave the base interpreter and its packages available for rollback.
+
+Use verify for the retained release and verify with --source-worktree for the
+candidate. Check the reported python_binding for each before stopping Core.
+Install a compatible independent maintenance launcher and supervisor together
+before activating a release that requires the pin. Both use the same controller
+to check the resolved executable and verify that the started process owns it.

@@ -4,6 +4,7 @@ import ctypes
 import hashlib
 import json
 import os
+import re
 import secrets
 import subprocess
 import sys
@@ -224,6 +225,23 @@ def _serialized(method):
     return call
 
 
+def python_environment_digest(root: Path) -> str:
+    """Bind every file in an administrator-prepared interpreter environment."""
+    files = {}
+    for path in sorted(root.rglob("*")):
+        if path.is_symlink() or path.resolve() != path:
+            raise PreconditionError("CORE_PYTHON_ENVIRONMENT_LINK")
+        if path.is_dir():
+            continue
+        if not path.is_file():
+            raise PreconditionError("CORE_PYTHON_ENVIRONMENT_FILE_INVALID")
+        with path.open("rb") as stream:
+            files[path.relative_to(root).as_posix()] = hashlib.file_digest(stream, "sha256").hexdigest()
+    if not files:
+        raise PreconditionError("CORE_PYTHON_ENVIRONMENT_EMPTY")
+    return hashlib.sha256(json.dumps(files, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
 class RuntimeServiceController:
     def __init__(self, *, runtime_root: Path, service_name: str, port: int, readiness_timeout: float = 15):
         self.runtime_root = runtime_root.resolve()
@@ -233,6 +251,47 @@ class RuntimeServiceController:
         self.service_path = self.runtime_root / "service.json"
         self.secret_path = self.runtime_root / "control.token"
         self.mcp_secret_path = self.runtime_root / "mcp.token"
+
+    def python_binding(self, release: dict[str, Any]) -> dict[str, str]:
+        """Resolve the exact release's local administrator pin, if present."""
+        path = self.runtime_root / "config" / "core-python-pins.json"
+        if path.is_symlink() or path.resolve() != path:
+            raise PreconditionError("CORE_PYTHON_PINS_PATH_INVALID")
+        settings = read_json(path)
+        if settings is None:
+            return {"executable": sys.executable}
+        pins = settings.get("releases")
+        if settings.get("schema") != 1 or not isinstance(pins, dict):
+            raise PreconditionError("CORE_PYTHON_PINS_INVALID")
+        sha = release["source_head"]
+        if sha not in pins:
+            return {"executable": sys.executable}
+        pin = pins[sha]
+        if not isinstance(pin, dict) or pin.get("manifest_sha256") != release["manifest_sha256"]:
+            raise PreconditionError("CORE_PYTHON_RELEASE_PIN_MISMATCH")
+        name = pin.get("environment")
+        executable = pin.get("executable")
+        expected = pin.get("environment_sha256")
+        if (not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", name)
+                or not isinstance(executable, str)
+                or not isinstance(expected, str) or not re.fullmatch(r"[0-9a-f]{64}", expected)):
+            raise PreconditionError("CORE_PYTHON_ENVIRONMENT_PIN_INVALID")
+        root = self.runtime_root / "python-environments" / name
+        relative = Path(executable)
+        program = root / relative
+        if (relative.anchor or ".." in relative.parts or not program.is_relative_to(root)
+                or not root.is_dir() or root.is_symlink() or root.resolve() != root
+                or not program.is_file() or program.resolve() != program):
+            raise PreconditionError("CORE_PYTHON_ENVIRONMENT_PATH_INVALID")
+        configuration = root / "pyvenv.cfg"
+        if not configuration.is_file() or not re.search(
+            r"(?mi)^include-system-site-packages\s*=\s*false\s*$",
+            configuration.read_text(encoding="utf-8"),
+        ):
+            raise PreconditionError("CORE_PYTHON_ENVIRONMENT_NOT_ISOLATED")
+        if python_environment_digest(root) != expected:
+            raise PreconditionError("CORE_PYTHON_ENVIRONMENT_HASH_MISMATCH")
+        return {"executable": str(program), "environment_sha256": expected}
 
     def _secret_at(self, path: Path) -> str:
         self.runtime_root.mkdir(parents=True, exist_ok=True)
@@ -429,6 +488,7 @@ class RuntimeServiceController:
             raise PreconditionError("SERVICE_DIFFERENT_RELEASE_RUNNING")
         if state["state"] not in {"STOPPED", "STOPPED_STALE_RECEIPT"}:
             raise PreconditionError("SERVICE_STATE_NOT_STARTABLE")
+        python = self.python_binding(release)
         previous = read_json(self.service_path) or {}
         generation = int(previous.get("generation") or 0) + 1
         instance_id = secrets.token_hex(16)
@@ -442,6 +502,7 @@ class RuntimeServiceController:
             "health_contract": 2,
             "port": self.port,
             "launch_intent_at": time.time(),
+            "python_binding": python,
         }
         self._write_service(starting)
         token = self._secret()
@@ -455,8 +516,14 @@ class RuntimeServiceController:
         environment["PYTHONPATH"] = str(source_path)
         environment["BCT_CONTROL_TOKEN"] = token
         environment["BCT_MCP_TOKEN"] = self.mcp_secret()
+        python_flags = []
+        if "environment_sha256" in python:
+            environment.pop("PYTHONHOME", None)
+            environment.pop("PYTHONUSERBASE", None)
+            python_flags = ["-B", "-s", "-P"]
         command = [
-            sys.executable,
+            python["executable"],
+            *python_flags,
             "-m",
             "bct.runtime_server",
             "--runtime-root", str(self.runtime_root),
@@ -491,6 +558,8 @@ class RuntimeServiceController:
                     time.sleep(0.05)
             if identity is None:
                 raise RuntimeError("SERVICE_PROCESS_IDENTITY_UNAVAILABLE")
+            if "environment_sha256" in python and Path(identity.executable) != Path(python["executable"]):
+                raise RuntimeError("CORE_PYTHON_PROCESS_IMAGE_MISMATCH")
             process_started = {
                 **starting,
                 **identity.as_dict(),

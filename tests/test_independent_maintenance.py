@@ -126,6 +126,43 @@ class IndependentMaintenanceTests(unittest.TestCase):
                     registration_plan(self.tool, {**review, **override}, self.base)
         self.assertEqual(self.config.read_bytes(), before)
 
+    def test_python_environment_pin_is_exact_and_fail_closed(self):
+        from bct_maintenance.service_runtime import python_environment_digest
+
+        release = self.good
+        old = self.bad
+        controller = self.tool.controller
+        self.assertEqual(controller.python_binding(old), {"executable": sys.executable})
+        environment = self.root / "python-environments" / "sdk-v2"
+        environment.mkdir(parents=True)
+        program = environment / "python.exe"
+        program.write_bytes(b"fixture native interpreter")
+        (environment / "pyvenv.cfg").write_text("include-system-site-packages = false\n")
+        dependency = environment / "dependency.py"
+        dependency.write_bytes(b"approved dependency")
+        digest = python_environment_digest(environment.resolve())
+        pin_path = self.root / "config" / "core-python-pins.json"
+        pin = {"environment": "sdk-v2", "executable": "python.exe",
+               "environment_sha256": digest, "manifest_sha256": release["manifest_sha256"]}
+        atomic_json(pin_path, {"schema": 1, "releases": {release["source_head"]: pin}})
+        self.assertEqual(controller.python_binding(old), {"executable": sys.executable})
+        self.assertEqual(self.tool.verify(release["source_head"])["python_binding"], {
+            "executable": str(program.resolve()), "environment_sha256": digest,
+        })
+        for override, expected in (
+            ({"manifest_sha256": "0" * 64}, "CORE_PYTHON_RELEASE_PIN_MISMATCH"),
+            ({"executable": "../python.exe"}, "CORE_PYTHON_ENVIRONMENT_PATH_INVALID"),
+            ({"executable": str(program.resolve())}, "CORE_PYTHON_ENVIRONMENT_PATH_INVALID"),
+        ):
+            with self.subTest(expected=expected), self.assertRaisesRegex(PreconditionError, expected):
+                atomic_json(pin_path, {"schema": 1, "releases": {release["source_head"]: {**pin, **override}}})
+                controller.start(release)
+        atomic_json(pin_path, {"schema": 1, "releases": {release["source_head"]: pin}})
+        dependency.write_bytes(b"tampered")
+        with self.assertRaisesRegex(PreconditionError, "CORE_PYTHON_ENVIRONMENT_HASH_MISMATCH"):
+            controller.start(release)
+        self.assertFalse(controller.service_path.exists())
+
     def save_config(self):
         atomic_json(self.config, self.settings)
 

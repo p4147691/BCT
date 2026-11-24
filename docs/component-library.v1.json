@@ -1112,7 +1112,7 @@
         },
         {
           "path": "src/bct_maintenance/service_runtime.py",
-          "symbol": "RuntimeServiceController"
+          "symbol": "RuntimeServiceController / python_environment_digest"
         },
         {
           "path": "src/bct_maintenance/locking.py",
@@ -1131,7 +1131,7 @@
           "symbol": "build"
         }
       ],
-      "contract": "External CLI and BCT adapters share release verification, activation and exact process control without importing the BCT application. Explicit pinned configuration, exact SHA, operation journal and read-only work inspection. Operator start is a verified no-op for an already running unpaused Core; owned paused instances use guarded resume. First transition uses a rollback-only SQLite fence and exact pinned history; no replay or history cleanup. LIVE installation is recorded separately.",
+      "contract": "External CLI and BCT adapters share release verification, activation and exact process control without importing the BCT application. Explicit pinned configuration, exact SHA, operation journal and read-only work inspection. Operator start is a verified no-op for an already running unpaused Core; owned paused instances use guarded resume. First transition uses a rollback-only SQLite fence and exact pinned history; no replay or history cleanup. Optional local Python pins bind each release manifest to a verified isolated interpreter environment. LIVE installation is recorded separately.",
       "effects": [
         "runtime-release-and-pointer",
         "exact-core-process",
