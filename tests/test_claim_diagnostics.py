@@ -24,6 +24,32 @@ class ClaimDiagnosticsTests(unittest.TestCase):
             resources=(resource or "fixture:"+name,),policy_revision="fixture")
         self.assertTrue(created)
 
+    def test_existing_database_adds_partial_index_without_changing_diagnostics(self):
+        self.claim("indexed")
+        self.store.finish_operation(
+            operation_id="indexed", outcome=Outcome.UNKNOWN, evidence={},
+            error="timeout", release_claims=False,
+        )
+        with self.store.transaction() as db:
+            self.store._event(db, "NODE_UPDATED", "indexed", {"note": "unrelated"})
+            db.execute("DROP INDEX idx_events_claim_subject_event")
+            before_rows = db.execute(
+                "SELECT event_id,kind,subject_id,data_json,created_at FROM events ORDER BY event_id"
+            ).fetchall()
+        before = self.store.claim_diagnostics()
+
+        self.store = Store(self.store.path)
+        self.store = Store(self.store.path)
+        with self.store.transaction() as db:
+            indexes = {row["name"]: row for row in db.execute("PRAGMA index_list(events)")}
+            self.assertEqual(1, indexes["idx_events_claim_subject_event"]["partial"])
+            after_rows = db.execute(
+                "SELECT event_id,kind,subject_id,data_json,created_at FROM events ORDER BY event_id"
+            ).fetchall()
+        self.assertEqual(before_rows, after_rows)
+        self.assertEqual(before, self.store.claim_diagnostics())
+        self.assertEqual("OPERATION_FINISHED", before[0]["last_event"]["kind"])
+
     def test_exact_claim_scope_is_distinct_from_shared_scope(self):
         self.claim("exact", resource="orchestration-run:old-session:old-task")
         self.store.finish_operation(

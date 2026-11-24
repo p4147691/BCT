@@ -273,6 +273,7 @@
       "kind": "module",
       "maturity": "isolated",
       "implementation": [
+        {"path": "src/bct/core/store.py", "symbol": "Store.claim_diagnostics (partial operation-event index)"},
         {"path": "src/bct/status_queries.py", "symbol": "read_status / read_conversation_network"},
         {"path": "src/bct/mcp_server.py", "symbol": "bct_status / bct_get_conversation_network (public adapters)"}
       ],

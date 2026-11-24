@@ -13,6 +13,15 @@ from .capabilities import capability_matches
 from ..monitor_events import DISPLAY_TABLES
 
 
+# SQLite can use the partial index only when the query implies its predicate.
+# Keep the operation-event filter identical in the schema and the diagnostic read.
+_CLAIM_EVENT_KINDS_SQL = (
+    "'OPERATION_STARTED','OPERATION_FINISHED','OPERATION_RECONCILED',"
+    "'OPERATION_STEPS_INITIALIZED','OPERATION_STEP_STARTED',"
+    "'OPERATION_STEP_FINISHED','OPERATION_STEP_SKIPPED'"
+)
+
+
 # Read-only cause hints. These describe where evidence was lost, never whether
 # a remote effect occurred or whether a resource claim may be released.
 _CLAIM_UNKNOWN_STAGE = {
@@ -624,6 +633,11 @@ class Store:
                 CREATE INDEX IF NOT EXISTS orchestration_manager_wakes_pending
                     ON orchestration_manager_wakes(session_id,manager_epoch,state,created_at);
                 """
+            )
+            db.execute(
+                "CREATE INDEX IF NOT EXISTS idx_events_claim_subject_event "
+                "ON events(subject_id,event_id) "
+                f"WHERE kind IN ({_CLAIM_EVENT_KINDS_SQL})"
             )
             conversation_columns = {
                 row["name"] for row in db.execute(
@@ -1298,10 +1312,7 @@ class Store:
                 "WHERE ev.subject_id IN (SELECT op.operation_id FROM resource_claims cl "
                 "JOIN operations op ON op.operation_id=cl.operation_id "
                 "AND op.work_id=cl.work_id AND op.assignment_epoch=cl.assignment_epoch "
-                "WHERE cl.unresolved=1) AND ev.kind IN ("
-                "'OPERATION_STARTED','OPERATION_FINISHED','OPERATION_RECONCILED',"
-                "'OPERATION_STEPS_INITIALIZED','OPERATION_STEP_STARTED',"
-                "'OPERATION_STEP_FINISHED','OPERATION_STEP_SKIPPED') "
+                f"WHERE cl.unresolved=1) AND ev.kind IN ({_CLAIM_EVENT_KINDS_SQL}) "
                 "GROUP BY ev.subject_id) "
                 "SELECT c.resource_key,c.operation_id,c.work_id,c.assignment_epoch,"
                 "o.capability,o.target,o.state AS operation_state,o.outcome,"
