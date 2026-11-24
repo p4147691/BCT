@@ -244,6 +244,13 @@ class QueryContractTests(unittest.IsolatedAsyncioTestCase):
     async def test_status_attention_filters_owner_and_retains_compact_and_full_limits(self):
         self.store.create_work(Work("mine", "mine", (), frozenset(), "owner"))
         self.store.create_work(Work("theirs", "theirs", (), frozenset(), "other"))
+        # The mocked tree represents Works with real ledger data. Keep a
+        # non-owner Direction so filtering cannot pass via an empty tree.
+        from bct.chain_direction import ChainDirectionLedger
+        ledger = ChainDirectionLedger(self.store)
+        for work_id in ("mine", "theirs"):
+            ledger.save(direction_id=f"direction-{work_id}", work_id=work_id,
+                        source_kind="USER", decision="NEW_TASK", direction_text="Read fixture")
         attention = [{"request_id": str(i)} for i in range(22)]
         with patch("bct.chain_direction.ChainBranchRequestLedger.tree", return_value={"manager_attention": attention}) as tree, \
              patch("bct.chain_execution_plan.ChainExecutionPlanLedger.list_latest_execute_plan_checks", return_value=[]) as checks, \
