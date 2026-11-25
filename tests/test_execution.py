@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import tempfile
@@ -11,6 +12,7 @@ from pathlib import Path
 from bct import BCT
 from bct.core.models import PreconditionError, Principal
 import psutil
+from bct.operation_queries import read_operation
 
 
 class ExecutionFeatureTests(unittest.TestCase):
@@ -59,6 +61,15 @@ class ExecutionFeatureTests(unittest.TestCase):
         self.assertEqual(first.outcome.value, "APPLIED")
         self.assertEqual(first.output["returncode"], 0)
         self.assertEqual(json.loads(first.output["stdout"]), {"count": 1})
+        receipt = asyncio.run(read_operation(
+            self.bct.store, principal_id=self.principal.principal_id,
+            work_id="work-exec", operation_id="exec-once", wait_seconds=0,
+        ))
+        self.assertEqual(("FINISHED", "APPLIED"), (receipt["state"], receipt["outcome"]))
+        self.assertEqual("IMMEDIATE_RESPONSE_ONLY", receipt["evidence"]["console_output_retention"])
+        self.assertNotIn("output", receipt)
+        self.assertNotIn("stdout", receipt["evidence"])
+        self.assertNotIn("stderr", receipt["evidence"])
         self.assertTrue(second.duplicate)
         self.assertEqual(marker.read_text(encoding="utf-8"), "1")
 

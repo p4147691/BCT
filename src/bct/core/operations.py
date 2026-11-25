@@ -571,8 +571,12 @@ class OperationCoordinator:
                     evidence=result.evidence,
                 )
             else:
+                evidence = result.evidence
+                if request.capability == "execute" and result.output:
+                    # The original response is the only place to return console text.
+                    evidence = {**evidence, "console_output_retention": "IMMEDIATE_RESPONSE_ONLY"}
                 stored = self.store.finish_operation(
-                    operation_id=operation_id, outcome=result.outcome, evidence=result.evidence,
+                    operation_id=operation_id, outcome=result.outcome, evidence=evidence,
                     error=None, release_claims=result.release_claims,
                     reconciled_operation_ids=result.reconciled_operation_ids,
                 )
