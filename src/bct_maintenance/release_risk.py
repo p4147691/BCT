@@ -64,20 +64,14 @@ def _same_execution_boundary(old, new):
     # invocation, module-level effect, or altered public signature needs review.
     def shape(source):
         tree = ast.parse(source)
-        top_level = []
-        for node in tree.body:
-            if isinstance(node, ast.FunctionDef):
-                top_level.append(ast.dump(ast.FunctionDef(
-                    name=node.name, args=node.args, body=[], decorator_list=node.decorator_list,
-                    returns=node.returns, type_params=node.type_params,
-                )))
-            else:
-                top_level.append(ast.dump(node))
         guarded = (ast.Import, ast.ImportFrom, ast.With, ast.AsyncWith, ast.AsyncFunctionDef,
                    ast.Await, ast.ClassDef, ast.Global, ast.Nonlocal)
         dependencies = {ast.dump(node) for node in ast.walk(tree) if isinstance(node, guarded)}
         calls = {ast.dump(node.func) for node in ast.walk(tree) if isinstance(node, ast.Call)}
-        return top_level, dependencies, calls
+        for node in tree.body:
+            if isinstance(node, ast.FunctionDef):
+                node.body = []
+        return ast.dump(tree), dependencies, calls
 
     before, after = shape(old), shape(new)
     return before[0] == after[0] and after[1] <= before[1] and after[2] <= before[2]
