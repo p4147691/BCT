@@ -22,6 +22,10 @@ Five management tools are added:
 current state, counts and unresolved claims. Use `compact=false` for detailed history.
 `bct_operation_get(wait_seconds=0..25)` waits for an existing operation without dispatching
 it again. Receipt reuse is appropriate for immutable past results, not fresh health or CI.
+For `bct_execute` console output marked `evidence.console_output_retention=IMMEDIATE_RESPONSE_ONLY`,
+only the original tool response includes stdout/stderr. A later receipt still supplies the
+operation state, outcome and exit evidence; missing console output is not a pending result
+and is not a reason to submit the command again.
 
 `bct_verify` accepts up to eight `{id, capability, arguments}` steps, restricted to bounded
 read metadata, existing tests and exact-head GitHub PR status. It requires the work and
