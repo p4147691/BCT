@@ -119,8 +119,15 @@ class ChainRecipeRuntimeTests(unittest.IsolatedAsyncioTestCase):
                                    for tool in await server.list_tools()), key=lambda item: item["name"])
                 chain = next(tool for tool in metadata if tool["name"] == "bct_chain_recipe")
                 self.assertEqual(digest(chain), BASELINE_CHAIN, "Chain public metadata changed")
-                self.assertEqual(len(metadata), count)
-                unrelated = [tool for tool in metadata if tool["name"] != "bct_loop_recipe"]
+                scoped = next(tool for tool in metadata if tool["name"] == "bct_scoped_read")
+                self.assertEqual(len(metadata), count + (mode == "compact"))
+                unrelated = [tool for tool in metadata if tool["name"] not in {"bct_loop_recipe", "bct_scoped_read"}]
+                # The scoped tool replaces the fixture's old read spelling,
+                # and is newly reachable in compact mode. Keep the old golden
+                # checks for every other schema and descriptor.
+                if mode != "compact":
+                    unrelated.append(json.loads(json.dumps(scoped).replace("bct_scoped_read", "bct_read")))
+                unrelated.sort(key=lambda item: item["name"])
                 self.assertEqual(digest(unrelated), expected, "Non-LOOP tool metadata changed")
 
     async def test_two_mcp_instances_keep_work_store_and_snapshot_ports_separate(self):
