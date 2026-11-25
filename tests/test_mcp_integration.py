@@ -436,6 +436,11 @@ class MCPIntegrationTests(unittest.TestCase):
                         "roots": [], "actions": ["desktop_read"],
                     })
                     self.assertFalse(direct_work.is_error)
+                    foreign_receipt = await session.call_tool("bct_operation_get", {
+                        "work_id": "pc-read-receipts", "operation_id": "mcp-read-1",
+                    })
+                    self.assertTrue(foreign_receipt.is_error)
+                    self.assertIn("OPERATION_NOT_FOUND", foreign_receipt.content[0].text)
                     direct_denial = await session.call_tool("bct_read", {
                         "work_id": "pc-read-receipts", "operation_id": "direct-unconfigured",
                         "arguments": {"path": str(self.project / "hello.txt")},

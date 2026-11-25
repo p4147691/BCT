@@ -58,6 +58,9 @@ class BCTMCPServer(MCPServer):
                 # Paths, remote response bodies and prose after a symbolic
                 # reason belong in internal diagnostics, not public tool errors.
                 reason = str(cause).split(":", 1)[0]
+                if reason == "OPERATION_RESULT_ACCESS_DENIED":
+                    # Receipts outside the supplied Work must look absent.
+                    reason = "OPERATION_NOT_FOUND"
                 if not re.fullmatch(r"[A-Z][A-Z0-9_]{2,100}", reason):
                     reason = cause.code
                 raise ToolError(reason) from cause
