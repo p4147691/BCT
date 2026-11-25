@@ -18,6 +18,7 @@ from bct import BCT
 from bct.core.capabilities import canonical_capability
 from bct.core.models import BCTError, Principal, Work
 from bct.mcp_server import LocalBearerMiddleware, build_mcp
+from bct.personal_read_mcp import attach_personal_read
 from bct.monitor_runtime import build_monitor_state, build_monitor_ui_state, monitor_roster_revision
 from bct.monitor_events import MonitorEvents, SnapshotFlight
 from bct.codex_surface import register_codex_surfaces
@@ -1025,6 +1026,11 @@ def main() -> int:
     app = LocalBearerMiddleware(
         mcp.streamable_http_app(stateless_http=True, json_response=True, streamable_http_path="/mcp"),
         mcp_token,
+    )
+    app = attach_personal_read(
+        app, runtime_root, shared_token=mcp_token,
+        auth_digest=os.environ.get("BCT_PERSONAL_MCP_TOKEN_SHA256", ""),
+        roots_json=os.environ.get("BCT_PERSONAL_READ_ROOTS", ""),
     )
     config = build_server_config(app, port=arguments.port)
     server = uvicorn.Server(config)

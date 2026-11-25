@@ -161,6 +161,7 @@ files = [
   "src/bct/runtime_server.py",
   "src/bct/supervisor.py",
   "src/bct/mcp_server.py",
+  "src/bct/personal_read_mcp.py",
   "src/bct/desktop_command_adapters.py",
   "src/bct/capability_command_adapters.py",
   "src/bct/browser_command_adapters.py",

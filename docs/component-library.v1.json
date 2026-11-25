@@ -1091,13 +1091,14 @@
       "implementation": [
         {"path": "src/bct/features/files.py", "symbol": "FileReadFeature"},
         {"path": "src/bct/features/desktop_read.py", "symbol": "DesktopReadFeature"},
+        {"path": "src/bct/personal_read_mcp.py", "symbol": "attach_personal_read"},
         {"path": "src/bct/features/file_discovery.py", "symbol": "prepare / execute"},
         {"path": "src/bct/features/snapshot.py", "symbol": "capture_work_snapshot"}
       ],
-      "contract": "Compose bounded file observations through a scoped or exact human-approved read boundary. Worker verification uses the durable scoped read capability. Snapshots retain Work receipt ownership and epoch checks.",
+      "contract": "Compose bounded file observations through Work scope, exact human approval, or an independently authenticated personal read connection. Personal reads use configured roots and a separate receipt store. Worker verification uses the durable scoped read capability. Snapshots retain Work receipt ownership and epoch checks.",
       "effects": ["read-only observations", "operation receipt"],
       "safety": ["independent-user-confirmation", "work-scoped-receipts", "credential-path-protection", "no-claim-for-observation"],
-      "tests": ["tests/test_desktop_read.py", "tests/test_file_discovery.py", "tests/test_mcp_integration.py"]
+      "tests": ["tests/test_desktop_read.py", "tests/test_personal_read_mcp.py", "tests/test_file_discovery.py", "tests/test_mcp_integration.py"]
     },
     {
       "id": "bct.independent_maintenance",
