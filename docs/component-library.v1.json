@@ -1094,6 +1094,14 @@
           "symbol": "Maintenance"
         },
         {
+          "path": "src/bct_maintenance/release_risk.py",
+          "symbol": "release_risk / verify_ci"
+        },
+        {
+          "path": "src/bct_maintenance/rollout.py",
+          "symbol": "rollout"
+        },
+        {
           "path": "src/bct_maintenance/registration.py",
           "symbol": "registration_plan"
         },

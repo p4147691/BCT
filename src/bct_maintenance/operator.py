@@ -1,6 +1,7 @@
 """Small human-facing entry point for the independently installed tool."""
 import argparse
 import json
+from pathlib import Path
 import uuid
 
 from .cli import Maintenance
@@ -64,11 +65,35 @@ def start(tool, prefix):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--config', required=True)
-    parser.add_argument('action', choices=('status', 'restart', 'stop', 'start', 'recover'))
+    parser.add_argument('action', choices=('status', 'restart', 'stop', 'start', 'recover', 'release', 'release-plan'))
     parser.add_argument('--target')
     parser.add_argument('--resolves')
+    parser.add_argument('--expected-current')
+    parser.add_argument('--ci-run', type=int)
+    parser.add_argument('--operation-id')
+    parser.add_argument('--review', type=Path)
     args = parser.parse_args(argv)
     tool = Maintenance(args.config)
+    if args.action in ('release', 'release-plan'):
+        from .release_risk import release_risk
+        from .rollout import rollout
+        from .service_runtime import read_json
+
+        if not args.target or not args.expected_current:
+            parser.error('release requires --target and --expected-current')
+        if args.action == 'release-plan':
+            print(json.dumps(release_risk(tool.profile.source_root, args.expected_current, args.target)))
+            return 0
+        if not args.ci_run or not args.operation_id:
+            parser.error('release requires --ci-run and --operation-id')
+        try:
+            result = rollout(tool, args.target, args.expected_current, args.ci_run, args.operation_id,
+                             review=read_json(args.review) if args.review else None)
+        except PreconditionError as exc:
+            print(json.dumps({'state': 'BLOCKED', 'reason': str(exc)}))
+            return 1
+        print(json.dumps(result, ensure_ascii=False))
+        return 0 if result['state'] == 'COMPLETED' else 1
     if args.action == 'status':
         status = tool.status()
         print(json.dumps({

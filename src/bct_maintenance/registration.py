@@ -16,6 +16,10 @@ from .service_runtime import read_json
 
 def registration_plan(tool, review, source_worktree):
     """Compare exact operator-reviewed pins before rendering replacement settings."""
+    return _registration(tool, review, source_worktree)[0]
+
+
+def _registration(tool, review, source_worktree, *, automatic=False):
     if tool.config.get("enabled") is not True or "activate" not in tool.config.get("allowed_actions", ()):
         raise PreconditionError("MAINTENANCE_ACTION_NOT_AUTHORIZED")
     if tool.profile.protected_activation_required:
@@ -35,10 +39,10 @@ def registration_plan(tool, review, source_worktree):
     if state_snapshot(tool.root)["schema_sha256"] != schema:
         raise PreconditionError("MAINTENANCE_DB_COMPATIBILITY_NOT_VERIFIED")
 
-    source = Path(source_worktree)
+    source = Path(source_worktree) if source_worktree is not None else None
     profile = _target_profile(tool.profile, candidate, source)
     manifest = _validate_source(profile, candidate, source)
-    if manifest["manifest_sha256"] != review["candidate_manifest_sha256"]:
+    if not automatic and manifest["manifest_sha256"] != review["candidate_manifest_sha256"]:
         raise PreconditionError("MAINTENANCE_CANDIDATE_NOT_VERIFIED")
     retained = read_json(tool.root / "releases" / rollback / "manifest.json")
     if (retained is None or retained.get("source_head") != rollback
@@ -68,4 +72,4 @@ def registration_plan(tool, review, source_worktree):
             admission.append(sha)
     if digest(tool.config_path) != before or tool.current_pointer() != pointer:
         raise PreconditionError("MAINTENANCE_REGISTRATION_STATE_CHANGED")
-    return {"effect": "NONE_READ_ONLY", "previous_config_sha256": before, "settings": settings}
+    return {"effect": "NONE_READ_ONLY", "previous_config_sha256": before, "settings": settings}, profile, manifest

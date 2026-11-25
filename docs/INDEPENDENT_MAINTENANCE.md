@@ -153,3 +153,28 @@ candidate. Check the reported python_binding for each before stopping Core.
 Install a compatible independent maintenance launcher and supervisor together
 before activating a release that requires the pin. Both use the same controller
 to check the resolved executable and verify that the started process owns it.
+
+
+## Risk-based release
+
+Use the installed independent launcher for a clean, exact local main. Pass
+the current SHA, target SHA, GitHub Actions run ID and one operation ID.
+
+    maintenance.cmd release --expected-current <running-sha> --target <main-sha> --ci-run <run-id> --operation-id <id>
+
+Pass release-plan instead of release to the frozen launcher to inspect the
+committed diff classification. Presentation changes can inherit the running
+release's schema and Python binding. Reviewed feature modules require the full
+regression run and a verified LIVE backup. Other changes are HIGH and require
+--review with the candidate and rollback, current configuration SHA-256,
+both manifest hashes, database schema SHA-256, admission release SHAs and the
+path and SHA-256 of the compatibility receipt. The receipt records both exact
+releases starting on the rehearsal DB and preserved history. A reviewed schema
+migration also pins the resulting schema and proves rollback can start with it.
+
+Pause acknowledgment, quiescence, verified LIVE backup and exact service
+identity apply to every rollout. Use the original operation ID to inspect
+a terminal result. Reconcile an interrupted or ambiguous rollout from its
+original journal under runtime/maintenance/rollouts and retain all child
+receipts. A proven activation rollback cites the original activation operation
+when resolving its effect.
