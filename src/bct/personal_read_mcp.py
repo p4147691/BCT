@@ -2,13 +2,18 @@
 from __future__ import annotations
 
 import asyncio
+from base64 import b64encode
 from contextlib import AsyncExitStack, asynccontextmanager
+from dataclasses import dataclass, field
 import hashlib
 import hmac
 import json
 from pathlib import Path
 import re
+import time
 from typing import Any
+from urllib.parse import quote_plus, urlencode, urlsplit
+from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
 
 from mcp.types import ToolAnnotations
 from starlette.responses import JSONResponse
@@ -27,6 +32,78 @@ _PERSONAL_CAPABILITY = "personal_read"
 _PERSONAL_PRINCIPAL = Principal("bct-personal-control", "personal-bearer", frozenset({_PERSONAL_CAPABILITY}))
 _PERSONAL_MCP_PATH = "/personal-mcp"
 _TOKEN = re.compile(r"[0-9a-f]{64}")
+_BEARER = re.compile(r"[A-Za-z0-9_.~+/-]+={0,2}")
+_METADATA_PATH = "/.well-known/oauth-protected-resource" + _PERSONAL_MCP_PATH
+_READ_SCOPE = "files:read"
+
+
+class _NoIntrospectionRedirect(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+@dataclass(frozen=True)
+class PersonalOAuth:
+    issuer: str
+    resource: str
+    introspection_url: str
+    chatgpt_client: str
+    owner_subject: str
+    introspection_client: str
+    introspection_secret: str = field(repr=False)
+
+    @classmethod
+    def from_config(cls, raw: str, secret: str) -> PersonalOAuth:
+        values = json.loads(raw)
+        names = {"issuer", "resource", "introspection_url", "chatgpt_client", "owner_subject", "introspection_client"}
+        if (not isinstance(values, dict) or values.keys() != names or not secret
+                or any(not isinstance(value, str) or not value.strip() for value in values.values())):
+            raise ValueError("PERSONAL_OAUTH_CONFIG_INVALID")
+        for name in ("issuer", "resource", "introspection_url"):
+            url = urlsplit(values[name])
+            if (url.scheme != "https" or not url.hostname or url.username is not None
+                    or url.query or url.fragment or any(char.isspace() or char in '\\"' for char in values[name])):
+                raise ValueError("PERSONAL_OAUTH_CONFIG_INVALID")
+        if values["chatgpt_client"] == values["introspection_client"]:
+            raise ValueError("PERSONAL_OAUTH_CONFIG_INVALID")
+        return cls(**values, introspection_secret=secret)
+
+    @property
+    def challenge(self) -> str:
+        resource = urlsplit(self.resource)
+        metadata = f"{resource.scheme}://{resource.netloc}/.well-known/oauth-protected-resource{resource.path}"
+        return f'Bearer resource_metadata="{metadata}", scope="{_READ_SCOPE}"'
+
+    @property
+    def metadata(self) -> dict[str, Any]:
+        return {"resource": self.resource, "authorization_servers": [self.issuer], "scopes_supported": [_READ_SCOPE],
+                "bearer_methods_supported": ["header"]}
+
+    def permits(self, token: str) -> bool:
+        password = f"{quote_plus(self.introspection_client)}:{quote_plus(self.introspection_secret)}"
+        auth = b64encode(password.encode("ascii")).decode("ascii")
+        payload = urlencode({"token": token, "token_type_hint": "access_token"}).encode("ascii")
+        request = Request(self.introspection_url, data=payload, headers={"Authorization": f"Basic {auth}",
+                          "Accept": "application/json", "Content-Type": "application/x-www-form-urlencoded"})
+        opener = build_opener(ProxyHandler({}), _NoIntrospectionRedirect())
+        try:
+            with opener.open(request, timeout=5) as response:
+                body = response.read(32769)
+            if len(body) > 32768:
+                return False
+            claims = json.loads(body)
+        except (OSError, ValueError):
+            return False
+        if not isinstance(claims, dict):
+            return False
+        audience = claims.get("aud")
+        granted_scope = claims.get("scope")
+        expires = claims.get("exp")
+        return (claims.get("active") is True and claims.get("iss") == self.issuer
+                and claims.get("sub") == self.owner_subject and claims.get("client_id") == self.chatgpt_client
+                and audience in (self.resource, [self.resource])
+                and isinstance(granted_scope, str) and _READ_SCOPE in granted_scope.split()
+                and type(expires) is int and expires > time.time())
 
 
 class PersonalReadPolicy:
@@ -105,25 +182,37 @@ def build_personal_mcp(runtime_root, *, roots):
 class PersonalMCPRouter:
     """Dispatch a second MCP surface without sharing credentials or tools."""
 
-    def __init__(self, shared_app, personal_app, *, auth_digest):
+    def __init__(self, shared_app, personal_app, *, shared_token, auth_digest, oauth):
         self.shared_app = shared_app
         self.personal_app = personal_app
+        self.shared_token = shared_token.encode()
         self.auth_digest = auth_digest
+        self.oauth = oauth
 
     async def __call__(self, scope, receive, send):
         if scope["type"] == "lifespan":
             return await self._lifespan(scope, receive, send)
-        if scope.get("path") != _PERSONAL_MCP_PATH:
+        path = scope.get("path")
+        if self.oauth and path == _METADATA_PATH and scope.get("method") == "GET":
+            return await JSONResponse(self.oauth.metadata)(scope, receive, send)
+        if path != _PERSONAL_MCP_PATH or scope["type"] != "http":
             return await self.shared_app(scope, receive, send)
         values = [value for name, value in scope.get("headers", ()) if name.lower() == b"authorization"]
-        if len(values) == 1 and values[0].startswith(b"Bearer "):
-            token = values[0][7:].decode("latin-1")
-            if _TOKEN.fullmatch(token) and hmac.compare_digest(
-                hashlib.sha256(token.encode("ascii")).hexdigest(), self.auth_digest,
-            ):
+        if len(values) == 1 and values[0][:7].lower() == b"bearer ":
+            raw = values[0][7:]
+            if not hmac.compare_digest(raw, self.shared_token) and await self._permits(raw.decode("latin-1")):
                 return await self.personal_app(scope, receive, send)
+        challenge = self.oauth.challenge if self.oauth else "Bearer"
         return await JSONResponse({"error": "PERSONAL_MCP_TOKEN_INVALID"}, status_code=401,
-                                  headers={"WWW-Authenticate": "Bearer"})(scope, receive, send)
+                                  headers={"WWW-Authenticate": challenge})(scope, receive, send)
+
+    async def _permits(self, token: str) -> bool:
+        if self.oauth:
+            return (len(token) <= 8192 and bool(_BEARER.fullmatch(token))
+                    and await asyncio.to_thread(self.oauth.permits, token))
+        return bool(_TOKEN.fullmatch(token)) and hmac.compare_digest(
+            hashlib.sha256(token.encode("ascii")).hexdigest(), self.auth_digest,
+        )
 
     async def _lifespan(self, scope, receive, send):
         # Starlette mounts do not dispatch lifespan to their children.
@@ -138,12 +227,18 @@ class PersonalMCPRouter:
         await Router(lifespan=lifespan)(scope, receive, send)
 
 
-def attach_personal_read(shared_app, runtime_root, *, shared_token, auth_digest, roots_json):
+def attach_personal_read(shared_app, runtime_root, *, shared_token, auth_digest, roots_json,
+                         oauth_json="", introspection_secret=""):
     """Keep the production route unchanged until an independent connector is configured."""
-    if not auth_digest and not roots_json:
+    if not any((auth_digest, roots_json, oauth_json, introspection_secret)):
         return shared_app
-    if (not _TOKEN.fullmatch(auth_digest)
+    oauth = None
+    if oauth_json or introspection_secret:
+        if auth_digest:
+            raise ValueError("PERSONAL_OAUTH_REQUIRES_EXCLUSIVE_AUTH_MODE")
+        oauth = PersonalOAuth.from_config(oauth_json, introspection_secret)
+    elif (not _TOKEN.fullmatch(auth_digest)
             or hmac.compare_digest(hashlib.sha256(shared_token.encode()).hexdigest(), auth_digest)):
         raise ValueError("PERSONAL_MCP_CREDENTIAL_MUST_BE_SEPARATE")
     personal_app = build_personal_mcp(runtime_root, roots=_personal_roots(roots_json))
-    return PersonalMCPRouter(shared_app, personal_app, auth_digest=auth_digest)
+    return PersonalMCPRouter(shared_app, personal_app, shared_token=shared_token, auth_digest=auth_digest, oauth=oauth)

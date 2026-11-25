@@ -2,18 +2,27 @@
 
 ## Optional personal read connection
 
-`/personal-mcp` accepts an independent bearer credential through the `Authorization`
-header. The Core takes its SHA-256 hex digest from `BCT_PERSONAL_MCP_TOKEN_SHA256`
-and a JSON list of absolute directories from `BCT_PERSONAL_READ_ROOTS`. If both
-settings are absent, the personal endpoint is disabled. The connector must supply
-the credential through a private connection unavailable to workers.
+`/personal-mcp` uses a JSON list of absolute directories from `BCT_PERSONAL_READ_ROOTS`.
+For a ChatGPT connection, set `BCT_PERSONAL_OAUTH_JSON` with `issuer`, `resource`,
+`introspection_url`, `chatgpt_client`, `owner_subject`, and `introspection_client`.
+Set the introspection client's secret through `BCT_PERSONAL_OAUTH_INTROSPECTION_SECRET`.
+The provider must support OAuth authorization code with PKCE and HTTPS discovery,
+and return `active`, `iss`, `sub`, `aud`, `client_id`, `scope`, and `exp` from
+its authenticated token introspection endpoint. Issue `files:read` access to
+the configured owner, ChatGPT client, and exact resource. The Core advertises
+protected resource metadata and checks those values on each request.
+
+An independent local client may instead use the SHA-256 hex digest of a separate
+bearer credential in `BCT_PERSONAL_MCP_TOKEN_SHA256`. Choose one mode. If all
+personal settings are absent, the endpoint is disabled. The shared BCT Worker
+credential is rejected by the personal read tools in either mode.
 
 The tools are `bct_read(operation_id, arguments)` and `bct_operation_get(operation_id)`.
 For example, read a file with `arguments={"operation":"file","path":"D:/Documents/note.txt"}`.
 Reads use the configured directories and the existing desktop-read protections.
 The isolated receipt store retains operation evidence without storing file contents.
-This contract is verified through local MCP HTTP. Hosted connector setup and LIVE
-acceptance require separate validation.
+Local MCP tests simulate the OAuth provider. The hosted flow requires a configured
+provider and an end-to-end read and receipt check through the actual ChatGPT plugin.
 
 ## One catalogue, one implementation
 

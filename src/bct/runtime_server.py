@@ -1031,6 +1031,8 @@ def main() -> int:
         app, runtime_root, shared_token=mcp_token,
         auth_digest=os.environ.get("BCT_PERSONAL_MCP_TOKEN_SHA256", ""),
         roots_json=os.environ.get("BCT_PERSONAL_READ_ROOTS", ""),
+        oauth_json=os.environ.get("BCT_PERSONAL_OAUTH_JSON", ""),
+        introspection_secret=os.environ.get("BCT_PERSONAL_OAUTH_INTROSPECTION_SECRET", ""),
     )
     config = build_server_config(app, port=arguments.port)
     server = uvicorn.Server(config)
