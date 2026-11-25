@@ -80,8 +80,11 @@ class RecoveryTests(unittest.TestCase):
         tool.receipt_path.return_value = Path("activate.json")
         tool.root = Path("runtime")
         proof = {"state": "ROLLED_BACK", "rollback_verified": True, "previous_source_head": "old",
-                 "source_head": "new", "manifest_sha256": "new-hash"}
-        with patch("bct_maintenance.rollout.read_json", side_effect=[{"state": "UNKNOWN"}, proof]), \
+                 "source_head": "new", "manifest_sha256": "new-hash", "prepared_at": 2}
+        with patch("bct_maintenance.rollout.read_json", side_effect=[{"state": "UNKNOWN", "started_at": 3}, proof]):
+            self.assertFalse(_recover(tool, "op", "old", "old-hash", "new", "new-hash", "activate"))
+        tool.run.assert_not_called()
+        with patch("bct_maintenance.rollout.read_json", side_effect=[{"state": "UNKNOWN", "started_at": 1}, proof]), \
                 patch("bct_maintenance.rollout._wait_identity"):
             self.assertTrue(_recover(tool, "op", "old", "old-hash", "new", "new-hash", "activate"))
         tool.run.assert_any_call("recover", operation_id="op-recover", expected_current="old",

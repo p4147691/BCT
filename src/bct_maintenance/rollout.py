@@ -76,7 +76,10 @@ def _recover(tool, prefix, baseline, old_manifest, candidate, manifest, phase):
                 or deployment.get("state") != "ROLLED_BACK" or deployment.get("rollback_verified") is not True
                 or deployment.get("previous_source_head") != baseline
                 or deployment.get("source_head") != candidate
-                or deployment.get("manifest_sha256") != manifest):
+                or deployment.get("manifest_sha256") != manifest
+                or not isinstance(deployment.get("prepared_at"), (int, float))
+                or not isinstance(activation.get("started_at"), (int, float))
+                or deployment["prepared_at"] < activation["started_at"]):
             return False
         resolves = activation_id
     elif phase == "check" and pointer == candidate and state.get("state") == "RUNNING":
@@ -172,6 +175,7 @@ def rollout(tool, candidate, baseline, run_id, prefix, *, review=None, source_wo
                    "schema_sha256": schema, "result_schema_sha256": result_schema, "started_at": time.time()}
         if risk["level"] == "HIGH":
             receipt["compatibility_receipt_sha256"] = review["compatibility_receipt_sha256"]
+            receipt["compatibility_receipt"] = review["compatibility_receipt"]
         journal.parent.mkdir(parents=True, exist_ok=True)
         with journal.open("x", encoding="utf-8") as stream:
             json.dump(receipt, stream)

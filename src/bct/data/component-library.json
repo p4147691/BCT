@@ -1,6 +1,6 @@
 {
   "schema": "bct.component-library.bundle.v1",
-  "source_fingerprint": "a984207c9ff16e49ed61f0adb797a84a33dabb30a8aeac66599546dc8bfbceb4",
+  "source_fingerprint": "529e9ff7646ddfa607b5011a6c7c3db4b0f6dc6800b453c4181fb9a45d3d2d88",
   "source_hashes": {
     "docs/CHAIN_MESSAGE_RECIPE_V2.md": "1484b088885a3fcb540217fab6f787ea248305477c8a40e1e22633d9a91f24eb",
     "docs/component-library.v1.json": "1dbf1dad2418d4f9c47e3dd2ca1ace0d1c9004a8b4cb3e16050ee3fbfab2a5c5",
@@ -81,7 +81,7 @@
     "src/bct_maintenance/registration.py": "824c837cb8e1e9de139c5c687c3a85e368b7991abaad8daf02cfe1d0b288e728",
     "src/bct_maintenance/release_risk.py": "23f146e6b5580a94a1ff0563b22b0088ac16b865c752a26f4400f5f041dec729",
     "src/bct_maintenance/releases.py": "29c22655e1ba9f1224ff4e95836d16244d15cc25db3f3db8e380a28931eb4e1b",
-    "src/bct_maintenance/rollout.py": "2a2fbb8b439a544ddde759fd330f53d5e634fd4666b32c242fd5c17fd748f765",
+    "src/bct_maintenance/rollout.py": "799540a952ba84b08c51bad7580f7da4619517a516af73037c5041aaae9feabd",
     "src/bct_maintenance/service_runtime.py": "dc14da53c6573a61bc898342fe2c7b8ef5a1facc1f45d1d6a652c638f9246fcd",
     "src/bct_maintenance/supervisor.py": "21425c69c7a149a35a47f270038bd2c73223e689fa0a3e660e45e426700bd7f1"
   },
