@@ -59,6 +59,30 @@ def _catalogue_hash_refresh(old, new, dependency_text):
     return before == after
 
 
+def _same_execution_boundary(old, new):
+    # These modules only project or prepare data. A new integration, dynamic
+    # invocation, module-level effect, or altered public signature needs review.
+    def shape(source):
+        tree = ast.parse(source)
+        top_level = []
+        for node in tree.body:
+            if isinstance(node, ast.FunctionDef):
+                top_level.append(ast.dump(ast.FunctionDef(
+                    name=node.name, args=node.args, body=[], decorator_list=node.decorator_list,
+                    returns=node.returns, type_params=node.type_params,
+                )))
+            else:
+                top_level.append(ast.dump(node))
+        guarded = (ast.Import, ast.ImportFrom, ast.With, ast.AsyncWith, ast.AsyncFunctionDef,
+                   ast.Await, ast.ClassDef, ast.Global, ast.Nonlocal)
+        dependencies = {ast.dump(node) for node in ast.walk(tree) if isinstance(node, guarded)}
+        calls = {ast.dump(node.func) for node in ast.walk(tree) if isinstance(node, ast.Call)}
+        return top_level, dependencies, calls
+
+    before, after = shape(old), shape(new)
+    return before[0] == after[0] and after[1] <= before[1] and after[2] <= before[2]
+
+
 def release_risk(root, baseline, candidate):
     if not all(_SHA.fullmatch(value) for value in (baseline, candidate)) or baseline == candidate:
         raise PreconditionError("RELEASE_SHA_INVALID")
@@ -89,9 +113,16 @@ def release_risk(root, baseline, candidate):
                 if status != "D":
                     dependencies[path] = git_output(root, "show", f"{candidate}:{path}")
                 continue
-        reasons[path] = "MEDIUM" if path in MEDIUM_MODULES and (before_mode, after_mode, status) == ("100644", "100644", "M") else "HIGH"
-        if reasons[path] == "MEDIUM":
-            dependencies[path] = git_output(root, "show", f"{candidate}:{path}")
+        reasons[path] = "HIGH"
+        if path in MEDIUM_MODULES and (before_mode, after_mode, status) == ("100644", "100644", "M"):
+            old = git_output(root, "show", f"{baseline}:{path}")
+            new = git_output(root, "show", f"{candidate}:{path}")
+            try:
+                if _same_execution_boundary(old, new):
+                    reasons[path] = "MEDIUM"
+                    dependencies[path] = new
+            except SyntaxError:
+                pass
     if LIBRARY in changed:
         reasons[LIBRARY] = "HIGH"
         if changed[LIBRARY].startswith(":100644 100644 ") and changed[LIBRARY].endswith(" M") and dependencies:
