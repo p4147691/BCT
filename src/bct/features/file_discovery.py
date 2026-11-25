@@ -22,13 +22,13 @@ def _positive_int(value: Any, code: str, maximum: int) -> int:
     return value
 
 
-def prepare(work: Work, values: dict[str, Any]) -> FeatureRequest:
+def prepare(work: Work, values: dict[str, Any], *, resolve=resolve_in_work, capability="read") -> FeatureRequest:
     operation = values["operation"]
     allowed = {"operation", "path", "depth", "max_entries", "query", "limit",
                "max_hash_bytes", "timeout_seconds"}
     if set(values) - allowed:
         raise PreconditionError("READ_DISCOVERY_FIELDS_INVALID")
-    root = resolve_in_work(work, values.get("path"), must_exist=True)
+    root = resolve(work, values.get("path"), must_exist=True)
     if not root.is_dir() or is_reparse_point(root):
         raise PreconditionError("READ_DISCOVERY_DIRECTORY_REQUIRED")
     depth = values.get("depth", 3)
@@ -59,11 +59,11 @@ def prepare(work: Work, values: dict[str, Any]) -> FeatureRequest:
                   "max_entries": max_entries, "limit": limit,
                   "query": query.strip(), "timeout_seconds": timeout_seconds,
                   "max_hash_bytes": max_hash_bytes}
-    return FeatureRequest("read", str(root), normalized,
+    return FeatureRequest(capability, str(root), normalized,
                           ("directory:" + str(root).casefold(),))
 
 
-def _scan(root: Path, depth: int, max_entries: int, deadline: float):
+def _scan(root: Path, depth: int, max_entries: int, deadline: float, guard=None):
     rows = []
     stack = [(root, 0)]
     truncated = False
@@ -74,12 +74,16 @@ def _scan(root: Path, depth: int, max_entries: int, deadline: float):
             break
         folder, level = stack.pop()
         try:
+            if guard is not None:
+                guard(folder)
             with os.scandir(folder) as iterator:
                 for child in iterator:
                     if len(rows) >= max_entries or time.monotonic() >= deadline:
                         truncated = True
                         break
                     try:
+                        if guard is not None:
+                            guard(Path(child.path))
                         if is_reparse_point(Path(child.path)) or child.is_symlink():
                             problems += 1
                             continue
@@ -99,21 +103,25 @@ def _scan(root: Path, depth: int, max_entries: int, deadline: float):
                                                   metadata.st_mtime_ns)})
                         if kind == "directory" and level < depth:
                             stack.append((path, level + 1))
-                    except OSError:
+                    except (OSError, PreconditionError):
                         problems += 1
-        except OSError:
+        except (OSError, PreconditionError):
             problems += 1
     return rows, truncated, problems
 
 
-def _file_hash(row: dict[str, Any], deadline: float) -> str | None:
+def _file_hash(row: dict[str, Any], deadline: float, guard=None) -> str | None:
     path = row["path"]
+    if guard is not None:
+        guard(path)
     if is_reparse_point(path):
         return None
     digest = hashlib.sha256()
     flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
     fd = os.open(path, flags)
     try:
+        if guard is not None:
+            guard(path, fd)
         before = os.fstat(fd)
         signature = (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns)
         if not stat.S_ISREG(before.st_mode) or signature != row["identity"]:
@@ -142,14 +150,16 @@ def _file_hash(row: dict[str, Any], deadline: float) -> str | None:
         os.close(fd)
 
 
-def execute(request: FeatureRequest) -> FeatureResult:
+def execute(request: FeatureRequest, *, guard=None) -> FeatureResult:
     args = request.arguments
     root = Path(args["path"])
+    if guard is not None:
+        guard(root)
     if not root.is_dir() or is_reparse_point(root):
         raise PreconditionError("READ_DISCOVERY_TARGET_CHANGED")
     start = time.monotonic()
     deadline = start + args["timeout_seconds"]
-    rows, truncated, problems = _scan(root, args["depth"], args["max_entries"], deadline)
+    rows, truncated, problems = _scan(root, args["depth"], args["max_entries"], deadline, guard)
     operation = args["operation"]
     output: dict[str, Any]
     if operation == "search":
@@ -184,8 +194,8 @@ def execute(request: FeatureRequest) -> FeatureResult:
                     continue
                 spent += size
                 try:
-                    digest = _file_hash(row, deadline)
-                except OSError:
+                    digest = _file_hash(row, deadline, guard)
+                except (OSError, PreconditionError):
                     digest = None
                 if digest is None:
                     unverified += 1
@@ -213,12 +223,12 @@ def execute(request: FeatureRequest) -> FeatureResult:
     return FeatureResult(Outcome.APPLIED, evidence, output=output)
 
 
-def prepare_compare(work: Work, values: dict[str, Any]) -> FeatureRequest:
+def prepare_compare(work: Work, values: dict[str, Any], *, resolve=resolve_in_work, capability="read") -> FeatureRequest:
     if set(values) - {"operation", "path_a", "path_b", "max_hash_bytes", "timeout_seconds"}:
         raise PreconditionError("READ_COMPARE_FIELDS_INVALID")
     paths = []
     for key in ("path_a", "path_b"):
-        path = resolve_in_work(work, values.get(key), must_exist=True)
+        path = resolve(work, values.get(key), must_exist=True)
         if not path.is_file() or is_reparse_point(path):
             raise PreconditionError("READ_COMPARE_REGULAR_FILE_REQUIRED")
         paths.append(path)
@@ -229,18 +239,20 @@ def prepare_compare(work: Work, values: dict[str, Any]) -> FeatureRequest:
     timeout_seconds = _positive_int(values.get("timeout_seconds", 10),
                                     "READ_COMPARE_TIMEOUT_INVALID", 25)
     return FeatureRequest(
-        "read", "compare:" + str(paths[0]) + ":" + str(paths[1]),
+        capability, "compare:" + str(paths[0]) + ":" + str(paths[1]),
         {"operation": "compare", "path_a": str(paths[0]), "path_b": str(paths[1]),
          "max_hash_bytes": max_hash_bytes, "timeout_seconds": timeout_seconds},
         tuple("file:" + str(path).casefold() for path in paths),
     )
 
 
-def execute_compare(request: FeatureRequest) -> FeatureResult:
+def execute_compare(request: FeatureRequest, *, guard=None) -> FeatureResult:
     args = request.arguments
     entries = []
     for key in ("path_a", "path_b"):
         path = Path(args[key])
+        if guard is not None:
+            guard(path)
         if not path.is_file() or is_reparse_point(path):
             raise PreconditionError("READ_COMPARE_TARGET_CHANGED")
         meta = os.stat(path)
@@ -257,8 +269,8 @@ def execute_compare(request: FeatureRequest) -> FeatureResult:
         deadline = time.monotonic() + args["timeout_seconds"]
         for i, row in enumerate(entries):
             try:
-                hashes[i] = _file_hash(row, deadline)
-            except OSError:
+                hashes[i] = _file_hash(row, deadline, guard)
+            except (OSError, PreconditionError):
                 hashes[i] = None
     verified = not equal_size or all(hashes)
     # Verify both *paths* are still the original files after any hashing.

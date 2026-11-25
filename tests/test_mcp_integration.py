@@ -90,7 +90,7 @@ class MCPIntegrationTests(unittest.TestCase):
         (self.release / "bct.toml").write_text(
             "[policy]\n"
             f"normal_actions={json.dumps(capabilities)}\n"
-            "approval_actions=[]\n\n"
+            'approval_actions=["desktop_read"]\n\n'
             "[deployment.profiles.mcp_test]\n"
             f"source_root={json.dumps(str(source))}\n"
             f"runtime_root={json.dumps(str(self.runtime))}\n"
@@ -193,7 +193,7 @@ class MCPIntegrationTests(unittest.TestCase):
                     expected_capability_tools = {
                         "bct_deploy", "bct_git_commit", "bct_github_pr_create",
                         "bct_github_pr_merge", "bct_github_pr_status", "bct_github_push", "bct_github_run_watch",
-                        "bct_github_sync_main", "bct_read", "bct_service_control",
+                        "bct_github_sync_main", "bct_read", "bct_scoped_read", "bct_service_control",
                         "bct_browser", "bct_relay_control", "bct_owned_extension_action",
                         "bct_system_inspect", "bct_execute", "bct_monitor",
                         "bct_conversation_network_update", "bct_project_context",
@@ -420,6 +420,29 @@ class MCPIntegrationTests(unittest.TestCase):
                         "hello from MCP\n",
                         batch_result.structured_content["output"]["items"][0]["output"]["text"],
                     )
+                    scoped_denial = await session.call_tool("bct_scoped_read", {
+                        "work_id": "mcp-read-work", "operation_id": "scoped-denied",
+                        "arguments": {"path": str(self.root / "outside.txt")},
+                    })
+                    self.assertTrue(scoped_denial.is_error)
+                    self.assertIn("TARGET_OUTSIDE_WORK_SCOPE", scoped_denial.content[0].text)
+                    absent = await session.call_tool("bct_operation_get", {
+                        "work_id": "mcp-read-work", "operation_id": "scoped-denied",
+                    })
+                    self.assertTrue(absent.is_error)
+                    self.assertIn("OPERATION_NOT_FOUND", absent.content[0].text)
+                    direct_work = await session.call_tool("bct_work_create", {
+                        "work_id": "pc-read-receipts", "request_summary": "direct read",
+                        "roots": [], "actions": ["desktop_read"],
+                    })
+                    self.assertFalse(direct_work.is_error)
+                    direct_denial = await session.call_tool("bct_read", {
+                        "work_id": "pc-read-receipts", "operation_id": "direct-unconfigured",
+                        "arguments": {"path": str(self.project / "hello.txt")},
+                        "approval_ref": "e30.eA",
+                    })
+                    self.assertTrue(direct_denial.is_error)
+                    self.assertIn("APPROVAL_VERIFIER_DISABLED", direct_denial.content[0].text)
                     continued = await session.call_tool("bct_work_create", {
                         **work_arguments,
                         "request_summary": "continue the same task with a broader authorized root",

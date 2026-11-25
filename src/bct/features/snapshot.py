@@ -6,6 +6,7 @@ import hashlib
 import json
 import time
 from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -16,14 +17,21 @@ _MAX_FILE_BYTES = 512 * 1024
 _MAX_CLAIMS_RETURNED = 32
 
 
-def _fingerprint_file(item: dict[str, str]) -> dict[str, Any]:
+def _fingerprint_file(item: dict[str, str], *, guard=None) -> dict[str, Any]:
     path = Path(item["path"])
+    if guard is not None:
+        guard(path)
     if not path.is_file() or is_reparse_point(path):
         raise PreconditionError("SNAPSHOT_FILE_CHANGED")
     before = path.stat()
     if before.st_size > _MAX_FILE_BYTES:
         raise PreconditionError("SNAPSHOT_FILE_TOO_LARGE")
-    contents = path.read_bytes()
+    if guard is not None:
+        with path.open("rb") as stream:
+            guard(path, stream.fileno())
+            contents = stream.read(_MAX_FILE_BYTES + 1)
+    else:
+        contents = path.read_bytes()
     after = path.stat()
     if (len(contents) != before.st_size or before.st_size != after.st_size
             or before.st_mtime_ns != after.st_mtime_ns or is_reparse_point(path)):
@@ -36,7 +44,7 @@ def _fingerprint_file(item: dict[str, str]) -> dict[str, Any]:
     }
 
 
-def capture_work_snapshot(store: Any, arguments: dict[str, Any]) -> dict[str, Any]:
+def capture_work_snapshot(store: Any, arguments: dict[str, Any], *, guard=None) -> dict[str, Any]:
     """Return only this Work's state, file metadata, claims and receipt summaries.
 
     File and SQLite observations are not one atomic transaction.  The caller
@@ -77,11 +85,12 @@ def capture_work_snapshot(store: Any, arguments: dict[str, Any]) -> dict[str, An
         })
 
     files = arguments["files"]
+    fingerprint = partial(_fingerprint_file, guard=guard)
     if len(files) > 1:
         with ThreadPoolExecutor(max_workers=min(4, len(files))) as pool:
-            file_results = list(pool.map(_fingerprint_file, files))
+            file_results = list(pool.map(fingerprint, files))
     else:
-        file_results = [_fingerprint_file(item) for item in files]
+        file_results = [fingerprint(item) for item in files]
 
     return {
         "schema": 1, "read_only": True, "scope": "work",

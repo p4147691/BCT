@@ -23,15 +23,21 @@ class FileReadFeature:
 
     def __init__(self, store=None):
         self.store = store
+        self.path_guard = None
+
+    def _resolve(self, work, value, *, must_exist):
+        return resolve_in_work(work, value, must_exist=must_exist)
 
     def prepare(self, *, work: Work, arguments: dict[str, Any]) -> FeatureRequest:
         operation = str(arguments.get("operation") or "file").strip().casefold()
         if operation not in {"file", "directory_tree", "batch", "snapshot", "search", "duplicates", "compare"}:
             raise PreconditionError("READ_OPERATION_INVALID")
         if operation == "compare":
-            return file_discovery.prepare_compare(work, {**arguments, "operation": operation})
+            return file_discovery.prepare_compare(work, {**arguments, "operation": operation},
+                                                  resolve=self._resolve, capability=self.capability)
         if operation in {"search", "duplicates"}:
-            return file_discovery.prepare(work, {**arguments, "operation": operation})
+            return file_discovery.prepare(work, {**arguments, "operation": operation},
+                                          resolve=self._resolve, capability=self.capability)
         if operation == "snapshot":
             return self._prepare_snapshot(work=work, arguments=arguments)
         if operation == "batch":
@@ -140,12 +146,11 @@ class FileReadFeature:
             tuple(resources),
         )
 
-    @staticmethod
-    def _prepare_item(*, work: Work, arguments: dict[str, Any]) -> tuple[dict[str, Any], str]:
+    def _prepare_item(self, *, work: Work, arguments: dict[str, Any]) -> tuple[dict[str, Any], str]:
         operation = str(arguments.get("operation") or "file").strip().casefold()
         if operation not in {"file", "directory_tree"}:
             raise PreconditionError("READ_BATCH_NESTED_OPERATION_INVALID")
-        path = resolve_in_work(work, str(arguments.get("path") or ""), must_exist=True)
+        path = self._resolve(work, arguments.get("path"), must_exist=True)
         if operation == "file":
             if not path.is_file():
                 raise PreconditionError("READ_TARGET_NOT_FILE")
@@ -170,11 +175,11 @@ class FileReadFeature:
 
     def execute(self, request: FeatureRequest) -> FeatureResult:
         if request.arguments["operation"] == "compare":
-            return file_discovery.execute_compare(request)
+            return file_discovery.execute_compare(request, guard=self.path_guard)
         if request.arguments["operation"] in {"search", "duplicates"}:
-            return file_discovery.execute(request)
+            return file_discovery.execute(request, guard=self.path_guard)
         if request.arguments["operation"] == "snapshot":
-            output = capture_work_snapshot(self.store, request.arguments)
+            output = capture_work_snapshot(self.store, request.arguments, guard=self.path_guard)
             return FeatureResult(
                 Outcome.APPLIED,
                 {"operation": "snapshot", "read_only": True,
@@ -233,10 +238,13 @@ class FileReadFeature:
 
     def _execute_item(self, item: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
         path = Path(item["path"])
+        if self.path_guard is not None:
+            self.path_guard(path)
         if item["operation"] == "directory_tree":
             if not path.is_dir() or is_reparse_point(path):
                 raise PreconditionError("READ_TARGET_CHANGED")
-            entries, truncated = self._directory_tree(path, depth=item["depth"], limit=item["limit"])
+            entries, truncated = self._directory_tree(path, depth=item["depth"], limit=item["limit"],
+                                                     guard=self.path_guard)
             observed_at = time.time()
             return (
                 {
@@ -247,7 +255,14 @@ class FileReadFeature:
             )
         if not path.is_file() or is_reparse_point(path):
             raise PreconditionError("READ_TARGET_CHANGED")
-        raw = path.read_bytes()
+        if self.path_guard is not None:
+            with path.open("rb") as stream:
+                self.path_guard(path, stream.fileno())
+                raw = stream.read(self.batch_max_file_bytes + 1)
+            if len(raw) > self.batch_max_file_bytes:
+                raise PreconditionError("READ_FILE_TOO_LARGE")
+        else:
+            raw = path.read_bytes()
         if len(raw) > self.batch_max_file_bytes and "id" in item:
             raise PreconditionError("READ_BATCH_FILE_TOO_LARGE")
         # Preserve Path.read_text()'s existing universal-newline response contract while
@@ -263,14 +278,18 @@ class FileReadFeature:
         )
 
     @staticmethod
-    def _directory_tree(path: Path, *, depth: int, limit: int) -> tuple[list[dict[str, str]], bool]:
+    def _directory_tree(path: Path, *, depth: int, limit: int, guard=None) -> tuple[list[dict[str, str]], bool]:
         entries: list[dict[str, str]] = []
         pending: list[tuple[Path, int]] = [(path, 0)]
         truncated = False
         while pending and not truncated:
             current, level = pending.pop()
             try:
+                if guard is not None:
+                    guard(current)
                 children = sorted(current.iterdir(), key=lambda item: item.name.casefold())
+            except PreconditionError:
+                continue
             except OSError as exc:
                 entries.append({
                     "path": current.relative_to(path).as_posix() or ".",
@@ -282,6 +301,11 @@ class FileReadFeature:
                 if len(entries) >= limit:
                     truncated = True
                     break
+                if guard is not None:
+                    try:
+                        guard(child)
+                    except (OSError, PreconditionError):
+                        continue
                 relative = child.relative_to(path).as_posix()
                 if is_reparse_point(child):
                     kind = "symlink"

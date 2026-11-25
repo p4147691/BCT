@@ -31,7 +31,7 @@ measurement-only plan. A failed or unverified observation stops only that
 verification plan; it cannot block unrelated normal repair work. A mutating
 UNKNOWN retains its exact Claim and duplicate-effect protection. File content and test console output are not persisted. The
 receipt contains ordered evidence and timings, including completed steps before failure.
-Use `bct_read` batch when file contents, rather than verification metadata, are needed.
+Use `bct_scoped_read` batch when file contents, rather than verification metadata, are needed.
 The same tool accepts fixed versioned `local-python-validation` and `pr-readiness` recipes.
 Every prepared child is checkpointed in SQLite before dispatch and exposed by
 `bct_operation_get.step_journal`; an in-flight step after worker loss remains unresolved and
@@ -72,7 +72,7 @@ Every capability tool accepts `work_id`, `operation_id`, `arguments`, and an opt
 `approval_ref`. It delegates to the same policy, work ownership, resource claim, duplicate
 operation, precondition, and outcome code used by direct BCT calls.
 
-Related file and directory inspection can use one `bct_read` call with `operation: "batch"`.
+Related file and directory inspection can use one `bct_scoped_read` call with `operation: "batch"`.
 Each item has a unique caller label, an absolute path, and optionally the existing
 `directory_tree` depth/limit fields. BCT validates every item before recording the operation,
 does not reserve resource Claims for its read-only items, and returns item
@@ -146,3 +146,26 @@ entry. This was verified with a fresh ephemeral Codex process that created a BCT
 read a repository file through the configured MCP server.
 
 Catalogue acceptance checks authenticated server tools/list and a fresh client session after deployment. Already-running clients may retain an older catalogue; this alone does not indicate server registration failure.
+
+
+## Read scopes
+
+Use bct_scoped_read for Worker or Recipe reads. It accepts a Work ID,
+an operation ID and arguments, for example {"operation":"file","path":"D:/BCT/source/README.md"}.
+The existing read capability and receipts keep their name and scope.
+
+For a human-approved PC read, request an approval challenge with
+capability desktop_read and the same operation ID and arguments.
+The independent issuer signs the exact challenge. Pass that grant as
+approval_ref to bct_read. An example directory request is
+{"operation":"directory_tree","path":"E:/Reports","depth":1}.
+For a receipt-only Work, create it with actions=["desktop_read"] and roots=[].
+Unsigned legacy bct_read calls keep their Work-scoped behavior.
+The deployed default disables signing until the protected Windows issuer
+and Core accounts and the verifier policy are provisioned.
+
+Both tools share file, directory_tree, batch, snapshot, search, duplicates
+and compare. Snapshot receipt and Claim queries remain restricted to the
+same Work. Public scope and lookup rejections include stable codes such as
+TARGET_OUTSIDE_WORK_SCOPE and OPERATION_NOT_FOUND. A rejected preflight does
+not create an operation receipt.

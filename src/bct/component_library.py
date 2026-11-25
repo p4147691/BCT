@@ -4,6 +4,8 @@ This module never selects a role, grants a capability or executes a tool.
 """
 from __future__ import annotations
 
+from .core.capabilities import public_tool_name
+
 import hashlib
 import json
 import re
@@ -128,7 +130,7 @@ def discover(*, tools: list[dict], capabilities: tuple[str, ...], usage: dict[st
         for capability in capabilities:
             if not _matches({"capability": capability, "usage": usage.get(capability, "")}, terms):
                 continue
-            direct = "bct_" + capability
+            direct = public_tool_name(capability)
             route = direct if direct in actual else "bct_dispatch" if "bct_dispatch" in actual else None
             routes.append({"capability": capability, "tool": route,
                            "routing_arguments": {"capability": capability} if route == "bct_dispatch" else {},

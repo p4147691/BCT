@@ -44,14 +44,14 @@ class LightweightCatalogueTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_full_default_unchanged(self):
         names = {t.name for t in await self.full.list_tools()}
-        self.assertIn("bct_read", names)
+        self.assertIn("bct_scoped_read", names)
         self.assertNotIn("bct_dispatch", names)
         self.assertIn("bct_desktop_capture", names)
         self.assertIn("bct_inbox_get", names)
 
     async def test_compact_lists_only_dispatch_and_shared_tools(self):
         names = {t.name for t in await self.compact.list_tools()}
-        self.assertEqual(SHARED_MCP_TOOLS | {"bct_dispatch"}, names)
+        self.assertEqual(SHARED_MCP_TOOLS | {"bct_dispatch", "bct_scoped_read"}, names)
         self.assertIn("bct_dispatch", names)
         self.assertNotIn("bct_read", names)
         self.assertIn("bct_desktop_capture", names)
@@ -59,12 +59,12 @@ class LightweightCatalogueTests(unittest.IsolatedAsyncioTestCase):
     async def test_hybrid_exposes_two_direct_tools_with_existing_contract(self):
         hybrid = build_mcp(self.bct, hybrid_catalogue=True)
         names = {tool.name for tool in await hybrid.list_tools()}
-        self.assertEqual(SHARED_MCP_TOOLS | {"bct_dispatch", "bct_read"}, names)
+        self.assertEqual(SHARED_MCP_TOOLS | {"bct_dispatch", "bct_scoped_read"}, names)
         self.assertIn("bct_dispatch", names)
-        self.assertIn("bct_read", names)
+        self.assertIn("bct_scoped_read", names)
         self.assertNotIn("bct_execute", names)  # not registered in this fixture
         for capability in ("read", "write"):
-            name = "bct_read" if capability == "read" else "bct_dispatch"
+            name = "bct_scoped_read" if capability == "read" else "bct_dispatch"
             args = {"work_id": "W", "operation_id": "O-" + capability, "arguments": {"path": "x"}}
             if name == "bct_dispatch":
                 args["capability"] = capability
@@ -138,7 +138,7 @@ class CompactRuntimeHTTPTests(unittest.TestCase):
                             async with ClientSession(read, write) as client:
                                 await client.initialize()
                                 names = {t.name for t in (await client.list_tools()).tools}
-                                self.assertEqual(SHARED_MCP_TOOLS | {"bct_dispatch"}, names)
+                                self.assertEqual(SHARED_MCP_TOOLS | {"bct_dispatch", "bct_read", "bct_scoped_read"}, names)
                                 self.assertIn("bct_dispatch", names)
                                 created = await client.call_tool("bct_work_create", {
                                     "work_id": "compact-test-work", "request_summary": "read only test",
@@ -382,9 +382,9 @@ class HybridRuntimeHTTPTests(unittest.TestCase):
                             async with ClientSession(read, write) as client:
                                 await client.initialize()
                                 names = {t.name for t in (await client.list_tools()).tools}
-                                self.assertEqual(SHARED_MCP_TOOLS | {"bct_dispatch", "bct_read", "bct_execute"}, names)
+                                self.assertEqual(SHARED_MCP_TOOLS | {"bct_dispatch", "bct_read", "bct_scoped_read", "bct_execute"}, names)
                                 self.assertIn("bct_execute", names)
-                                self.assertIn("bct_read", names)
+                                self.assertIn("bct_scoped_read", names)
                                 self.assertIn("bct_dispatch", names)
                                 created = await client.call_tool("bct_work_create", {
                                     "work_id": "hybrid-work", "request_summary": "fixture",

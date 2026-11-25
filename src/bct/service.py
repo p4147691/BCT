@@ -16,6 +16,7 @@ from .delivery_continuation_recovery import DeliveryContinuationRecovery
 from .relay_executor import RelayControlFeature
 from .worker_dispatch_recovery import WorkerDispatchRecovery
 from .manager_succession_recovery import ManagerSuccessionRecovery
+from .features.desktop_read import DesktopReadFeature
 from .features.files import FileReadFeature, FileWriteFeature
 from .features.pc_safe_plans import FileActionPlanFeature, ProcessStopPlanFeature
 from .features.pc_safe_apply import FileActionApplyFeature
@@ -208,8 +209,14 @@ class BCT:
         desktop_session = desktop_session_client(policy_path, data_root=data_root)
         sessions = ProcessSessionFeature(policy_path, data_root=data_root)
         approved_stop = ProcessStopApplyFeature(sessions, self.store)
+        state = Path(state_path)
+        protected_read_roots = [state, Path(policy_path)]
+        if state.parent.name == "state":
+            protected_read_roots.extend((state.parent.parent, state.parent.parent.parent / "maintenance"))
+        if data_root is not None:
+            protected_read_roots.append(data_root)
         for feature in (
-            FileReadFeature(self.store), FileWriteFeature(), FileActionPlanFeature(),
+            FileReadFeature(self.store), DesktopReadFeature(self.store, protected_roots=protected_read_roots), FileWriteFeature(), FileActionPlanFeature(),
             ProcessStopPlanFeature(), FileActionApplyFeature(), approved_stop,
             LocalFileActionFeature(), LocalProcessStopFeature(approved_stop), TestFeature(), GitCommitFeature(policy_path),
             GitHubPushFeature(), GitHubPullRequestFeature(github),

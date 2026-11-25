@@ -33,7 +33,7 @@ def request_hash(work_id: str, capability: str, target: str,
 class ApprovalVerifier:
     """Verify Ed25519 signature, scope, TTL, and consume token once in SQLite."""
 
-    ALLOWED = frozenset({"file_action_apply", "process_stop_apply"})
+    ALLOWED = frozenset({"file_action_apply", "process_stop_apply", "desktop_read"})
 
     def __init__(self, *, policy_path: str | Path, state_path: str | Path):
         self.policy_path = Path(policy_path) if policy_path is not None else None

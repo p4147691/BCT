@@ -1,9 +1,9 @@
 {
   "schema": "bct.component-library.bundle.v1",
-  "source_fingerprint": "0d620a414d71cbabd16ace4a486d8938fa548339482d06e025df84ddc076b855",
+  "source_fingerprint": "16c7912b8b40334ca29366663a062020ef0de2971394efa62747bdcca27cea13",
   "source_hashes": {
     "docs/CHAIN_MESSAGE_RECIPE_V2.md": "1484b088885a3fcb540217fab6f787ea248305477c8a40e1e22633d9a91f24eb",
-    "docs/component-library.v1.json": "1dbf1dad2418d4f9c47e3dd2ca1ace0d1c9004a8b4cb3e16050ee3fbfab2a5c5",
+    "docs/component-library.v1.json": "8d39d850927049f596538e3377da54f712b4f24a7a3217ac9f51341dba0cf950",
     "modules/browser-bridge/extension/background.js": "b058aeb8fa8f37b8a21ae8b70be21d003e976a97e9e5ca884d7a98f5dced4472",
     "modules/browser-bridge/extension/chat_tools.js": "cc91898a0c30c58f5bee4e6b7fea991282ce5a21f100cfaeb220cc300e4ee85b",
     "modules/browser-bridge/extension/tool_protocol.js": "05e244e856af58705de1c1fc50a9a8d5e63b9ca2e8ba8674cabe8d9ea9a8563a",
@@ -29,7 +29,7 @@
     "src/bct/code_block_organize.py": "aa9471232321334c1c2ce7f52f0fa4725a4016e13ba19bac942dd71f62622cfd",
     "src/bct/code_block_scan.py": "179a2a63497310b53900e49e44da9f71cbc9d2d1c2b9321279c9ebebb2c5646f",
     "src/bct/codex_surface.py": "b9ddcbd88ff354101860bbe2f50250d543e1ecbdc32a00640f2b6712ff5a3d07",
-    "src/bct/component_library.py": "85dbbabd4a4a174b18b9d93fbdaae4f54517ca986357166b41b44c23156043bf",
+    "src/bct/component_library.py": "dfb82a583c6eb78857fdf8f9f52fe2481764a12960103349a347f2b53911cf0e",
     "src/bct/continuation_primitives.py": "4ff4fc92c329a1c0515c1b5a174ba3550fe47e67693d3237cdf8491b9aa0505a",
     "src/bct/conversation_network.py": "e4f73151221236661c76f72cd66a9036a6cae556ff17e0a38857589a2aa42295",
     "src/bct/core/chat_stream_rcc_watch.py": "0db47e0b0991d5b5e406f3c60c60c2a5874fc2f5409b31dc0582313d624b6324",
@@ -38,8 +38,12 @@
     "src/bct/discovery_views.py": "ede14516f937e85a0630aa2e6e4d21ee454a21bb5d808aee2ede5de44597f2ec",
     "src/bct/dot_identity.py": "bd2c0c8768301dbb12bb52f9699b758909a5472b1220d0185ae2baf0b10a9b18",
     "src/bct/features/conversation_network.py": "950299ce295bf82f6efd2c993d8bddae1ce56294b7312ed97765ac516725f6ce",
+    "src/bct/features/desktop_read.py": "80e81acc40650e380e0ce514dff418aa3189a7762f33cd2514c21b655b95f0b7",
+    "src/bct/features/file_discovery.py": "2d42efd6c8e1f6e80902d2a7e28a1921b9bd01675f087616906975bbf1d2e1e8",
+    "src/bct/features/files.py": "bf0b58e5e87e96526fa5877093ea0b54df80b3a42a3aab1032b8c4204442a41b",
     "src/bct/features/owned_extension_action.py": "6c164bfb0cacf132940f16c15dfc9f653937b48a91d5e3e3ba648ad07e4bfa15",
     "src/bct/features/rcc.py": "d0378d5737c0d5c09776d4754809aedf793af0ddfebb340aec0bc7a25dc42ddc",
+    "src/bct/features/snapshot.py": "a69bd0e41fa46a351573060898de1e97e3e7c8b2af121eb4a170814556a80346",
     "src/bct/loop_recipe_assembly.py": "dfac063ef8ad89770225e9d4e86f98743eef6cda05a6f63f81e3b32928b55078",
     "src/bct/loop_recipe_contracts.py": "569f7b75889198643c577668674690fd6bd9e38fd9ab71dc8ad835b287485941",
     "src/bct/loop_recipe_ledger.py": "0cde107c96543e7c61567a5be0245fd861144fb2691d96e4dba5180c8322ff9e",
@@ -50,7 +54,7 @@
     "src/bct/loop_supervisor_handoff.py": "10337fe0b64b47a93e12bea9c354c0fdb40887d715c311fea019b700f6dfe220",
     "src/bct/loop_turns.py": "95a33e77f62c57eac6f631123632da88bb875c3a154557af9d5afc74116ed5ba",
     "src/bct/mcp_catalogue_config.py": "82663cf12c66b6da9a7a47e4442c7ceed6612c4c438c9dbe8db71846784bfed7",
-    "src/bct/mcp_server.py": "6e1e9257d71c14a0749b8b440be5a7960a19092a45ffab456c7f9e731e37afc1",
+    "src/bct/mcp_server.py": "dd713bab2732071c5f65988b72e24ea887262b21ab47b78567f9b61384638a2b",
     "src/bct/monitor_events.py": "c0ccbd09016280d477cbdbe736d00ca502213a5a12896007b91b89a66b3edaad",
     "src/bct/monitor_runtime.py": "f770080d682ee73e75f13f35d8d6f689656d26f4921cf24f0165d503493d3d15",
     "src/bct/node_recovery.py": "1c84150ae1af8cc285432565097ac071a2af6c4b2534f1d19ac7f75d7bec2438",
@@ -1576,6 +1580,45 @@
           "retained-loop-record-recovery",
           "LoopReviewLedger.observe_return",
           "loop_recipe_recovery_loop"
+        ]
+      },
+      {
+        "id": "bct.file_read",
+        "kind": "module",
+        "maturity": "isolated",
+        "implementation": [
+          {
+            "path": "src/bct/features/files.py",
+            "symbol": "FileReadFeature"
+          },
+          {
+            "path": "src/bct/features/desktop_read.py",
+            "symbol": "DesktopReadFeature"
+          },
+          {
+            "path": "src/bct/features/file_discovery.py",
+            "symbol": "prepare / execute"
+          },
+          {
+            "path": "src/bct/features/snapshot.py",
+            "symbol": "capture_work_snapshot"
+          }
+        ],
+        "contract": "Compose bounded file observations through a scoped or exact human-approved read boundary. Worker verification uses the durable scoped read capability. Snapshots retain Work receipt ownership and epoch checks.",
+        "effects": [
+          "read-only observations",
+          "operation receipt"
+        ],
+        "safety": [
+          "independent-user-confirmation",
+          "work-scoped-receipts",
+          "credential-path-protection",
+          "no-claim-for-observation"
+        ],
+        "tests": [
+          "tests/test_desktop_read.py",
+          "tests/test_file_discovery.py",
+          "tests/test_mcp_integration.py"
         ]
       },
       {

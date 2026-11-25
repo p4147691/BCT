@@ -23,7 +23,7 @@ from .capabilities import capability_matches
 # Only platform-defined read-only capabilities qualify: an arbitrary caller
 # cannot opt a mutating command into the measurement-only classification.
 _MEASUREMENT_ONLY_CAPABILITIES = frozenset({
-    "read", "test", "verify", "system_inspect", "github_pr_status",
+    "read", "desktop_read", "test", "verify", "system_inspect", "github_pr_status",
     "desktop_session_status", "desktop_window_list", "cdp_inspect",
     "desktop_capture",
 })
@@ -71,6 +71,8 @@ class OperationCoordinator:
             raise KeyError("FEATURE_NOT_REGISTERED:" + capability)
         work = self.store.get_work(work_id)
         if work.owner_principal_id != principal.principal_id:
+            if capability == "desktop_read":
+                raise AuthorizationError("WRONG_WORK_OWNER")
             # Work ownership identifies the current executor; it is not a
             # permanent permission wall. A trusted successor may continue the
             # same Work once every earlier operation is terminal. The epoch

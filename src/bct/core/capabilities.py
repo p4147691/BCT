@@ -17,3 +17,8 @@ def canonical_capability(value: object) -> str:
 def capability_matches(value: object, expected: str) -> bool:
     """Compare current and historical durable capability names safely."""
     return canonical_capability(value) == expected
+
+
+def public_tool_name(capability: str) -> str:
+    """Map durable capability names to their public MCP tools."""
+    return "bct_" + {"read": "scoped_read", "desktop_read": "read"}.get(capability, capability)

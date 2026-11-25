@@ -26,7 +26,7 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
 
 AUD = "bct-p2-action-v1"
-CAPABILITIES = frozenset({"file_action_apply", "process_stop_apply"})
+CAPABILITIES = frozenset({"file_action_apply", "process_stop_apply", "desktop_read"})
 REQUIRED = frozenset({
     "principal_id", "work_id", "operation_id",
     "capability", "target", "request_sha256", "arguments", "preconditions",
@@ -84,7 +84,7 @@ def challenge_display(challenge: dict[str, Any]) -> str:
     # The user must see all source/destination or PID/mode details.
     details = json.dumps({"arguments": value["arguments"],
                           "preconditions": value["preconditions"]},
-                         ensure_ascii=False, indent=2, sort_keys=True)
+                         ensure_ascii=value["capability"] == "desktop_read", indent=2, sort_keys=True)
     details_friendly = []
     args = value["arguments"]
     if value["capability"] == "file_action_apply":
@@ -94,7 +94,7 @@ def challenge_display(challenge: dict[str, Any]) -> str:
             ("destination", "이동·복원 대상"),
         ):
             details_friendly.append(label + ": " + str(args.get(key, "")))
-    else:
+    elif value["capability"] == "process_stop_apply":
         for key, label in (
             ("session_id", "소유 작업 세션"),
             ("pid", "프로세스 PID"),

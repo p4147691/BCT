@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import hmac
+import re
 import time
 import uuid
 from pathlib import Path
@@ -10,13 +11,14 @@ from typing import Any, Callable, Coroutine
 
 from mcp.server import MCPServer
 from mcp.server.mcpserver import Image
-from mcp.server.mcpserver.exceptions import ToolError
+from mcp.server.mcpserver.exceptions import ToolError, UnexpectedToolError
 from starlette.responses import JSONResponse
 
 from .background_operations import BACKGROUND_CAPABILITIES, launch_background_operation
 from .chat_input_queue import queue_message_command
 from .code_block_commands import organize_code_blocks_command
-from .core.models import Principal
+from .core.capabilities import public_tool_name
+from .core.models import AuthorizationError, ConflictError, PreconditionError, Principal
 from .mcp_catalogue_config import CatalogueSettings
 from .status_views import status_view
 from .task_message_commands import task_message_command
@@ -45,6 +47,27 @@ from .recipes.state import check_conversation_network_recipe
 
 MCP_PRINCIPAL_ID = "bct-mcp-local"
 
+
+class BCTMCPServer(MCPServer):
+    async def call_tool(self, name, arguments, context=None):
+        try:
+            return await super().call_tool(name, arguments, context)
+        except UnexpectedToolError as exc:
+            cause = exc.__cause__
+            if isinstance(cause, (AuthorizationError, ConflictError, PreconditionError)):
+                # Paths, remote response bodies and prose after a symbolic
+                # reason belong in internal diagnostics, not public tool errors.
+                reason = str(cause).split(":", 1)[0]
+                if not re.fullmatch(r"[A-Z][A-Z0-9_]{2,100}", reason):
+                    reason = cause.code
+                raise ToolError(reason) from cause
+            if isinstance(cause, KeyError) and cause.args in {
+                ("OPERATION_NOT_FOUND",), ("WORK_NOT_FOUND",),
+            }:
+                raise ToolError(cause.args[0]) from cause
+            raise
+
+
 _GENERAL_TOOLS = (
     "bct_capabilities", "bct_status", "queue_message", "bct_get_conversation_network", "bct_check_conversation_network", "scan_code_blocks", "organize_code_blocks",
     "bct_execution_context", "bct_set_direction", "bct_get_direction", "bct_chain_branch",
@@ -57,6 +80,7 @@ _CAPABILITY_USAGE = {
     "verify": "Run up to 8 read metadata, test, or github_pr_status steps, or a fixed versioned recipe. Each step is durably journaled and authorized against the authenticated principal and current policy. Background operation; retrieve receipt and step_journal with bct_operation_get(wait_seconds=25). No file bodies or test output are persisted.",
     "github_pr_status": "Exact expected_head and required_checks required. Optional wait_seconds (0..300) waits server-side; positive waits run in background. Retrieve receipt with bct_operation_get.",
     "github_run_watch": "Register one exact Actions run for a detached, advisory-only Inbox completion. It never merges, pushes, deploys, or changes Work state; retrieve terminal results with bct_inbox_get.",
+    "desktop_read": "Read a user-approved ordinary local file or folder outside Work roots. Use approval_challenge with capability=desktop_read and a separately signed grant. Examples arguments={\"operation\":\"file\",\"path\":\"D:/Documents/note.txt\"} or arguments={\"operation\":\"directory_tree\",\"path\":\"E:/Reports\",\"depth\":1}. A Work ID is used for the receipt. Without a grant, legacy calls remain Work-scoped. Snapshot receipts and Claims remain Work-only.",
     "read": "Read a scoped file or directory with operation=file|directory_tree|batch|snapshot. Read-only discovery: operation=search with path, query, depth, max_entries, limit; operation=duplicates with path and bounded SHA-256 verification (max_hash_bytes, timeout_seconds); operation=compare with path_a and path_b. Partial searches/hash budgets report complete=false. Never deletes files.",
     "system_inspect": "Read process_list, process by pid, or port owners. For one bounded read-only diagnosis use operation=diagnose with query and/or up to 8 ports, optional limit. Never terminates a process.",
     "approval_challenge": "Read-only exact Work/Operation request challenge for independent human approval UI. Accept capability, operation_id and full arguments of a pre-approved P2 action. Returns full prepared request, target and SHA256; never issues approvals or executes effects.",
@@ -131,7 +155,7 @@ def build_mcp(
     compact_catalogue = compact_catalogue or hybrid_catalogue
     capabilities = tuple(bct.operations.capabilities)
     principal = Principal(MCP_PRINCIPAL_ID, "local-bearer", frozenset(capabilities))
-    server = MCPServer(
+    server = BCTMCPServer(
         "BCT",
         instructions=(
             "For ordinary assigned work, begin with bct_chain_recipe(instruction=the request) "
@@ -1253,7 +1277,9 @@ def build_mcp(
             arguments: dict[str, Any],
             approval_ref: str | None = None,
         ) -> dict[str, Any]:
-            selected = capability
+            # The legacy unapproved public spelling retains its original
+            # Work-limited behavior. Only signed requests can select direct read.
+            selected = "read" if capability == "desktop_read" and approval_ref is None else capability
             if capability == "test" and arguments.get("operation") == "verify":
                 selected = "verify"
                 arguments = {key: value for key, value in arguments.items() if key != "operation"}
@@ -1333,7 +1359,7 @@ def build_mcp(
                 value["inbox_registration"] = inbox_registration
             return value
 
-        execute.__name__ = "bct_" + capability
+        execute.__name__ = public_tool_name(capability)
         execute.__doc__ = f"Execute the registered BCT {capability!r} capability."
         return execute
 
@@ -1364,22 +1390,20 @@ def build_mcp(
             arguments: dict[str, Any],
             approval_ref: str | None = None,
         ) -> dict[str, Any]:
-            if capability not in capabilities or capability in _SPECIAL_CAPABILITIES:
+            capability = "read" if capability == "scoped_read" else capability
+            if capability not in capabilities or capability in _SPECIAL_CAPABILITIES or capability == "desktop_read":
                 return {"error": "CAPABILITY_NOT_AVAILABLE_IN_COMPACT_CATALOGUE"}
             return await make_executor(capability)(
                 work_id, operation_id, arguments, approval_ref
             )
-        if hybrid_catalogue:
-            for exposed in ("execute", "read"):
-                if exposed in capabilities:
-                    server.tool(
-                        name="bct_" + exposed,
-                        description=(
-                            f"Run BCT capability {exposed} with an exact work and operation ID. "
-                            + _CAPABILITY_USAGE.get(exposed, "")
-                        ),
-                        structured_output=True,
-                    )(make_executor(exposed))
+        for exposed in ("read", "desktop_read", *(("execute",) if hybrid_catalogue else ())):
+            if exposed in capabilities:
+                server.tool(
+                    name=public_tool_name(exposed),
+                    description=f"Run BCT capability {exposed} with an exact work and operation ID. "
+                                + _CAPABILITY_USAGE.get(exposed, ""),
+                    structured_output=True,
+                )(make_executor(exposed))
         settings_path = getattr(bct, "mcp_catalogue_path", None)
         if settings_path is not None:
             CatalogueSettings(settings_path).attach(server)
@@ -1389,7 +1413,7 @@ def build_mcp(
         if capability in _SPECIAL_CAPABILITIES:
             continue
         server.tool(
-            name="bct_" + capability,
+            name=public_tool_name(capability),
             description=(
                 f"Run BCT capability {capability} with an exact work and operation ID. "
                 + _CAPABILITY_USAGE.get(capability, "")

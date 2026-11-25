@@ -125,8 +125,8 @@ class LibraryMCPTests(unittest.IsolatedAsyncioTestCase):
             actual = {t.name: t for t in await server.list_tools()}
             result = await self.call(server, tool_name="bct_set_direction")
             self.assertEqual(actual["bct_set_direction"].input_schema, result["tool"]["inputSchema"])
-            read = await self.call(server, tool_name="bct_read")
-            self.assertEqual("NOT_FOUND" if mode == "compact" else "OK", read["status"])
+            read = await self.call(server, tool_name="bct_scoped_read")
+            self.assertEqual("OK", read["status"])
 
     async def test_shared_manual_exact_utf8_text_and_scope(self):
         data = await self.call(self.server(), include_manual=True)
@@ -173,7 +173,7 @@ class LibraryMCPTests(unittest.IsolatedAsyncioTestCase):
         for mode in ("full", "compact", "hybrid"):
             result = await self.call(self.server(mode), query="read")
             route = next(r for r in result["capability_routes"] if r["capability"] == "read")
-            self.assertEqual("bct_dispatch" if mode == "compact" else "bct_read", route["tool"])
+            self.assertEqual("bct_scoped_read", route["tool"])
             self.assertTrue(route["requires_work_authorization"])
 
     async def test_bounded_query_pagination_and_unknown_names(self):

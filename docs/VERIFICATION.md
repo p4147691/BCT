@@ -70,7 +70,7 @@ Merge independently rechecks the exact head and required checks; old receipts ca
 authorize merging a changed PR.
 
 Reads return metadata only in this recipe. Single reads are wrapped in the existing
-bounded batch contract. Use `bct_read(operation=batch)` separately for file contents.
+bounded batch contract. Use `bct_scoped_read(operation=batch)` separately for file contents.
 Test PASS/FAIL/TIMEOUT, file hashes and CI details are returned together as durable
 step evidence. Test output and file bodies are not persisted. Tests execute project
 code under the existing test permissions and are not an OS sandbox.

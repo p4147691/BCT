@@ -66,9 +66,9 @@ class Policy:
         if action not in principal_capabilities:
             return Decision(DecisionKind.DENY, "PRINCIPAL_CAPABILITY_MISSING", "use an authenticated principal with this capability", self.revision)
         if action in self._approval:
-            # Only these two capabilities have independent signed approval
+            # These capabilities have independent signed approval
             # validation in OperationCoordinator. Never grant on ref presence.
-            if action in {"file_action_apply", "process_stop_apply"}:
+            if action in {"file_action_apply", "process_stop_apply", "desktop_read"}:
                 return Decision(DecisionKind.APPROVAL_REQUIRED,
                                 "SIGNED_USER_APPROVAL_REQUIRED",
                                 "verify a signed exact-request grant", self.revision)

@@ -15,7 +15,7 @@ async def create_or_update_work(
 ) -> dict[str, Any]:
     requested_actions = frozenset(actions)
     allowed = frozenset(capabilities)
-    if not work_id or not request_summary or not roots:
+    if not work_id or not request_summary or (not roots and requested_actions != {"desktop_read"}):
         raise ValueError("WORK_FIELDS_REQUIRED")
     if not requested_actions or not requested_actions.issubset(allowed):
         raise ValueError("WORK_ACTION_INVALID")

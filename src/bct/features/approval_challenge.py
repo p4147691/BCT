@@ -15,7 +15,7 @@ from bct.core.models import FeatureRequest, FeatureResult, Outcome, Precondition
 
 class ApprovalChallengeFeature:
     capability = "approval_challenge"
-    _ALLOWED = frozenset({"file_action_apply", "process_stop_apply"})
+    _ALLOWED = frozenset({"file_action_apply", "process_stop_apply", "desktop_read"})
 
     def __init__(self, registered_features: dict):
         self.registered_features = registered_features

@@ -51,7 +51,7 @@ normal_actions = [
   "desktop_explorer_folder_open",
   "vtl_validate",
 ]
-approval_actions = ["delete", "credential_change", "file_action_apply", "process_stop_apply"]
+approval_actions = ["delete", "credential_change", "file_action_apply", "process_stop_apply", "desktop_read"]
 
 # Chrome DevTools MCP is opt-in and never launched by starting BCT.
 # Configure a pinned, trusted MCP command and enable only after review.
@@ -269,6 +269,7 @@ files = [
   "src/bct/features/claim_reconciliation.py",
   "src/bct/features/deploy.py",
   "src/bct/features/files.py",
+  "src/bct/features/desktop_read.py",
   "src/bct/features/pc_safe_plans.py",
   "src/bct/features/pc_safe_apply.py",
   "src/bct/features/pc_local_mode.py",
