@@ -70,7 +70,9 @@ class DesktopReadFeature(FileReadFeature):
             raise PreconditionError("TARGET_REQUIRED")
         path = Path(value)
         self._guard(path)
-        return path.resolve(strict=True)
+        # Keep the approved spelling. A junction introduced after the check
+        # must never replace the signed path carried into execution.
+        return path
 
     def _guard(self, path: Path, fd=None):
         if (not path.is_absolute() or ".." in path.parts

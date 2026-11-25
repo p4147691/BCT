@@ -1,6 +1,6 @@
 {
   "schema": "bct.component-library.bundle.v1",
-  "source_fingerprint": "16c7912b8b40334ca29366663a062020ef0de2971394efa62747bdcca27cea13",
+  "source_fingerprint": "01d60c2ae3d7534b296c8691dab5bf77288d6c802c3fb37aff8d7a208faefa54",
   "source_hashes": {
     "docs/CHAIN_MESSAGE_RECIPE_V2.md": "1484b088885a3fcb540217fab6f787ea248305477c8a40e1e22633d9a91f24eb",
     "docs/component-library.v1.json": "8d39d850927049f596538e3377da54f712b4f24a7a3217ac9f51341dba0cf950",
@@ -38,7 +38,7 @@
     "src/bct/discovery_views.py": "ede14516f937e85a0630aa2e6e4d21ee454a21bb5d808aee2ede5de44597f2ec",
     "src/bct/dot_identity.py": "bd2c0c8768301dbb12bb52f9699b758909a5472b1220d0185ae2baf0b10a9b18",
     "src/bct/features/conversation_network.py": "950299ce295bf82f6efd2c993d8bddae1ce56294b7312ed97765ac516725f6ce",
-    "src/bct/features/desktop_read.py": "80e81acc40650e380e0ce514dff418aa3189a7762f33cd2514c21b655b95f0b7",
+    "src/bct/features/desktop_read.py": "f73e555548a9f2052b3d4cc43bad71fa9c7cc579d01e467bfcedd4d6847d7f9a",
     "src/bct/features/file_discovery.py": "2d42efd6c8e1f6e80902d2a7e28a1921b9bd01675f087616906975bbf1d2e1e8",
     "src/bct/features/files.py": "bf0b58e5e87e96526fa5877093ea0b54df80b3a42a3aab1032b8c4204442a41b",
     "src/bct/features/owned_extension_action.py": "6c164bfb0cacf132940f16c15dfc9f653937b48a91d5e3e3ba648ad07e4bfa15",
